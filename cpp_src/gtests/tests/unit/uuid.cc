@@ -5,26 +5,43 @@
 #include "core/keyvalue/uuid.h"
 #include "core/keyvalue/variant.h"
 #include "core/reindexer.h"
+#include "gmock/gmock.h"
 #include "gtests/tools.h"
 #include "tools/stringstools.h"
+
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
+namespace {
+
+constexpr std::string_view kHexChars = "0123456789aAbBcCdDeEfF";
+constexpr std::string_view kNilUUID = "00000000-0000-0000-0000-000000000000";
+constexpr unsigned kUuidDelimPositions[] = {8, 13, 18, 23};
+
+bool isUuidDelimPos(unsigned i) noexcept {
+	return std::find(std::begin(kUuidDelimPositions), std::end(kUuidDelimPositions), i) != std::end(kUuidDelimPositions);
+}
+
+}  // namespace
 
 static constexpr int kItemsCount = 100;
 static constexpr const char* nsName = "ns_uuid";
 
 TEST(UUID, FromString) {
-	reindexer::Uuid uuid(nilUUID);
-	EXPECT_EQ(std::string(uuid), nilUUID);
+	reindexer::Uuid uuid(kNilUUID);
+	EXPECT_EQ(std::string(uuid), kNilUUID);
 
 	for (int j = 0; j < 1000; ++j) {
-		const std::string strUuid = randStrUuid();
+		const std::string strUuid = reindexer_tests_tools::randStrUuid();
 		uuid = reindexer::Uuid{strUuid};
-		EXPECT_EQ(std::string(uuid), reindexer::toLower(strUuid));
+		EXPECT_EQ(std::string(uuid), reindexer::ToLower(strUuid));
 	}
 }
 
 TEST(UUID, FromString_InvalidChar) {
 	for (int j = 0; j < 1000; ++j) {
-		std::string strUuid = randStrUuid();
+		std::string strUuid = reindexer_tests_tools::randStrUuid();
 		unsigned i;
 		do {
 			i = rand() % strUuid.size();
@@ -32,16 +49,17 @@ TEST(UUID, FromString_InvalidChar) {
 		char ch;
 		do {
 			ch = rand() % 256;
-		} while (hexChars.find(ch) != std::string_view::npos);
+		} while (kHexChars.find(ch) != std::string_view::npos);
 		strUuid[i] = ch;
-		EXPECT_THROW(reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
+		[[maybe_unused]] reindexer::Uuid uuid;
+		EXPECT_THROW(uuid = reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
 	}
 }
 
 TEST(UUID, FromString_InvalidSize) {
 	for (int j = 0; j < 1000; ++j) {
-		std::string strUuid = randStrUuid();
-		std::vector<unsigned> delimPos(std::begin(uuidDelimPositions), std::end(uuidDelimPositions));
+		std::string strUuid = reindexer_tests_tools::randStrUuid();
+		std::vector<unsigned> delimPos(std::begin(kUuidDelimPositions), std::end(kUuidDelimPositions));
 		const bool del = rand() % 2;
 		const unsigned count = rand() % 3 + 1;
 		for (unsigned i = 0; i < count; ++i) {
@@ -52,55 +70,57 @@ TEST(UUID, FromString_InvalidSize) {
 			if (del) {
 				strUuid.erase(idx, 1);
 			} else {
-				strUuid.insert(idx, 1, hexChars[rand() % hexChars.size()]);
+				strUuid.insert(idx, 1, kHexChars[rand() % kHexChars.size()]);
 			}
 			std::transform(delimPos.begin(), delimPos.end(), delimPos.begin(),
 						   [idx, del](unsigned i) { return idx < i ? (del ? i - 1 : i + 1) : i; });
 		}
-		EXPECT_THROW(reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
+		[[maybe_unused]] reindexer::Uuid uuid;
+		EXPECT_THROW(uuid = reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
 	}
 }
 
 TEST(UUID, FromString_InvalidVariant) {
 	for (int j = 0; j < 1000; ++j) {
-		std::string strUuid = randStrUuid();
-		if (strUuid == nilUUID) {
-			strUuid[19] = hexChars[1 + rand() % 7];
+		std::string strUuid = reindexer_tests_tools::randStrUuid();
+		if (strUuid == kNilUUID) {
+			strUuid[19] = kHexChars[1 + rand() % 7];
 		} else {
-			strUuid[19] = hexChars[rand() % 8];
+			strUuid[19] = kHexChars[rand() % 8];
 		}
-		EXPECT_THROW(reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
+		[[maybe_unused]] reindexer::Uuid uuid;
+		EXPECT_THROW(uuid = reindexer::Uuid{strUuid}, reindexer::Error) << strUuid;
 	}
 }
 
 TEST(UUID, ToVariant) {
 	for (int i = 0; i < 1000; ++i) {
-		const std::string strUuid = randStrUuid();
+		const std::string strUuid = reindexer_tests_tools::randStrUuid();
 		const reindexer::Uuid uuid{strUuid};
 		reindexer::Variant varUuid{uuid};
 		EXPECT_EQ(reindexer::Uuid(varUuid), uuid);
-		EXPECT_EQ(std::string(reindexer::Uuid(varUuid)), reindexer::toLower(strUuid));
+		EXPECT_EQ(std::string(reindexer::Uuid(varUuid)), reindexer::ToLower(strUuid));
 	}
 }
 
 TEST(UUID, ConvertVariant) {
 	for (int i = 0; i < 1000; ++i) {
-		const std::string strUuid = randStrUuid();
+		const std::string strUuid = reindexer_tests_tools::randStrUuid();
 		const reindexer::Uuid uuid{strUuid};
 		const reindexer::Variant varStr{strUuid};
 		reindexer::Variant varUuid{uuid};
 		const auto uuidFromVariant = varStr.As<reindexer::Uuid>();
 		EXPECT_EQ(uuid, uuidFromVariant);
 		const auto strFromVariant = varUuid.As<std::string>();
-		EXPECT_EQ(strFromVariant, reindexer::toLower(strUuid));
+		EXPECT_EQ(strFromVariant, reindexer::ToLower(strUuid));
 		const auto varConverted = varStr.convert(reindexer::KeyValueType::Uuid{});
-		EXPECT_EQ(reindexer::toLower(strUuid), varConverted.As<std::string>());
+		EXPECT_EQ(reindexer::ToLower(strUuid), varConverted.As<std::string>());
 		EXPECT_EQ(uuid, varConverted.As<reindexer::Uuid>());
 	}
 }
 
 template <typename T1, typename T2>
-struct Values {
+struct [[nodiscard]] Values {
 	Values() = default;
 	template <typename U1, typename U2>
 	Values(U1&& v1, U2&& v2) : scalar{std::forward<U1>(v1)}, array{std::forward<U2>(v2)} {}
@@ -110,9 +130,9 @@ struct Values {
 
 template <typename T1, typename T2>
 static void fillRndValue(Values<T1, T2>& value) {
-	value.scalar = (rand() % 10 == 0) ? std::nullopt : std::optional{T1{randStrUuid()}};
+	value.scalar = (rand() % 10 == 0) ? std::nullopt : std::optional{T1{reindexer_tests_tools::randStrUuid()}};
 	if (std::is_same_v<T1, std::string> || (rand() % 10 != 0)) {  // TODO maybe allow to convert empty string into nil uuid?
-		value.scalar = T1{randStrUuid()};
+		value.scalar = T1{reindexer_tests_tools::randStrUuid()};
 	} else {
 		value.scalar = std::nullopt;
 	}
@@ -123,7 +143,7 @@ static void fillRndValue(Values<T1, T2>& value) {
 		const int s = rand() % 10;
 		value.array->reserve(s);
 		for (int j = 0; j < s; ++j) {
-			value.array->emplace_back(randStrUuid());
+			value.array->emplace_back(reindexer_tests_tools::randStrUuid());
 		}
 	}
 }
@@ -142,7 +162,7 @@ static void fillItemThroughJson(reindexer::Item& item, int id, Values<T1, T2>& v
 		if (value.array) {
 			auto arr = builder.Array("uuid_a");
 			for (const auto& uuid : *value.array) {
-				arr.Put(nullptr, std::string{uuid});
+				arr.Put(reindexer::TagName::Empty(), std::string{uuid});
 			}
 		} else if (rand() % 2 == 0) {
 			auto arr = builder.Array("uuid_a");
@@ -239,16 +259,16 @@ template <typename>
 struct TypeToKVT;
 
 template <>
-struct TypeToKVT<std::string> {
+struct [[nodiscard]] TypeToKVT<std::string> {
 	using type = reindexer::KeyValueType::String;
 };
 
 template <>
-struct TypeToKVT<reindexer::Uuid> {
+struct [[nodiscard]] TypeToKVT<reindexer::Uuid> {
 	using type = reindexer::KeyValueType::Uuid;
 };
 
-enum class EmptyValues { ShouldBeFilled, ShouldBeEmpty, CouldBeEmpty };	 // TODO delete CouldBeEmpty after #1353
+enum class [[nodiscard]] EmptyValues { ShouldBeFilled, ShouldBeEmpty, CouldBeEmpty };  // TODO delete CouldBeEmpty after #1353
 
 template <typename T1, typename T2>
 static void test(reindexer::Reindexer& rx, const std::vector<Values<T1, T2>>& values,
@@ -272,7 +292,7 @@ static void test(reindexer::Reindexer& rx, const std::vector<Values<T1, T2>>& va
 					if (values[i].scalar) {
 						EXPECT_EQ(v[0].As<T1>(), *values[i].scalar) << i;  // NOLINT(bugprone-unchecked-optional-access)
 					} else {
-						EXPECT_TRUE(v[0].As<T1>() == T1{nilUUID} || v[0].As<T1>() == T1{})
+						EXPECT_TRUE(v[0].As<T1>() == T1{kNilUUID} || v[0].As<T1>() == T1{})
 							<< i << ' ' << v[0].As<T1>();  // TODO delete '|| v[0].As<T1>() == T1{}' after #1353
 					}
 				}
@@ -558,14 +578,12 @@ TEST(UUID, AddNotArrayUuidIndexOnArrayField) {
 
 		const auto err = rx.AddIndex(nsName, reindexer::IndexDef{"uuid_a", "hash", "uuid", IndexOpts()});
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Cannot convert array field to not array UUID");
+		ASSERT_THAT(err.what(), testing::MatchesRegex(".*: Cannot convert array field to not array UUID"));
 
 		test(rx, strUuidValues);
-	} catch (const reindexer::Error& e) {
-		ASSERT_TRUE(false) << e.what() << std::endl;
 	} catch (const std::exception& e) {
 		ASSERT_TRUE(false) << e.what() << std::endl;
-	} catch (...) {
-		ASSERT_TRUE(false);
 	}
 }
+
+}  // namespace reindexer_tests

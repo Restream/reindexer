@@ -10,7 +10,7 @@ using reindexer::datastorage::IDataStorage;
 using reindexer::datastorage::StorageType;
 using reindexer::Error;
 
-class RepairTool {
+class [[nodiscard]] RepairTool {
 public:
 	static Error RepairStorage(const std::string& dsn) noexcept;
 

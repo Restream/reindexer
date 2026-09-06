@@ -1,5 +1,7 @@
 #include "join_selects_api.h"
 
+namespace reindexer_tests {
+
 static void checkQueryDslParse(const reindexer::Query& q) {
 	const std::string dsl = q.GetJSON();
 	Query parsedQuery;
@@ -13,6 +15,19 @@ TEST_F(JoinSelectsApi, JoinsDSLTest) {
 	Query queryBooks{Query(books_namespace, 0, 10).Where(price, CondGe, 500)};
 	queryBooks.OrInnerJoin(genreId_fk, genreid, CondEq, std::move(queryGenres));
 	queryBooks.LeftJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors));
+	checkQueryDslParse(queryBooks);
+}
+
+TEST_F(JoinSelectsApi, NestedJoinsDSLTest) {
+	Query queryLocations{location_namespace, 0, 100};
+	queryLocations.LeftJoin(countryid_fk, countryid, CondEq, Query{countries_namespace});
+
+	Query queryAuthors{authors_namespace, 0, 100};
+	queryAuthors.InnerJoin(locationid_fk, locationid, CondEq, std::move(queryLocations));
+
+	Query queryBooks{books_namespace, 0, 50};
+	queryBooks.InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors));
+
 	checkQueryDslParse(queryBooks);
 }
 
@@ -50,6 +65,15 @@ TEST_F(JoinSelectsApi, SelectFilterDSLTest) {
 	checkQueryDslParse(query);
 }
 
+TEST_F(JoinSelectsApi, ModifySelectFilterDSLTest) {
+	checkQueryDslParse(Query::FromSQL("UPDATE ns SET field1 = 'x' WHERE a = true"));
+	checkQueryDslParse(Query::FromSQL("UPDATE ns SET field1 = 'x' WHERE a = true").Select({"id"}));
+	checkQueryDslParse(Query::FromSQL("UPDATE ns SET field1 = 'x' WHERE a = true").SelectAllFields());
+	checkQueryDslParse(Query::FromSQL("DELETE FROM ns WHERE a = true"));
+	checkQueryDslParse(Query::FromSQL("DELETE FROM ns WHERE a = true").Select({"id", "vectors()"}));
+	checkQueryDslParse(Query::FromSQL("DELETE FROM ns WHERE a = true").SelectAllFields());
+}
+
 TEST_F(JoinSelectsApi, SelectFilterInJoinDSLTest) {
 	Query queryBooks = Query(books_namespace, 0, 10).Select({price, title});
 	{
@@ -81,7 +105,7 @@ TEST_F(JoinSelectsApi, SelectFunctionsDSLTest) {
 
 TEST_F(JoinSelectsApi, CompositeValuesDSLTest) {
 	std::string pagesBookidIndex = pages + std::string("+") + bookid;
-	Query query{Query(books_namespace).WhereComposite(pagesBookidIndex.c_str(), CondGe, {{Variant(500), Variant(10)}})};
+	Query query{Query(books_namespace).WhereComposite(pagesBookidIndex, CondGe, {{Variant(500), Variant(10)}})};
 	checkQueryDslParse(query);
 }
 
@@ -101,3 +125,48 @@ TEST_F(JoinSelectsApi, GeneralDSLTest) {
 
 	checkQueryDslParse(testDslQuery);
 }
+
+TEST_F(JoinSelectsApi, DSL_SQLConvertionTest) {
+	auto json = R"json({
+		"namespace":"ns1",
+		"type":"select",
+		"select_filter":[
+			"*",
+			"vectors()"
+		],
+		"filters":[
+			{
+				"op":"NOT",
+				"join_query":{
+					"namespace":"ns2",
+					"select_filter":[
+						"*",
+						"vectors()"
+					],
+					"type":"INNER",
+					"on":[
+						{
+							"op":"NOT",
+							"left_field":"lfield",
+							"cond":"SET",
+							"right_field":"rfield"
+						}
+					]
+				}
+			}
+		],
+		"sort":{
+			"field":"ns2.respons",
+			"desc":false
+		},
+		"limit":12
+	})json";
+
+	const Query testQueryFromDSL = Query::FromJSON(json);
+	const auto sql = testQueryFromDSL.GetSQL();
+	const Query testQueryFromSQL = Query::FromSQL(sql);
+	ASSERT_EQ(sql, testQueryFromSQL.GetSQL()) << "SQL: " << sql;
+	ASSERT_EQ("SELECT *, vectors() FROM ns1 WHERE NOT INNER JOIN ns2 ON NOT ns1.lfield IN ns2.rfield ORDER BY 'ns2.respons' LIMIT 12", sql);
+}
+
+}  // namespace reindexer_tests

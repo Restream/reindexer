@@ -4,7 +4,7 @@
 Reindexer's goal is to provide fast search with complex queries.
 
 Reindexer is compact, fast and it does not have heavy dependencies.
-reindexer is up to 5x times faster, than mongodb, and 10x times than elastic search. See [benchmarks section](https://github.com/Restream/reindexer-benchmarks) for details.
+Reindexer is up to 5x faster than MongoDB and 10x faster than Elasticsearch. See [benchmarks section](https://github.com/Restream/reindexer-benchmarks) for details.
 
 # Installation
 
@@ -12,7 +12,7 @@ reindexer is up to 5x times faster, than mongodb, and 10x times than elastic sea
 
 ### Container startup
 
-The simplest way to get reindexer, is pulling & run docker image from [dockerhub](https://hub.docker.com/r/reindexer/reindexer/)
+The simplest way to get Reindexer is to pull and run the Docker image from [Docker Hub](https://hub.docker.com/r/reindexer/reindexer/)
 
 ```bash
 docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
@@ -32,12 +32,14 @@ While using docker, you may pass reindexer server config options via environment
 - `RX_SECURITY` - if RX_SECURITY is not empty, enables authorization. Disabled by default.
 - `RX_PROMETHEUS` - if RX_PROMETHEUS is not empty, enables prometheus metrics. Disabled by default.
 - `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is 0 (timeout disabled).
-- `RX_DISABLE_NS_LEAK` - Disables namespaces memory leak on database destruction (will slow down server's termination).
-- `RX_MAX_HTTP_REQ` - allows to configure max HTTP request size (in bytes). Default value is `2097152` (= 2 MB). `0` means 'unlimited'.
-- `RX_HTTP_READ_TIMEOUT` - if RX_HTTP_READ_TIMEOUT is not empty, sets execution timeout for HTTP read operations in seconds. 0 mean no timeout. Default value is 0.
-- `RX_HTTP_WRITE_TIMEOUT` - if RX_HTTP_WRITE_TIMEOUT is not empty, sets execution timeout for HTTP write operations in seconds. 0 mean no timeout. Default value is 0 if cluster is disabled and 20 if cluster is enabled.
+- `RX_DISABLE_NS_LEAK` - disables intended namespaces memory leak on database destruction (will slow down server's termination). Usually, there are no reasons to change this value.
+- `RX_MAX_HTTP_REQ` - max HTTP-request size (in bytes). Default value is `8388608` (= 8 MB). `0` means 'unlimited'.
+- `RX_MAX_HTTP_RSP` - max HTTP-response size (in bytes). Default value is `1073741824` (= 1 GB). `0` means 'unlimited'.
+- `RX_HTTP_READ_TIMEOUT` - execution timeout for HTTP read operations (in seconds). `0` means no timeout. Default value is `0`.
+- `RX_HTTP_WRITE_TIMEOUT` - execution timeout for HTTP write operations (in seconds). Write timeout is useful for RAFT clusters to avoid requests hanging when Reindexer does not have consensus. `0` means no timeout. Default value is `60`.
 - `RX_SSL_CERT` - path to ssl-certificate file. If it is not set Reindexer will be launched without TLS support.
 - `RX_SSL_KEY` - path to file with ssl private key. If it is not set Reindexer will be launched without TLS support.
+- `RX_IVF_OMP_THREADS` - number of OpenMP threads, which will be used during `IVF`-index building. Default value is 8.
 
 To run Reindexer with TLS support, both of `RX_SSL_CERT` and `RX_SSL_KEY` must be set. Certificate/key files may be added into container by mounting external directory using `-v` or `--mount` options during container startup:
 
@@ -67,9 +69,7 @@ yum update
 yum install reindexer-server
 ```
 
-Available distros: `centos-7`, `fedora-40`, `fedora-41`.
-
-To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
+Available distros: `centos-7`, `fedora-41`, `fedora-42`.
 
 ### Ubuntu/Debian
 
@@ -80,9 +80,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-focal`, `ubuntu-jammy`, `ubuntu-noble`
-
-To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
+Available distros: `debian-bullseye`, `debian-trixie`, `ubuntu-jammy`, `ubuntu-noble`
 
 ### Redos
 
@@ -93,7 +91,7 @@ dnf update
 dnf install reindexer-server
 ```
 
-Available distros: `redos-7`.
+Available distros: `redos-7`, `redos-8`.
 
 ### AltLinux
 
@@ -107,8 +105,6 @@ apt-get install reindexer-server
 
 Available distros: `p10`.
 
-To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
-
 ## OSX brew
 
 ```bash
@@ -118,13 +114,14 @@ brew install reindexer
 
 ## Windows
 
-Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/)
+Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/). `32-bit` version is `HNSW-only` in terms of supported vector indexes subset.
 
 ## Installation from sources
 
 ### Dependencies
 
-Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 8+, clang 5+ or MSVC 2019+ is required.
+Reindexer's core is written in C++20 and uses LevelDB as the storage backend, so CMake, a C++20 toolchain, and LevelDB must be installed before installing Reindexer. Also, FAISS-based vector indexes (`IVF` in particular) depend on OpenMP and BLAS/LAPACK libraries, but those dependencies are optional — you may build an `HNSW-only` version by passing `-DBUILD_ANN_INDEXES=builtin` into `CMake`.
+
 Dependencies can be installed automatically by this script:
 
 ```bash
@@ -133,7 +130,7 @@ curl -L https://github.com/Restream/reindexer/raw/master/dependencies.sh | bash 
 
 ### Build & install
 
-The typical steps for building and configuring the reindexer looks like this
+The typical steps for building and configuring Reindexer look like this
 
 ```bash
 git clone https://github.com/Restream/reindexer
@@ -150,7 +147,7 @@ sudo make install
 - Start server
 
 ```
-service start reindexer
+sudo service reindexer start
 ```
 
 - open in web browser http://127.0.0.1:9088/swagger to see reindexer REST API interactive documentation
@@ -159,7 +156,7 @@ service start reindexer
 
 ## HTTP REST API
 
-The simplest way to use reindexer with any program language - is using REST API. The
+The simplest way to use Reindexer with any programming language is to use the REST API. The
 [complete REST API documentation is here](server/contrib/server.md).
 [Or explore interactive version of Reindexer's swagger documentation](https://editor.swagger.io/?url=https://raw.githubusercontent.com/Restream/reindexer/master/cpp_src/server/contrib/server.yml)
 
@@ -180,7 +177,7 @@ Pay attention to methods, that have `stream` parameters:
 
 ```protobuf
  rpc ModifyItem(stream ModifyItemRequest) returns(stream ErrorResponse) {}
- rpc SelectSql(SelectSqlRequest) returns(stream QueryResultsResponse) {}
+ rpc ExecSql(SqlRequest) returns(stream QueryResultsResponse) {}
  rpc Select(SelectRequest) returns(stream QueryResultsResponse) {}
  rpc Update(UpdateRequest) returns(stream QueryResultsResponse) {}
  rpc Delete(DeleteRequest) returns(stream QueryResultsResponse) {}
@@ -193,23 +190,40 @@ The concept of streaming is described [here](https://grpc.io/docs/what-is-grpc/c
 
 ### Prometheus (server-side)
 
-Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i.e. `http://localhost:9088/metrics`). This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some metrics also require `perfstats` to be enabled in `profiling`-config
+Reindexer has a bunch of Prometheus metrics available via HTTP URL `/metrics` (i.e. `http://localhost:9088/metrics`). These metrics may be enabled by passing `--prometheus` as a reindexer_server command-line argument or by setting the `metrics:prometheus` flag in the server YAML config file.
 
-`reindexer_qps_total` - total queries per second for each database, namespace and query type
-`reindexer_avg_latency` - average queries latency for each database, namespace and query type
-`reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace
-`reindexer_items_count` - items count in each namespace
-`reindexer_memory_allocated_bytes` - current amount of dynamically allocated memory according to tcmalloc/jemalloc
-`reindexer_rpc_clients_count` - current number of RPC clients for each database
-`reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database
-`reindexer_info` - generic reindexer server info (currently it's just a version number)
+Some of the metrics also require:
+- `perfstats` and `memstats` flags to be set in the `profiling` config in the `#config` namespace. This has to be done at runtime for each specific database.
+- the `metrics:clientsstats` flag to be set in the server YAML config file (or the `--clientsstats` flag passed via CLI). This has to be done on server startup and affects all the databases on this server.
+
+- `reindexer_qps_total` - total queries per second for each database, namespace and query type
+- `reindexer_avg_latency` - average queries latency for each database, namespace and query type
+- `reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace
+- `reindexer_items_count` - items count in each namespace
+- `reindexer_memory_allocated_bytes` - current amount of dynamically allocated memory according to tcmalloc/jemalloc
+- `reindexer_rpc_clients_count` - current number of RPC clients for each database
+- `reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database
+- `reindexer_info` - generic reindexer server info (currently it's just a version number)
+- `reindexer_embed_last_sec_qps` - number of calls to the embedder in the last second
+- `reindexer_embed_last_sec_dps` - number of embedded documents in the last second
+- `reindexer_embed_last_sec_errors_count` - number of embedder errors in the last second
+- `reindexer_embed_last_sec_avg_latency_us` - average autoembed time (last second)
+- `reindexer_embed_conn_in_use` - current number of embedder connections in use
+- `reindexer_embed_last_sec_avg_embed_latency_us` - average auto-embedding latency for cache misses (last second)
+- `reindexer_embed_input_traffic_total_bytes` - the total amount of data received from the embedding service over the network 
+- `reindexer_embed_output_traffic_total_bytes` - the total amount of data sent to the embedding service over the network
+
 
 ### Prometheus (client-side, Go)
 
 Go binding for reindexer is using [prometheus/client_golang](https://github.com/prometheus/client_golang) to collect some metrics (RPS and request's latency) from client's side. Pass `WithPrometheusMetrics()`-option to enable metrics collecting:
 ```
 // Create DB connection for cproto-mode with metrics enabled
-db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindex.WithPrometheusMetrics())
+db, err := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindex.WithPrometheusMetrics())
+// Check status of the created DB instance
+if err != nil {
+	panic(err)
+}
 // Register prometheus handle for your HTTP-server to be able to get metrics from the outside
 http.Handle("/metrics", promhttp.Handler())
 ```
@@ -217,7 +231,7 @@ http.Handle("/metrics", promhttp.Handler())
 All the metrics will be exported into `DefaultRegistry`. Check [this](https://github.com/prometheus/client_golang/blob/main/prometheus/promauto/auto.go#L57-L85) for basic prometheus usage example.
 
 Both server-side and client-side metrics contain 'latency', however, client-side latency will also count all the time consumed by the binding's queue, network communication (for cproto/ucproto) and deserialization.
-So client-side latency may be more relevant for user's applications the server-side latency.
+So client-side latency may be more relevant for user applications than server-side latency.
 
 ## Maintenance
 
@@ -234,7 +248,7 @@ or application with `builtinserver` mode, and open http://server-ip:9088/face in
 ### Command line tool
 
 To work with database from command line you can use reindexer [command line tool](cmd/reindexer_tool/readme.md)
-Command line tool have the following functions
+The command line tool has the following functions
 
 - Backup whole database into text file or console.
 - Make queries to database
@@ -250,7 +264,7 @@ Database creation via reindexer_tool:
 reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --command '\databases create mydb'
 ```
 
-To dump and restore database in normal way there reindexer command line tool is used
+To dump and restore a database in the normal way, the Reindexer command line tool is used
 
 Backup whole database into single backup file:
 
@@ -274,7 +288,7 @@ Reindexer supports master slave replication. To create slave DB the following co
 reindexer_tool --dsn cproto://127.0.0.1:6534/slavedb --command '\upsert #config {"type":"replication","replication":{"role":"slave","master_dsn":"cproto://127.0.0.1:6534/masterdb","cluster_id":2}}'
 ```
 
-More details about replication is [here](../replication.md)
+More details about replication are [here](../replication.md)
 
 ### Requests handling modes
 
@@ -296,7 +310,7 @@ In dedicated mode server creates one thread per connection. This approach may be
 
 ### TLS support
 
-Reindexer hash TLS support for HTTP/1(HTTPS) and CPROTO(RPCS). In order to run Reindexer with TLS support, it is necessary that `openssl` and `libssl` libraries are installed in the system. 
+Reindexer has TLS support for HTTP/1 (HTTPS) and CPROTO (RPCS). To run Reindexer with TLS support, the `openssl` and `libssl` libraries must be installed on the system. 
 Reindexer will detect those libraries on startup if it was built with openssl support option (by default). Upon successful loading of `libssl` library symbols, a corresponding entry or error information should appear in the log.
 
 Paths to files with ssl-certificate (`ssl_cert`) and ssl private key (`ssl_key`) in `PEM`-format must be specified in `reindexer.conf` in `net`-section:
@@ -313,16 +327,69 @@ Any of the servers (HTTP, HTTPS, RPC, RPCS) may be disabled by passing `none` in
 ### Authentication
 
 Reindexer server supports login/password authorization for http(s)/rpc(s) client with different access levels for each user/database. To enable this feature `security` flag should be set in server.yml.
-If security option is active Reindexer will try to load users list from `users.yml` or `users.json`(deprecate) found in database path. If users-file was not found the default one
+If the security option is active, Reindexer will try to load the users list from `users.yml` or `users.json` (deprecated) found in the database path. If users-file was not found the default one
 will be created automatically (default login/password are `reindexer`/`reindexer`)
+
+The `users.yml` file must have the following structure:
+
+```yaml
+user_data_read:
+  hash: $1$salt1$sxceK5uCFboYZNAuscl7U.
+  roles:
+    *: data_read
+user_data_write:
+  hash: $1$salt2$mVTUg8rz3JZbWZdu8BmgB.
+  roles:
+    *: data_write
+user_db_admin:
+  hash: $1$salt3$vX3bUgz2B6qUtO8/Pp8..1
+  roles:
+    *: db_admin
+user_replication:
+  hash: $1$salt4$iJkAqfm0xRlCDrUwPEyzy/
+  roles:
+    *: replication
+user_sharding:
+  hash: $1$salt5$ExMJUuH4sh8Gxb2FiS3kA.
+  roles:
+    *: sharding
+user_owner:
+  hash: $1$salt6$FP6vfMCasfDJIl7o3YzvC.
+  roles:
+    *: owner
+```
+
+Parameter values in the `users.yml` file:
+
+* `user_data_read`, `user_data_write`, `user_db_admin`, `user_replication`, `user_sharding`, `user_owner` — user names;
+* `hash` — for each user:
+  * if it starts with the `$` character — a password hash, optionally with an added arbitrary sequence of characters (salt), in BSD MD5 Crypt format. It can be generated using the `openssl` utility with a command like: `openssl passwd -1 -salt <salt> <password>`, where `<salt>` is the salt and `<password>` is the password string;
+  * otherwise — the password in plain text (not recommended for security reasons);
+  * the username may contain only English letters, digits, and the symbols `-`, `.`, `_`, `~`, and `%`. The password may contain English letters, digits, and `%`.
+
+* `roles` — description of user roles with respect to databases:
+  * `*` — a symbol representing all databases. It can be replaced with a specific database name or multiple names separated by commas;
+  * available roles:
+    * `data_read` — a user with this role has read access to the database;
+    * `data_write` — a user with this role has write access to the database;
+    * `db_admin` — a user with this role can manage the database, which includes write permissions, creation/deletion of namespaces, and index modification;
+    * `replication` — the same as `db_admin`, but with restrictions on usage across different protocols and additional context checks for replication. This role should be used for asynchronous and synchronous (RAFT) replication instead of `db_admin` and `owner`;
+    * `sharding` — the same as `db_admin`, but with restrictions on usage across different protocols and additional context checks for sharding. This role should be used for inter-shard communication instead of `db_admin` and `owner`;
+    * `owner` — the user has all privileges related to database access, including creating and deleting a database with the specified name.
 
 Along with the `MD5` algorithm, the `SHA256`-based `SHA512`-based password hashing algorithm can also be used for authentication. To use them, it is necessary that `openssl` and the `libcrypto` library are installed in the system, which is connected dynamically if the Reindexer is built with the `openssl` support option (by default). 
 
 Upon successful loading of `libcrypto` library symbols, a corresponding entry or error information should appear in the log.
 
+### Masking
+
+If reindexer runs with `security`-flag enabled, `DSNs` credentials for `sharding` and `async_replication` in `#config`-namespaces will be masked for all non-admin users and filtering by those fields will be disabled.
+
+`DSNs` credentials in RPC-logs and `#replicationstats` are always masked.
+
 #### MacOS
 
-By default, OpenSSL support is disabled for MacOS. To enable support for functions from the OpenSSL-library, you can configure and build a project from source code by explicitly passing the `ENABLE_OPENSSL` option:
+By default, OpenSSL support is disabled for macOS. To enable support for functions from the OpenSSL-library, you can configure and build a project from source code by explicitly passing the `ENABLE_OPENSSL` option:
 ```bash
 cmake -DENABLE_OPENSSL=On ..
 cmake --build . -j6
@@ -356,12 +423,23 @@ storage:
   engine: leveldb
 ```
 
-To configure storage type for Go bindings either `bindings.ConnectOptions` (for builtin) or `confg.ServerConfig` (for builtin-server) structs may be used.
+To configure storage type for Go bindings, either `bindings.ConnectOptions` (for builtin) or `config.ServerConfig` (for builtin-server) structs may be used.
 
 ### RocksDB
 
 Reindexer will try to autodetect RocksDB library and its dependencies at compile time if CMake flag `ENABLE_ROCKSDB` was passed (enabled by default).
 If reindexer library was built with rocksdb, it requires Go build tag `rocksdb` in order to link with go-applications and go-bindings.
+
+### Converting storage type for existing database
+
+Storage type may be converted by stopping reindexer_server and passing command line option to reindexer_tool like this:   
+
+```sh
+reindexer_tool --dsn builtin:///tmp/rx/dbase_name --convfmt rocksdb --convbackup /tmp/rx_backup/dbase_name
+```
+
+After executing this command, the database storage in the directory specified by the `dsn` option (DSN has to be `builtin://`) will be converted to the type specified by `convfmt`.
+The new type must differ from the current type, or the command will terminate with an error. Currently, two storage types are supported: `rocksdb` and `leveldb`. The optional `convbackup` argument specifies a directory where the original storage will be backed up, if necessary.
 
 ### Data transport formats
 
@@ -369,14 +447,14 @@ Reindexer supports the following data formats to communicate with other applicat
 
 ## Log rotation
 
-There are no builtin mechanism for automatic log rotation, however `reindexer server` is able to reopen logfiles on `SIGHUP`.
-So, your external log manager (it may be even a simple `cron` script) have to move existing log files somewhere and then send `SIGHUP`-signal to the `reindexer server` process to recreate log files.
+There is no built-in mechanism for automatic log rotation; however, `reindexer server` is able to reopen log files on `SIGHUP`.
+So your external log manager (it may be even a simple `cron` script) has to move existing log files somewhere and then send a `SIGHUP` signal to the `reindexer server` process to recreate log files.
 
 ## Protobuf
 
-Protocol buffers are language-neutral, platform-neutral, extensible mechanism for serializing structured data. You define how you want your data to be structured once, then you can use special generated source code to easily write and read your structured data to and from a variety of data streams and using a variety of languages (https://developers.google.com/protocol-buffers).
+Protocol buffers are a language-neutral, platform-neutral, extensible mechanism for serializing structured data. You define how you want your data to be structured once, then you can use special generated source code to easily write and read your structured data to and from a variety of data streams and using a variety of languages (https://developers.google.com/protocol-buffers).
 
-Protocol buffers is one of the output data formats for Reindexer's HTTP REST API.
+Protocol buffers are one of the output data formats for Reindexer's HTTP REST API.
 
 To start working with Protobuf in Reindexer you need to perform the following steps:
 
@@ -394,11 +472,11 @@ syntax = "proto3";
 
 // Message with document schema from namespace test_ns_1603265619355
 message test_ns_1603265619355 {
-	int64 test_3 = 3;
-	int64 test_4 = 4;
-	int64 test_5 = 5;
-	int64 test_2 = 2;
-	int64 test_1 = 1;
+	sint64 test_3 = 3;
+	sint64 test_4 = 4;
+	sint64 test_5 = 5;
+	sint64 test_2 = 2;
+	sint64 test_1 = 1;
 }
 // Possible item schema variants in QueryResults or in ModifyResults
 message ItemsUnion {
@@ -413,24 +491,27 @@ message QueryResults {
 	repeated string namespaces = 2;
 	bool cache_enabled = 3;
 	string explain = 4;
-	int64 total_items = 5;
-	int64 query_total_items = 6;
+	sint64 total_items = 5;
+	sint64 query_total_items = 6;
 	message Columns {
 		string name = 1;
 		double width_percents = 2;
-		int64 max_chars = 3;
-		int64 width_chars = 4;
+		sint64 max_chars = 3;
+		sint64 width_chars = 4;
 	}
 	repeated Columns columns = 7;
 	message AggregationResults {
 		double value = 1;
 		string type = 2;
 		message Facets {
-			int64 count = 1;
+			sint64 count = 1;
 			repeated string values = 2;
 		}
 		repeated Facets facets = 3;
-		repeated string distincts = 4;
+		message Distincts {
+			repeated string values = 2;
+		}
+		repeated Distincts distincts = 4;
 		repeated string fields = 5;
 	}
 	repeated AggregationResults aggregations = 8;
@@ -439,15 +520,21 @@ message QueryResults {
 // - PUT/POST/DELETE api/v1/db/:db/namespaces/:ns/items
 message ModifyResults {
 	repeated ItemsUnion items = 1;
-	int64 updated = 2;
+	sint64 updated = 2;
 	bool success = 3;
 }
 // The ErrorResponse message is schema of http API methods response on error condition
 // With non 200 http status code
 message ErrorResponse {
 	bool success = 1;
-	int64 response_code = 2;
+	sint64 response_code = 2;
 	string description = 3;
+}
+
+// The TransactionResponse message is schema of http API methods response:
+// - POST api/v1/db/:db/namespaces/:ns/transactions/begin
+message TransactionResponse {
+	string txID = 1;
 }
 ```
 

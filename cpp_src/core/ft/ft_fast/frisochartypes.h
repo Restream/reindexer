@@ -23,7 +23,7 @@
 
 namespace reindexer {
 
-enum friso_enchar_t {
+enum [[nodiscard]] friso_enchar_t {
 	FRISO_EN_LETTER = 0,	   // A-Z, a-z
 	FRISO_EN_NUMERIC = 1,	   // 0-9
 	FRISO_EN_PUNCTUATION = 2,  // english punctuations

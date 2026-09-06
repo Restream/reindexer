@@ -1,18 +1,17 @@
 
 #include "serverconnection.h"
-#include <ctime>
 #include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
+#include "core/cjson/msgpackbuilder.h"
+#include "core/cjson/protobufbuilder.h"
 #include "itoa/itoa.h"
+#include "server/outputparameters.h"
 #include "time/fast_time.h"
 #include "tools/assertrx.h"
 #include "tools/errors.h"
-#include "tools/serializer.h"
 #include "tools/stringstools.h"
 
-namespace reindexer {
-namespace net {
-namespace http {
+namespace reindexer::net::http {
 
 using namespace std::string_view_literals;
 
@@ -20,7 +19,7 @@ static const std::string_view kStrEOL = "\r\n"sv;
 extern std::unordered_map<int, std::string_view> kHTTPCodes;
 
 ServerConnection::ServerConnection(socket&& s, ev::dynamic_loop& loop, Router& router, size_t maxRequestSize)
-	: ConnectionST(std::move(s), loop, false, maxRequestSize < kConnReadbufSize ? maxRequestSize : kConnReadbufSize),
+	: ConnectionST(std::move(s), loop, false, (maxRequestSize && maxRequestSize < kConnReadbufSize) ? maxRequestSize : kConnReadbufSize),
 	  router_(router),
 	  maxRequestSize_(maxRequestSize) {
 	callback(io_, ev::READ);
@@ -53,8 +52,28 @@ void ServerConnection::handleException(Context& ctx, const Error& status) {
 	auto writer = dynamic_cast<ResponseWriter*>(ctx.writer);
 	if (writer && !writer->IsRespSent()) {
 		HttpStatus httpStatus(status);
-		setJsonStatus(ctx, false, httpStatus.code, httpStatus.what);
+		setStatus(ctx, false, httpStatus.code, httpStatus.what);
 	}
+}
+
+void ServerConnection::setMsgpackStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
+	WrSerializer ser;
+	MsgPackBuilder builder(ser, ObjType::TypeObject, 3);
+	builder.Put("success", success);
+	builder.Put("response_code", responseCode);
+	builder.Put("description", status);
+	builder.End();
+	ctx.MSGPACK(responseCode, ser.Slice());
+}
+
+void ServerConnection::setProtobufStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
+	WrSerializer ser;
+	ProtobufBuilder builder(ser);
+	builder.Put(kProtoErrorResultsFields.at(kParamSuccess), success);
+	builder.Put(kProtoErrorResultsFields.at(kParamResponseCode), responseCode);
+	builder.Put(kProtoErrorResultsFields.at(kParamDescription), status);
+	builder.End();
+	ctx.Protobuf(responseCode, ser.Slice());
 }
 
 void ServerConnection::setJsonStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
@@ -64,7 +83,18 @@ void ServerConnection::setJsonStatus(Context& ctx, bool success, int responseCod
 	builder.Put("response_code", responseCode);
 	builder.Put("description", status);
 	builder.End();
-	ctx.JSON(responseCode, ser.Slice());
+	std::ignore = ctx.JSON(responseCode, ser.Slice());
+}
+
+void ServerConnection::setStatus(Context& ctx, bool success, int responseCode, const std::string& status) {
+	const std::string_view format = ctx.request->params.Get("format"sv);
+	if (format == kMsgPackFmt) {
+		return setMsgpackStatus(ctx, success, responseCode, status);
+	}
+	if (format == kProtobufFmt) {
+		return setProtobufStatus(ctx, success, responseCode, status);
+	}
+	return setJsonStatus(ctx, success, responseCode, status);
 }
 
 void ServerConnection::handleRequest(Request& req) {
@@ -77,10 +107,10 @@ void ServerConnection::handleRequest(Request& req) {
 	ctx.stat.sizeStat.reqSizeBytes = req.size;
 
 	try {
-		router_.handle(ctx);
+		std::ignore = router_.handle(ctx);
 	} catch (const HttpStatus& status) {
 		if (!writer.IsRespSent()) {
-			setJsonStatus(ctx, false, status.code, status.what);
+			setStatus(ctx, false, status.code, status.what);
 		}
 	} catch (const Error& status) {
 		handleException(ctx, status);
@@ -109,7 +139,8 @@ void ServerConnection::badRequest(int code, const char* msg) {
 	ctx.stat.allocStat = stat;
 
 	closeConn_ = true;
-	ctx.String(code, msg);
+	auto dummy = ctx.String(code, msg);
+	(void)dummy;
 	ctx.stat.sizeStat.respSizeBytes = ctx.writer->Written();
 	if (router_.onResponse_) {
 		router_.onResponse_(ctx);
@@ -256,7 +287,7 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 						return ReadResT::Default;
 					}
 				} else {
-					rdBuf_.erase(res);
+					std::ignore = rdBuf_.erase(res);
 				}
 				if (expectContinue_) {
 					if (bodyLeft_ < int(rdBuf_.capacity() - res)) {
@@ -285,7 +316,7 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 
 				request_.size += size_t(bodyLeft_);
 				handleRequest(request_);
-				rdBuf_.erase(bodyLeft_);
+				std::ignore = rdBuf_.erase(bodyLeft_);
 				bodyLeft_ = 0;
 			} else {
 				break;
@@ -294,37 +325,34 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 		if (!rdBuf_.size() && !bodyLeft_) {
 			rdBuf_.clear();
 		}
-	} catch (const Error& e) {
-		fprintf(stderr, "Dropping HTTP-connection. Reason: %s\n", e.what().c_str());
+	} catch (std::exception& e) {
+		fprintf(stderr, "reindexer error: dropping HTTP-connection. Reason: %s\n", e.what());
 		closeConn_ = true;
 	}
 	return ReadResT::Default;
 }
 
-bool ServerConnection::ResponseWriter::SetHeader(const Header& hdr) {
+void ServerConnection::ResponseWriter::SetHeader(const Header& hdr) {
 	if (respSend_) {
-		return false;
+		return;
 	}
 	headers_ << hdr.name << ": "sv << hdr.val << kStrEOL;
-	return true;
 }
-bool ServerConnection::ResponseWriter::SetRespCode(int code) {
+void ServerConnection::ResponseWriter::SetRespCode(int code) noexcept {
 	if (respSend_) {
-		return false;
+		return;
 	}
 	code_ = code;
-	return true;
 }
 
-bool ServerConnection::ResponseWriter::SetContentLength(size_t length) {
+void ServerConnection::ResponseWriter::SetContentLength(size_t length) noexcept {
 	if (respSend_) {
-		return false;
+		return;
 	}
 	contentLength_ = length;
-	return true;
 }
 
-ssize_t ServerConnection::ResponseWriter::Write(chunk&& chunk, Writer::WriteMode mode) {
+void ServerConnection::ResponseWriter::Write(chunk&& chunk, Writer::WriteMode mode) {
 	char szBuf[64], dtBuf[128];
 	if (!respSend_) {
 		conn_->writeHttpResponse(code_);
@@ -367,27 +395,22 @@ ssize_t ServerConnection::ResponseWriter::Write(chunk&& chunk, Writer::WriteMode
 	if (!len && !conn_->enableHttp11_) {
 		conn_->closeConn_ = true;
 	}
-	return len;
 }
-ssize_t ServerConnection::ResponseWriter::Write(std::string_view data) {
+
+void ServerConnection::ResponseWriter::Write(std::string_view data) {
 	WrSerializer ser(conn_->wrBuf_.get_chunk());
 	ser << data;
-	return Write(ser.DetachChunk());
+	Write(ser.DetachChunk());
 }
 chunk ServerConnection::ResponseWriter::GetChunk() { return conn_->wrBuf_.get_chunk(); }
 
-bool ServerConnection::ResponseWriter::SetConnectionClose() {
-	conn_->closeConn_ = true;
-	return true;
-}
-
 ssize_t ServerConnection::BodyReader::Read(void* buf, size_t size) {
+	size_t readSize = 0;
 	if (conn_->bodyLeft_ > 0) {
-		size_t readed = conn_->rdBuf_.read(reinterpret_cast<char*>(buf), std::min(ssize_t(size), conn_->bodyLeft_));
-		conn_->bodyLeft_ -= readed;
-		return readed;
+		readSize = conn_->rdBuf_.read(reinterpret_cast<char*>(buf), std::min(ssize_t(size), conn_->bodyLeft_));
+		conn_->bodyLeft_ -= readSize;
 	}
-	return 0;
+	return readSize;
 }
 
 std::string ServerConnection::BodyReader::Read(size_t size) {
@@ -395,14 +418,12 @@ std::string ServerConnection::BodyReader::Read(size_t size) {
 	if (conn_->bodyLeft_ > 0) {
 		size = std::min(ssize_t(size), conn_->bodyLeft_);
 		ret.resize(size);
-		size_t readed = conn_->rdBuf_.read(&ret[0], size);
-		conn_->bodyLeft_ -= readed;
+		size_t readSize = conn_->rdBuf_.read(&ret[0], size);
+		conn_->bodyLeft_ -= readSize;
 	}
 	return ret;
 }
 
 ssize_t ServerConnection::BodyReader::Pending() const { return conn_->bodyLeft_; }
 
-}  // namespace http
-}  // namespace net
-}  // namespace reindexer
+}  // namespace reindexer::net::http

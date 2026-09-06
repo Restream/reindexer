@@ -17,16 +17,21 @@ struct IStatsWatcher;
 
 using namespace reindexer::net;
 
-struct HTTPClientData final : public http::ClientData {
+struct [[nodiscard]] HTTPClientData final : public http::ClientData {
 	AuthContext auth;
 };
 
-class HTTPServer {
+class [[nodiscard]] HTTPServer {
+	struct [[nodiscard]] DefaultAdditionalStatus {
+		void operator()(const auto&) const noexcept {}
+		size_t FieldsCount() const noexcept { return 0; }
+	};
+
 public:
 	HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, Prometheus* prometheusI = nullptr,
 			   IStatsWatcher* statsWatcherI = nullptr);
 
-	bool Start(const std::string& addr, ev::dynamic_loop& loop);
+	void Start(const std::string& addr, ev::dynamic_loop& loop);
 	void Stop() { listener_->Stop(); }
 
 	int NotFoundHandler(http::Context& ctx);
@@ -38,6 +43,8 @@ public:
 	int GetSQLQuery(http::Context& ctx);
 	int PostSQLQuery(http::Context& ctx);
 	int GetSQLSuggest(http::Context& ctx);
+	int QueryConvertSql(http::Context& ctx) { return queryConvert(ctx, QueryFormat::Sql); }
+	int QueryConvertDsl(http::Context& ctx) { return queryConvert(ctx, QueryFormat::Dsl); }
 	int GetDatabases(http::Context& ctx);
 	int PostDatabase(http::Context& ctx);
 	int DeleteDatabase(http::Context& ctx);
@@ -78,33 +85,57 @@ public:
 	void Logger(http::Context& ctx);
 	void OnResponse(http::Context& ctx);
 	int GetRole(http::Context& ctx);
+	int GetDefaultConfigs(http::Context& ctx);
 
-protected:
-	Error modifyItem(Reindexer& db, std::string& nsName, Item& item, ItemModifyMode mode);
-	Error modifyItem(Reindexer& db, std::string& nsName, Item& item, QueryResults&, ItemModifyMode mode);
+private:
+	enum class [[nodiscard]] DataFormat { JSON, MsgPack, Protobuf, CSVFile };
+	enum class [[nodiscard]] QueryFormat { Sql, Dsl, PrettySql, Unknown };
+
+	struct [[nodiscard]] IQRSerializingOption {
+		virtual ~IQRSerializingOption() = default;
+
+		virtual std::optional<size_t> TotalCount() const noexcept = 0;
+		virtual std::optional<size_t> QueryTotalCount() const noexcept = 0;
+		virtual unsigned ExternalLimit() const noexcept = 0;
+		virtual unsigned ExternalOffset() const noexcept = 0;
+	};
+	class TxCommitOption;
+	class TwoLevelLimitOffsetOption;
+	class ReqularQueryResultsOption;
+	class ItemsQueryResultsOption;
+
+	QueryFormat parseFormat(std::string_view formatStr) noexcept;
+	int queryConvert(http::Context& ctx, QueryFormat);
+	Error modifyItem(Reindexer& db, std::string_view nsName, Item& item, ItemModifyMode mode);
+	Error modifyItem(Reindexer& db, std::string_view nsName, Item& item, QueryResults&, ItemModifyMode mode);
 	int modifyItems(http::Context& ctx, ItemModifyMode mode);
 	int modifyItemsTx(http::Context& ctx, ItemModifyMode mode);
-	int modifyItemsProtobuf(http::Context& ctx, std::string& nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
-	int modifyItemsMsgPack(http::Context& ctx, std::string& nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
-	int modifyItemsJSON(http::Context& ctx, std::string& nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	int modifyItemsProtobuf(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	int modifyItemsMsgPack(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	int modifyItemsJSON(http::Context& ctx, std::string_view nsName, std::vector<std::string>&& precepts, ItemModifyMode mode);
+	int modifyItemsTxProtobuf(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
 	int modifyItemsTxMsgPack(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
 	int modifyItemsTxJSON(http::Context& ctx, Transaction& tx, std::vector<std::string>&& precepts, ItemModifyMode mode);
-	int queryResults(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults = false, unsigned limit = kDefaultLimit,
-					 unsigned offset = kDefaultOffset);
-	int queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
-							bool withColumns, int width = 0);
-	int queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
-							 bool withColumns, int width = 0);
-	int queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, bool isQueryResults, unsigned limit, unsigned offset,
-						 bool withColumns, int width = 0);
-	int queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, unsigned limit, unsigned offset);
+	int queryResults(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption);
+	int queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption, bool withColumns,
+							int width = 0);
+	int queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption, bool withColumns,
+							 int width = 0);
+	int queryResultsJSON(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption, bool withColumns,
+						 int width = 0);
+	int queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption);
 	template <typename Builder>
-	void queryResultParams(Builder& builder, reindexer::QueryResults& res, std::vector<std::string>&& jsonData, bool isQueryResults,
-						   unsigned limit, bool withColumns, int width);
-	int status(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
-	int jsonStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
-	int msgpackStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
-	int protobufStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus());
+	void queryResultParams(Builder& builder, reindexer::QueryResults& res, std::vector<std::string>&& jsonData,
+						   const IQRSerializingOption& qrOption, bool withColumns, int width);
+	int statusOK(http::Context& ctx, chunk&& chunk);
+	template <typename Fn = DefaultAdditionalStatus>
+	int status(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus(), const Fn& additional = {});
+	template <typename Fn = DefaultAdditionalStatus>
+	int jsonStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus(), const Fn& additional = {});
+	template <typename Fn = DefaultAdditionalStatus>
+	int msgpackStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus(), const Fn& additional = {});
+	template <typename Fn = DefaultAdditionalStatus>
+	int protobufStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus(), const Fn& additional = {});
 	unsigned prepareLimit(std::string_view limitParam, int limitDefault = kDefaultLimit);
 	unsigned prepareOffset(std::string_view offsetParam, int offsetDefault = kDefaultOffset);
 	int modifyQueryTxImpl(http::Context& ctx, const std::string& dbName, std::string_view txId, Query& q);
@@ -119,6 +150,15 @@ protected:
 	void removeTx(const std::string& dbName, std::string_view txId);
 	void removeExpiredTx();
 	void deadlineTimerCb(ev::periodic&, int) { removeExpiredTx(); }
+
+	Error execQueryByType(const reindexer::Query& query, reindexer::QueryResults& res, http::Context& ctx);
+	bool isParameterSetOn(std::string_view val) const noexcept;
+	int getAuth(http::Context& ctx, AuthContext& auth, const std::string& dbName) const;
+
+	DataFormat dataFormatFromStr(std::string_view str);
+	DataFormat getDataFormat(const http::Context& ctx);
+	[[noreturn]] void throwUnsupportedOpFormat(const http::Context& ctx);
+	WrSerializer makeRestrictedWrSerializer(http::Context& ctx) noexcept;
 
 	DBManager& dbMgr_;
 	Pprof pprof_;
@@ -135,25 +175,20 @@ protected:
 	system_clock_w::time_point startTs_;
 
 	using TxDeadlineClock = steady_clock_w;
-	struct TxInfo {
+	struct [[nodiscard]] TxInfo {
 		std::shared_ptr<Transaction> tx;
 		TxDeadlineClock::time_point txDeadline;
 		std::string dbName;
 	};
 	fast_hash_map<std::string, TxInfo, nocase_hash_str, nocase_equal_str, nocase_less_str> txMap_;
-	std::mutex txMtx_;
+	reindexer::mutex txMtx_;
 	ev::timer deadlineChecker_;
 
-	static const int kDefaultLimit = INT_MAX;
-	static const int kDefaultOffset = 0;
+	constexpr static int kDefaultLimit = std::numeric_limits<int>::max();
+	constexpr static int kDefaultOffset = 0;
 
 	constexpr static int32_t kMaxConcurrentCsvDownloads = 2;
 	std::atomic<int32_t> currentCsvDownloads_ = {0};
-
-private:
-	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults& res, http::Context& ctx);
-	bool isParameterSetOn(std::string_view val) const noexcept;
-	int getAuth(http::Context& ctx, AuthContext& auth, const std::string& dbName) const;
 };
 
 }  // namespace reindexer_server

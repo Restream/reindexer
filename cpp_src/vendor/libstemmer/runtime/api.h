@@ -1,3 +1,4 @@
+#pragma once
 
 typedef unsigned char symbol;
 

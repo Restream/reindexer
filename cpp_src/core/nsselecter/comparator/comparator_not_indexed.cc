@@ -1,34 +1,45 @@
 #include "comparator_not_indexed.h"
 #include "helpers.h"
 
-namespace {
-
-[[nodiscard]] std::string anyComparatorCondStr() {
-	using namespace std::string_literals;
-	return "IS NOT NULL"s;
-}
-
-[[nodiscard]] std::string emptyComparatorCondStr() {
-	using namespace std::string_literals;
-	return "IS NULL"s;
-}
-
-}  // namespace
-
 namespace reindexer {
 
 namespace comparators {
 
+namespace {
+
+std::string anyComparatorCondStr() {
+	using namespace std::string_literals;
+	return "IS NOT NULL"s;
+}
+
+std::string emptyComparatorCondStr() {
+	using namespace std::string_literals;
+	return "IS NULL"s;
+}
+
+void checkNonIndexedValueType(CondType condType, const Variant& v) {
+	auto t = v.Type();
+	if (!t.template Is<KeyValueType::String>() && !t.template Is<KeyValueType::Uuid>() && !t.IsNumeric()) [[unlikely]] {
+		throw Error{errQueryExec, "Value type in '{}' for non indexed field must be string, numeric or uuid. Value type is '{}'",
+					CondTypeToStr(condType), t.Name()};
+	}
+}
+
+}  // namespace
+
 template <CondType Cond>
-ComparatorNotIndexedImplBase<Cond>::ComparatorNotIndexedImplBase(const VariantArray& values) : value_{GetValue<Variant>(Cond, values, 0)} {}
+ComparatorNotIndexedImplBase<Cond>::ComparatorNotIndexedImplBase(const VariantArray& values) : value_(GetValue<Variant>(Cond, values, 0)) {
+	checkNonIndexedValueType(Cond, value_);
+}
 
 ComparatorNotIndexedImplBase<CondRange>::ComparatorNotIndexedImplBase(const VariantArray& values)
 	: value1_{GetValue<Variant>(CondRange, values, 0)}, value2_{GetValue<Variant>(CondRange, values, 1)} {}
 
 ComparatorNotIndexedImplBase<CondSet>::ComparatorNotIndexedImplBase(const VariantArray& values) : values_{values.size()} {
 	for (const Variant& v : values) {
-		throwOnNull(v, CondSet);
-		values_.insert(v);
+		assertrx_dbg(!v.IsNullValue());
+		checkNonIndexedValueType(CondSet, v);
+		std::ignore = values_.insert(v);
 	}
 }
 
@@ -48,92 +59,64 @@ reindexer::comparators::ComparatorNotIndexedImpl<CondAllSet, false>::ComparatorN
 	: payloadType_{payloadType}, fieldPath_{fieldPath}, values_{values.size()} {
 	int i = 0;
 	for (const Variant& v : values) {
-		throwOnNull(v, CondAllSet);
-		values_.emplace(v, i);
+		assertrx_dbg(!v.IsNullValue());
+		checkNonIndexedValueType(CondAllSet, v);
+		std::ignore = values_.emplace(v, i);
 		++i;
 	}
 }
 
 template <CondType Cond>
-[[nodiscard]] std::string ComparatorNotIndexedImplBase<Cond>::ConditionStr() const {
-	return fmt::sprintf("%s %s", CondToStr<Cond>(), value_.As<std::string>());
+std::string ComparatorNotIndexedImplBase<Cond>::ConditionStr() const {
+	return fmt::format("{} {}", CondToStr<Cond>(), value_.As<std::string>());
 }
 
-[[nodiscard]] std::string ComparatorNotIndexedImplBase<CondRange>::ConditionStr() const {
-	return fmt::sprintf("RANGE(%s %s)", value1_.As<std::string>(), value2_.As<std::string>());
+std::string ComparatorNotIndexedImplBase<CondRange>::ConditionStr() const {
+	return fmt::format("RANGE({} {})", value1_.As<std::string>(), value2_.As<std::string>());
 }
 
-[[nodiscard]] std::string ComparatorNotIndexedImplBase<CondSet>::ConditionStr() const {
+std::string ComparatorNotIndexedImplBase<CondSet>::ConditionStr() const {
 	using namespace std::string_literals;
 	if (values_.empty()) {
 		return "IN []"s;
 	} else {
-		return fmt::sprintf("IN [%s ...]", values_.cbegin()->As<std::string>());
+		return fmt::format("IN [{} ...]", values_.cbegin()->As<std::string>());
 	}
 }
 
-[[nodiscard]] std::string ComparatorNotIndexedImplBase<CondLike>::ConditionStr() const { return fmt::sprintf("LIKE \"%s\"", valueView_); }
+std::string ComparatorNotIndexedImplBase<CondLike>::ConditionStr() const { return fmt::format("LIKE \"{}\"", valueView_); }
 
-[[nodiscard]] std::string ComparatorNotIndexedImpl<CondAny, false>::ConditionStr() const { return anyComparatorCondStr(); }
+std::string ComparatorNotIndexedImpl<CondAny, false>::ConditionStr() const { return anyComparatorCondStr(); }
 
-[[nodiscard]] std::string ComparatorNotIndexedImpl<CondAny, true>::ConditionStr() const { return anyComparatorCondStr(); }
+std::string ComparatorNotIndexedImpl<CondAny, true>::ConditionStr() const { return anyComparatorCondStr(); }
 
-[[nodiscard]] std::string ComparatorNotIndexedImpl<CondEmpty, false>::ConditionStr() const { return emptyComparatorCondStr(); }
+std::string ComparatorNotIndexedImpl<CondEmpty, false>::ConditionStr() const { return emptyComparatorCondStr(); }
 
-[[nodiscard]] std::string ComparatorNotIndexedImpl<CondDWithin, false>::ConditionStr() const {
-	return fmt::sprintf("DWITHIN(POINT(%.4f %.4f), %.4f)", point_.X(), point_.Y(), distance_);
+std::string ComparatorNotIndexedImpl<CondDWithin, false>::ConditionStr() const {
+	return fmt::format("DWITHIN(POINT({:.4f} {:.4f}), {:.4f})", point_.X(), point_.Y(), distance_);
 }
 
-[[nodiscard]] std::string ComparatorNotIndexedImpl<CondAllSet, false>::ConditionStr() const {
+std::string ComparatorNotIndexedImpl<CondAllSet, false>::ConditionStr() const {
 	if (values_.empty()) {
-		return fmt::sprintf("ALLSET []");
+		return fmt::format("ALLSET []");
 	} else {
-		return fmt::sprintf("ALLSET [%s ...]", values_.cbegin()->first.As<std::string>());
+		return fmt::format("ALLSET [{} ...]", values_.cbegin()->first.As<std::string>());
 	}
 }
 
 }  // namespace comparators
 
-[[nodiscard]] std::string ComparatorNotIndexed::ConditionStr() const {
-	assertrx_dbg(dynamic_cast<const ImplVariantType*>(impl_.get()));
-	return std::visit([&](const auto& impl) { return impl.ConditionStr(); }, *static_cast<const ImplVariantType*>(impl_.get()));
+std::string ComparatorNotIndexed::ConditionStr() const {
+	return std::visit([&](const auto& impl) { return impl.ConditionStr(); }, impl_);
 }
 
 ComparatorNotIndexed::ImplVariantType ComparatorNotIndexed::createImpl(CondType cond, const VariantArray& values,
 																	   const PayloadType& payloadType, const TagsPath& fieldPath,
-																	   bool distinct) {
+																	   reindexer::IsDistinct distinct) {
 	using namespace comparators;
 	if (distinct) {
-		switch (cond) {
-			case CondEq:
-			case CondSet:
-			case CondAllSet:
-				if (values.size() == 1) {
-					return ComparatorNotIndexedImpl<CondEq, true>{values, payloadType, fieldPath};
-				} else if (cond == CondAllSet) {
-					return ComparatorNotIndexedImpl<CondAllSet, true>{values, payloadType, fieldPath};
-				} else {
-					return ComparatorNotIndexedImpl<CondSet, true>{values, payloadType, fieldPath};
-				}
-			case CondLt:
-				return ComparatorNotIndexedImpl<CondLt, true>{values, payloadType, fieldPath};
-			case CondLe:
-				return ComparatorNotIndexedImpl<CondLe, true>{values, payloadType, fieldPath};
-			case CondGt:
-				return ComparatorNotIndexedImpl<CondGt, true>{values, payloadType, fieldPath};
-			case CondGe:
-				return ComparatorNotIndexedImpl<CondGe, true>{values, payloadType, fieldPath};
-			case CondRange:
-				return ComparatorNotIndexedImpl<CondRange, true>{values, payloadType, fieldPath};
-			case CondLike:
-				return ComparatorNotIndexedImpl<CondLike, true>{values, payloadType, fieldPath};
-			case CondDWithin:
-				return ComparatorNotIndexedImpl<CondDWithin, true>{values, payloadType, fieldPath};
-			case CondAny:
-				return ComparatorNotIndexedImpl<CondAny, true>{payloadType, fieldPath};
-			case CondEmpty:
-				return ComparatorNotIndexedImpl<CondEmpty, true>{payloadType, fieldPath};
-		}
+		assertrx_throw(cond == CondAny);
+		return ComparatorNotIndexedImpl<CondAny, true>{payloadType, fieldPath};
 	} else {
 		switch (cond) {
 			case CondEq:
@@ -164,9 +147,11 @@ ComparatorNotIndexed::ImplVariantType ComparatorNotIndexed::createImpl(CondType 
 				return ComparatorNotIndexedImpl<CondAny, false>{payloadType, fieldPath};
 			case CondEmpty:
 				return ComparatorNotIndexedImpl<CondEmpty, false>{payloadType, fieldPath};
+			case CondKnn:
+				throw_as_assert;
 		}
 	}
-	abort();
+	throw_as_assert;
 }
 
 }  // namespace reindexer

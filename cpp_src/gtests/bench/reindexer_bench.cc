@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include <benchmark/benchmark.h>
 
 #include "aggregation.h"
@@ -8,16 +6,12 @@
 #include "api_tv_simple.h"
 #include "api_tv_simple_comparators.h"
 #include "api_tv_simple_sparse.h"
+#include "equalpositions.h"
 #include "geometry.h"
 #include "join_items.h"
-#include "tools/reporter.h"
+#include "update_items.h"
 
-#include "tools/fsops.h"
-
-#include "core/reindexer.h"
-
-using std::shared_ptr;
-using reindexer::Reindexer;
+namespace reindexer_benchmarks {
 
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
 const int kItemsInBenchDataset = 5'000;
@@ -30,31 +24,27 @@ const int kItemsInBenchDataset = 500'000;
 const int kItemsInComparatorsBenchDataset = 100'000;
 #endif
 
-int main(int argc, char** argv) {
-	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/bench_test");
-	if (reindexer::fs::RmDirAll(storagePath) < 0 && errno != ENOENT) {
-		std::cerr << "Could not clean working dir '" << storagePath << "'.";
-		std::cerr << "Reason: " << strerror(errno) << std::endl;
+int BenchMain(int argc, char** argv) {
+	using namespace std::string_view_literals;
 
-		return 1;
-	}
+#ifdef HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
+	benchmark::MaybeReenterWithoutASLR(argc, argv);
+#endif	// HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
 
-	auto DB = std::make_shared<Reindexer>();
-	auto err = DB->Connect("builtin://" + storagePath);
-	if (!err.ok()) {
-		return err.code();
-	}
+	auto DB = InitBenchDB("bench_test"sv);
 
 	JoinItems joinItems(DB.get(), 50'000);
-	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple", kItemsInBenchDataset);
-	ApiTvSimpleComparators apiTvSimpleComparators(DB.get(), "ApiTvSimpleComparators", kItemsInComparatorsBenchDataset);
-	ApiTvSimpleSparse apiTvSimpleSparse(DB.get(), "ApiTvSimpleSparse", kItemsInBenchDataset);
-	ApiTvComposite apiTvComposite(DB.get(), "ApiTvComposite", kItemsInBenchDataset);
-	Geometry geometry(DB.get(), "Geometry", kItemsInBenchDataset);
-	Aggregation aggregation(DB.get(), "Aggregation", kItemsInBenchDataset);
+	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple"sv, kItemsInBenchDataset);
+	ApiTvSimpleComparators apiTvSimpleComparators(DB.get(), "ApiTvSimpleComparators"sv, kItemsInComparatorsBenchDataset);
+	ApiTvSimpleSparse apiTvSimpleSparse(DB.get(), "ApiTvSimpleSparse"sv, kItemsInBenchDataset);
+	ApiTvComposite apiTvComposite(DB.get(), "ApiTvComposite"sv, kItemsInBenchDataset);
+	Geometry geometry(DB.get(), "Geometry"sv, kItemsInBenchDataset);
+	Aggregation aggregation(DB.get(), "Aggregation"sv, kItemsInBenchDataset);
 	ApiEncDec decoding(DB.get(), "EncDec");
+	EqualPositions equalPosition(DB.get(), "EqualPositions", kItemsInBenchDataset);
+	UpdateItems updateItems(DB.get(), "UpdateItems", 2000);
 
-	err = apiTvSimple.Initialize();
+	auto err = apiTvSimple.Initialize();
 	if (!err.ok()) {
 		return err.code();
 	}
@@ -94,6 +84,16 @@ int main(int argc, char** argv) {
 		return err.code();
 	}
 
+	err = equalPosition.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	err = updateItems.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
 	::benchmark::Initialize(&argc, argv);
 	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) {
 		return 1;
@@ -107,6 +107,16 @@ int main(int argc, char** argv) {
 	geometry.RegisterAllCases();
 	aggregation.RegisterAllCases();
 	decoding.RegisterAllCases();
+	equalPosition.RegisterAllCases();
+	updateItems.RegisterAllCases();
 
 	::benchmark::RunSpecifiedBenchmarks();
+	::benchmark::Shutdown();
+
+	return 0;
 }
+
+}  // namespace reindexer_benchmarks
+
+// NOLINTNEXTLINE (bugprone-exception-escape) `main` is required to be in global namespace
+int main(int argc, char** argv) { return reindexer_benchmarks::BenchMain(argc, argv); }

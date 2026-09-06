@@ -4,12 +4,13 @@
 #include "core/reindexer.h"
 
 using benchmark::State;
-using benchmark::internal::Benchmark;
 
 using reindexer::NamespaceDef;
 using reindexer::Reindexer;
 
-class ApiEncDec {
+namespace reindexer_benchmarks {
+
+class [[nodiscard]] ApiEncDec {
 public:
 	ApiEncDec(Reindexer* db, std::string&& name);
 	~ApiEncDec();
@@ -19,7 +20,7 @@ public:
 
 private:
 	template <typename Fn, typename Cl>
-	Benchmark* Register(const std::string& name, Fn fn, Cl* cl) {
+	benchmark::Benchmark* Register(const std::string& name, Fn fn, Cl* cl) {
 		std::string tn(benchName_);
 		tn.append("/").append(name);
 		return benchmark::RegisterBenchmark(tn.c_str(), std::bind(fn, cl, std::placeholders::_1));
@@ -48,3 +49,5 @@ private:
 	std::string itemMsgPack_;
 	constexpr static int kCjsonBenchItemID = 9973;
 };
+
+}  // namespace reindexer_benchmarks

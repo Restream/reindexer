@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <sstream>
 
+namespace reindexer_tests {
+
 #define PRINTF(...)              \
 	do {                         \
 		printf("[   INFO   ] "); \
@@ -10,7 +12,7 @@
 
 /** @brief C++ Gtest log stream interface.
  * If you need your strings to be displayed in Tests execution log then they shall always end with "<<std::endl;" */
-class TestCout : public std::stringstream {
+class [[nodiscard]] TestCout : public std::stringstream {
 public:
 	void BoldOn() { printf("\e[1m"); }
 	void BoldOff() { printf("\e[0m"); }
@@ -34,3 +36,5 @@ public:
 /** @brief GTest log stream helper. If you need your strings to be displayed in Tests execution log then they shall always end with
  * "<<std::endl;" */
 #define TEST_COUT TestCout()
+
+}  // namespace reindexer_tests

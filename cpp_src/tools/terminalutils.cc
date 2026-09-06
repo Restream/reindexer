@@ -1,6 +1,7 @@
 #include "terminalutils.h"
 
 #include <wchar.h>
+#include <cstdlib>
 #include <cstring>
 #include "oscompat.h"
 #include "tools/errors.h"
@@ -9,8 +10,56 @@
 
 namespace reindexer {
 
-bool isStdoutRedirected() { return (!isatty(fileno(stdout))); }
-bool isStdinRedirected() { return (!isatty(fileno(stdin))); }
+namespace {
+
+bool isStddevRedirected(int fileNo) { return (!isatty(fileNo)); }
+
+bool isStddevAnsiSupported(int fileNo) {
+	if (isStddevRedirected(fileNo)) {
+		return false;
+	}
+
+#ifdef _WIN32
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
+	DWORD dev = STD_OUTPUT_HANDLE;
+	if (fileNo != fileno(stdout)) {
+		if (fileNo == fileno(stderr)) {
+			dev = STD_ERROR_HANDLE;
+		} else if (fileNo == fileno(stdin)) {
+			dev = STD_INPUT_HANDLE;
+		}
+	}
+
+	const HANDLE hOut = GetStdHandle(dev);
+	if (hOut == INVALID_HANDLE_VALUE || hOut == nullptr) {
+		return false;
+	}
+	DWORD mode = 0;
+	if (!GetConsoleMode(hOut, &mode)) {
+		// Not a native Windows console (e.g. Git Bash / MSYS pseudo-TTY).
+		const char* term = std::getenv("TERM");
+		return term == nullptr || std::strcmp(term, "dumb") != 0;
+	}
+	if (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) {
+		return true;
+	}
+	const DWORD modeWithVt = mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	return SetConsoleMode(hOut, modeWithVt) != 0;
+#else
+	const char* term = std::getenv("TERM");
+	return term == nullptr || std::strcmp(term, "dumb") != 0;
+#endif
+}
+
+}  // namespace
+
+bool isStdoutRedirected() { return isStddevRedirected(fileno(stdout)); }
+bool isStdinRedirected() { return isStddevRedirected(fileno(stdin)); }
+bool isStderrRedirected() { return isStddevRedirected(fileno(stderr)); }
+bool isStdoutAnsiSupported() { return isStddevAnsiSupported(fileno(stdout)); }
+bool isStderrAnsiSupported() { return isStddevAnsiSupported(fileno(stderr)); }
 
 Error getTerminalSize(int fd, int& columns, int& lines) {
 	int retCode = -1;

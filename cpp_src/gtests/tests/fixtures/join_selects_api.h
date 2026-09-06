@@ -1,45 +1,48 @@
 #pragma once
 
 #include <gmock/gmock.h>
-#include <gtest/gtest.h>
 #include <map>
 #include <sstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
-#include "core/queryresults/joinresults.h"
+#include "core/nsselecter/joins/item_context.h"
+#include "core/nsselecter/joins/iterators.h"
+#include "core/system_ns_names.h"
+#include "estl/gift_str.h"
+#include "estl/lock.h"
 #include "estl/shared_mutex.h"
 #include "gason/gason.h"
 #include "reindexer_api.h"
 #include "tools/fsops.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
-class JoinSelectsApi : public ReindexerApi {
+namespace reindexer_tests {
+
+class [[nodiscard]] JoinSelectsApi : public ReindexerApi {
 protected:
 	using BookId = int;
 	using FieldName = std::string;
 	using QueryResultRow = std::map<FieldName, reindexer::VariantArray>;
 	using QueryResultRows = std::map<BookId, QueryResultRow>;
 
-	void Init(const std::string& dbName = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "join_test")) {
-		Error err;
+	void Init(const std::string& dbName = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "join_test")) RX_REQUIRES(!authorsMutex) {
+		using reindexer::IndexOpts;
 
-		reindexer::fs::RmDirAll(dbName);
-		err = rt.reindexer->Connect("builtin://" + dbName);
-		ASSERT_TRUE(err.ok()) << err.what();
+		std::ignore = reindexer::fs::RmDirAll(dbName);
+		rt.Connect("builtin://" + dbName);
 
-		err = rt.reindexer->OpenNamespace(authors_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.OpenNamespace(authors_namespace);
+		rt.OpenNamespace(books_namespace);
+		rt.OpenNamespace(genres_namespace);
+		rt.OpenNamespace(location_namespace);
+		rt.OpenNamespace(countries_namespace);
 
-		err = rt.reindexer->OpenNamespace(books_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace(genres_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace(location_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		DefineNamespaceDataset(countries_namespace, {IndexDeclaration{countryid, "hash", "int", IndexOpts().PK(), 0},
+													 IndexDeclaration{countryName, "hash", "string", IndexOpts(), 0},
+													 IndexDeclaration{countryCode, "hash", "int", IndexOpts(), 0}});
 
 		DefineNamespaceDataset(location_namespace, {IndexDeclaration{locationid, "hash", "int", IndexOpts().PK(), 0},
+													IndexDeclaration{countryid_fk, "hash", "int", IndexOpts(), 0},
 													IndexDeclaration{code, "hash", "int", IndexOpts(), 0},
 													IndexDeclaration{city, "hash", "string", IndexOpts(), 0}});
 
@@ -58,6 +61,7 @@ protected:
 			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts(), 0}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts(), 0},
 			 IndexDeclaration{(pages + std::string("+") + bookid).c_str(), "hash", "composite", IndexOpts(), 0}});
 
+		FillCountriesNamespace();
 		FillLocationsNamespace();
 		FillGenresNamespace();
 		FillAuthorsNamespace(500);
@@ -65,7 +69,10 @@ protected:
 		FillAuthorsNamespace(10);
 	}
 
-	void SetUp() override { Init(); }
+	void SetUp() override RX_REQUIRES(!authorsMutex) {
+		ReindexerApi::SetUp();
+		Init();
+	}
 
 	void FillLocationsNamespace() {
 		for (size_t i = 0; i < locations.size(); ++i) {
@@ -73,11 +80,22 @@ protected:
 			item[locationid] = int(i);
 			item[code] = rand() % 65536;
 			item[city] = locations[i];
+			item[countryid_fk] = int(rand() % countries.size());
 			Upsert(location_namespace, item);
 		}
 	}
 
-	void FillAuthorsNamespace(int32_t count) {
+	void FillCountriesNamespace() {
+		for (size_t i = 0; i < countries.size(); ++i) {
+			Item item = NewItem(countries_namespace);
+			item[countryid] = int(i);
+			item[countryCode] = rand() % 65536;
+			item[countryName] = countries[i];
+			Upsert(countries_namespace, item);
+		}
+	}
+
+	void FillAuthorsNamespace(int32_t count) RX_REQUIRES(!authorsMutex) {
 		int authorIdValue = 0;
 		{
 			reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -96,7 +114,7 @@ protected:
 			Upsert(authors_namespace, item);
 
 			{
-				std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
+				reindexer::unique_lock lck(authorsMutex);
 				authorsIds.push_back(authorIdValue);
 			}
 		}
@@ -108,7 +126,7 @@ protected:
 		Upsert(authors_namespace, bestItem);
 
 		{
-			std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
+			reindexer::unique_lock lck(authorsMutex);
 			if (std::find_if(authorsIds.begin(), authorsIds.end(), [this](int id) { return DostoevskyAuthorId == id; }) ==
 				authorsIds.end()) {
 				authorsIds.push_back(DostoevskyAuthorId);
@@ -127,7 +145,7 @@ protected:
 		ASSERT_EQ(removed, count);
 	}
 
-	void FillBooksNamespace(int32_t since, int32_t count) {
+	void FillBooksNamespace(int32_t since, int32_t count) RX_REQUIRES(!authorsMutex) {
 		int authorIdIdx = 0;
 		{
 			reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -161,14 +179,7 @@ protected:
 		json << "{" << addQuotes(bookid) << ":" << ++count << "," << addQuotes(title) << ":" << addQuotes("Crime and Punishment") << ","
 			 << addQuotes(pages) << ":" << 100500 << "," << addQuotes(price) << ":" << 5000 << "," << addQuotes(authorid_fk) << ":"
 			 << DostoevskyAuthorId << "," << addQuotes(genreId_fk) << ":" << 4 << "," << addQuotes(rating) << ":" << 100 << "}";
-		Item bestItem = NewItem(books_namespace);
-		ASSERT_TRUE(bestItem.Status().ok()) << bestItem.Status().what();
-
-		Error err = bestItem.FromJSON(json.str());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->Upsert(books_namespace, bestItem);
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.UpsertJSON(books_namespace, json.str());
 	}
 
 	void FillGenresNamespace() {
@@ -216,7 +227,7 @@ protected:
 				parser.Parse(reindexer::giftStr(wrSer.Slice()));
 			}
 		} catch (const gason::Exception& ex) {
-			return Error(errParseJson, "VerifyResJSON: %s", ex.what());
+			return Error(errParseJson, "VerifyResJSON: {}", ex.what());
 		}
 		return err;
 	}
@@ -227,16 +238,17 @@ protected:
 			std::cout << "ROW: " << item.GetJSON() << std::endl;
 
 			int idx = 1;
-			auto itemIt = rowIt.GetJoined();
-			for (auto joinedFieldIt = itemIt.begin(); joinedFieldIt != itemIt.end(); ++joinedFieldIt) {
+			auto itemItCtx = rowIt.GetJoinedContext();
+			auto& itemIt = itemItCtx.iterator;
+			for (auto joinedFieldIt = itemIt.Begin(); joinedFieldIt != itemIt.End(); ++joinedFieldIt) {
 				std::cout << "JOINED: " << idx << std::endl;
-				for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
-					reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, qr.GetPayloadType(1), qr.GetTagsMatcher(1)));
+				for (auto it : joinedFieldIt.ToQueryResults(itemItCtx)) {
+					auto joinItem(it.GetItem());
 					std::cout << joinItem.GetJSON() << std::endl;
 				}
 				std::cout << std::endl;
 				++idx;
-				if (itemIt.getJoinedFieldsCount() > 1) {
+				if (itemIt.GetFieldsCount() > 1) {
 					std::cout << std::endl;
 				}
 			}
@@ -251,13 +263,10 @@ protected:
 			QueryResultRow& resultRow = testRes[bookId];
 
 			FillQueryResultFromItem(item, resultRow);
-			auto itemIt = rowIt.GetJoined();
-			auto joinedFieldIt = itemIt.begin();
-			LocalQueryResults jres = joinedFieldIt.ToQueryResults();
-			auto& lqr = qr.ToLocalQr();
-			jres.addNSContext(lqr.getPayloadType(1), lqr.getTagsMatcher(1), lqr.getFieldsFilter(1), lqr.getSchema(1), reindexer::lsn_t());
-			for (auto it : jres) {
-				Item joinedItem = it.GetItem(false);
+			auto joinedItemCtx{rowIt.GetJoinedContext()};
+			auto joinedFieldIt{joinedItemCtx.iterator.Begin()};
+			for (auto it : joinedFieldIt.ToQueryResults(joinedItemCtx)) {
+				Item joinedItem{it.GetItem(false)};
 				FillQueryResultFromItem(joinedItem, resultRow);
 			}
 		}
@@ -306,8 +315,6 @@ protected:
 		auto ns = nsArray.Object();
 		ns.Put("namespace", nsName.c_str());
 		ns.Put("log_level", "none");
-		ns.Put("lazyload", false);
-		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "off");
 		ns.Put("start_copy_policy_tx_size", 10000);
 		ns.Put("optimization_timeout_ms", optimizationTimeout);
@@ -315,13 +322,7 @@ protected:
 		nsArray.End();
 		jb.End();
 
-		auto item = rt.NewItem(config_namespace);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-		auto err = item.FromJSON(ser.Slice());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		rt.Upsert(config_namespace, item);
+		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
 
 	void TurnOnJoinCache(const std::string& nsName) {
@@ -333,21 +334,13 @@ protected:
 		auto ns = nsArray.Object();
 		ns.Put("namespace", nsName.c_str());
 		ns.Put("log_level", "none");
-		ns.Put("lazyload", false);
-		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "on");
 		ns.Put("start_copy_policy_tx_size", 10000);
 		ns.End();
 		nsArray.End();
 		jb.End();
 
-		auto item = rt.NewItem(config_namespace);
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-		auto err = item.FromJSON(ser.Slice());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		rt.Upsert(config_namespace, item);
+		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
 
 	void CheckJoinsInComplexWhereCondition(const QueryResults& qr) {
@@ -359,18 +352,18 @@ protected:
 
 			bool joinsBracketConditionsResult = false;
 			if ((static_cast<int>(priceFieldValue) >= 1000) && (static_cast<int>(priceFieldValue) <= 2000)) {
-				auto jitemIt = it.GetJoined();
-				auto authorNsFieldIt = jitemIt.at(0);
-				auto genreNsFieldIt = jitemIt.at(1);
-				if (authorNsFieldIt != jitemIt.end() && genreNsFieldIt != jitemIt.end() &&
+				auto jitemItCtx = it.GetJoinedContext();
+				auto& jitemIt = jitemItCtx.iterator;
+				auto authorNsFieldIt = jitemIt.At(0);
+				auto genreNsFieldIt = jitemIt.At(1);
+				if (authorNsFieldIt != jitemIt.End() && genreNsFieldIt != jitemIt.End() &&
 					(authorNsFieldIt.ItemsCount() > 0 || genreNsFieldIt.ItemsCount() > 0)) {
 					if (authorNsFieldIt.ItemsCount() > 0) {
 						Variant authorIdFieldValue = item[authorid_fk];
 						EXPECT_TRUE((static_cast<int>(authorIdFieldValue) >= 10) && (static_cast<int>(authorIdFieldValue) <= 25));
-						for (int i = 0; i < authorNsFieldIt.ItemsCount(); ++i) {
-							reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.GetPayloadType(1), qr.GetTagsMatcher(1));
-							Variant authorIdFkFieldValue = itemimpl.GetField(qr.GetPayloadType(1).FieldByName(authorid));
-							EXPECT_TRUE(authorIdFieldValue == authorIdFkFieldValue);
+						for (auto it : authorNsFieldIt.ToQueryResults(jitemItCtx)) {
+							auto item{it.GetItem()};
+							EXPECT_TRUE(authorIdFieldValue == Variant{item[authorid]});
 						}
 					}
 					if (genreNsFieldIt.ItemsCount() > 0) {
@@ -390,17 +383,17 @@ protected:
 			const bool pagesConditionResult = (static_cast<int>(pagesFieldValue) == 0);
 
 			bool joinsNoBracketConditionsResult = false;
-			auto jitemIt = it.GetJoined();
-			auto authorNsFieldIt = jitemIt.at(2);
-			if ((authorNsFieldIt != jitemIt.end() ||
-				 ((authorNsFieldIt = jitemIt.at(0)) != jitemIt.end() && jitemIt.at(1) == jitemIt.end())) &&
+			auto jitemItCtx = it.GetJoinedContext();
+			auto& jitemIt = jitemItCtx.iterator;
+			auto authorNsFieldIt = jitemIt.At(2);
+			if ((authorNsFieldIt != jitemIt.End() ||
+				 ((authorNsFieldIt = jitemIt.At(0)) != jitemIt.End() && jitemIt.At(1) == jitemIt.End())) &&
 				authorNsFieldIt.ItemsCount() > 0) {
 				Variant authorIdFieldValue = item[authorid_fk];
 				EXPECT_TRUE((static_cast<int>(authorIdFieldValue) >= 300) && (static_cast<int>(authorIdFieldValue) <= 400));
-				for (int i = 0; i < authorNsFieldIt.ItemsCount(); ++i) {
-					reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.GetPayloadType(3), qr.GetTagsMatcher(3));
-					Variant authorIdFkFieldValue = itemimpl.GetField(qr.GetPayloadType(3).FieldByName(authorid));
-					EXPECT_TRUE(authorIdFieldValue == authorIdFkFieldValue);
+				for (auto it : authorNsFieldIt.ToQueryResults(jitemItCtx)) {
+					auto item{it.GetItem()};
+					EXPECT_TRUE(authorIdFieldValue == Variant{item[authorid]});
 				}
 				joinsNoBracketConditionsResult = true;
 			}
@@ -411,7 +404,7 @@ protected:
 	void ValidateQueryError(std::string_view sql, ErrorCode expectedCode, std::string_view expectedText) {
 		{
 			QueryResults qr;
-			auto err = rt.reindexer->Select(sql, qr);
+			auto err = rt.reindexer->ExecSQL(sql, qr);
 			EXPECT_EQ(err.code(), expectedCode) << sql;
 			EXPECT_EQ(err.what(), expectedText) << sql;
 		}
@@ -426,7 +419,7 @@ protected:
 	void ValidateQueryThrow(std::string_view sql, ErrorCode expectedCode, std::string_view expectedRegex) {
 		QueryResults qr;
 		{
-			auto err = rt.reindexer->Select(sql, qr);
+			auto err = rt.reindexer->ExecSQL(sql, qr);
 			EXPECT_EQ(err.code(), expectedCode) << sql;
 			EXPECT_THAT(err.what(), testing::ContainsRegex(expectedRegex)) << sql;
 		}
@@ -442,7 +435,7 @@ protected:
 	}
 
 	void SetQueriesCacheHitsCount(unsigned hitsCount) {
-		auto q = reindexer::Query("#config")
+		auto q = reindexer::Query(reindexer::kConfigNamespace)
 					 .Set("namespaces.cache.query_count_hit_to_cache", int64_t(hitsCount))
 					 .Where("type", CondEq, "namespaces");
 		auto updated = Update(q);
@@ -466,6 +459,10 @@ protected:
 	const char* code = "code";
 	const char* locationid = "locationid";
 	const char* locationid_fk = "locationid_fk";
+	const char* countryid_fk = "countryid_fk";
+	const char* countryid = "countryid";
+	const char* countryName = "country_name";
+	const char* countryCode = "country_code";
 
 	const int DostoevskyAuthorId = 111777;
 
@@ -474,9 +471,9 @@ protected:
 	const std::string authors_namespace = "authors_namespace";
 	const std::string genres_namespace = "genres_namespace";
 	const std::string location_namespace = "location_namespace";
-	const std::string config_namespace = "#config";
+	const std::string countries_namespace = "countries_namespace";
 
-	struct Genre {
+	struct [[nodiscard]] Genre {
 		int id;
 		std::string name;
 	};
@@ -485,7 +482,7 @@ protected:
 	std::vector<Genre> genres;
 
 	// clang-format off
-	const std::vector<std::string> locations = {
+	const std::vector<std::string_view> locations = {
 		"Москва",
 		"Тамбов",
 		"Казань",
@@ -495,16 +492,34 @@ protected:
 		"Минск",
 		"Киев",
 		"Бердянск",
-		"Армянск",
+		"Новочеркасск",
 		"Грозный",
 		"Amsterdam",
 		"Paris",
 		"Berlin",
 		"New York",
 		"Rotterdam",
-		"Киевской шоссе 22"
+		"Калининград",
+		"Томск",
+		"Новосибирск",
+		"Londonderry",
+		"Belfast",
+		"Dublin",
+	};
+
+	const std::vector<std::string_view> countries = {
+		"Страна Северная",
+		"Страна Южная",
+		"Страна Западная",
+		"Страна Восточная",
+		"Страна Жаркая",
+		"Страна Холодная",
+		"Страна Развивающаяся",
+		"Страна Процветающая",
 	};
 	// clang-format on
 
 	reindexer::shared_timed_mutex authorsMutex;
 };
+
+}  // namespace reindexer_tests
