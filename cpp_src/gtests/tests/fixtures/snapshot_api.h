@@ -4,6 +4,7 @@
 #include "client/snapshot.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/namespace/snapshot/snapshot.h"
+#include "core/query/query.h"
 #include "core/system_ns_names.h"
 #include "rpcclient_api.h"
 #include "vendor/gason/gason.h"
@@ -15,7 +16,7 @@ protected:
 	struct [[nodiscard]] NsDataState {
 		lsn_t lsn;
 		lsn_t nsVersion;
-		uint64_t dataHash = 0;
+		uint64_t checksum = 0;
 		int64_t dataCount = 0;
 	};
 
@@ -126,9 +127,9 @@ protected:
 
 	template <typename RxT>
 	NsDataState GetNsDataState(RxT& rx, const std::string& ns) {
-		Query qr = Query(kMemStatsNamespace).Where("name", CondEq, ns);
+		Query q = Query(kMemStatsNamespace).Where("name", CondEq, ns);
 		typename RxT::QueryResultsT res;
-		auto err = rx.Select(qr, res);
+		auto err = rx.Select(q, res);
 		EXPECT_TRUE(err.ok()) << err.what();
 		NsDataState state;
 		for (auto it : res) {
@@ -140,7 +141,7 @@ protected:
 			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
 			state.lsn.FromJSON(root["replication"]["last_lsn_v2"]);
 			state.dataCount = root["replication"]["data_count"].As<int64_t>();
-			state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
+			state.checksum = root["replication"]["checksum"].As<uint64_t>();
 		}
 		return state;
 	}
@@ -163,7 +164,7 @@ protected:
 	void CompareData(reindexer::client::CoroReindexer& rxClient, reindexer::Reindexer& localRx) {
 		auto remoteState = GetNsDataState(rxClient, kNsName);
 		auto localState = GetNsDataState(localRx, kNsName);
-		EXPECT_EQ(remoteState.dataHash, localState.dataHash);
+		EXPECT_EQ(remoteState.checksum, localState.checksum);
 		EXPECT_EQ(remoteState.dataCount, localState.dataCount);
 		EXPECT_EQ(remoteState.lsn, localState.lsn);
 		EXPECT_EQ(remoteState.nsVersion, localState.nsVersion);

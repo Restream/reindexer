@@ -71,11 +71,21 @@ protected:
 TEST_F(NestedJoinRegressionApi, NestedLogicalOrDoesNotDropWholeParentBatch) {
 	PrepareThreeLevelData();
 
-	Query middle = Query(kMiddleNs).Where("id", CondEq, 11).OrInnerJoin("leaf_key", "id", CondEq, Query(kLeafNs).Where("kind", CondEq, 1));
-	Query query = Query(kRootNs).InnerJoin("join_key", "outer_key", CondEq, std::move(middle));
+	Query middle =
+		Query(kMiddleNs).Where("id", CondEq, 11).Or().InnerJoin(Query(kLeafNs).Where("kind", CondEq, 1), "leaf_key", CondEq, "id");
+	Query query = Query(kRootNs).InnerJoin(std::move(middle), "join_key", CondEq, "outer_key");
 
 	auto qr = rt.Select(query);
 	EXPECT_EQ(JoinedMiddleIds(qr), (std::set<int>{10, 11}));
+}
+
+TEST_F(NestedJoinRegressionApi, EmptyMergeResultKeepsJoinNamespaceContexts) {
+	PrepareThreeLevelData();
+
+	Query query = Query(kRootNs).InnerJoin(Query(kMiddleNs), "join_key", CondEq, "outer_key").Merge(Query(kLeafNs)).Limit(0);
+	auto qr = rt.Select(query);
+	EXPECT_EQ(qr.Count(), 0);
+	EXPECT_EQ(qr.GetNamespacesCount(), 3);
 }
 
 // Both queries have the same middle WHERE/ON part, but their nested predicates
@@ -87,8 +97,8 @@ TEST_F(NestedJoinRegressionApi, JoinCacheKeyIncludesNestedQueryTree) {
 	AwaitIndexOptimization(kMiddleNs);
 
 	auto selectForLeafKind = [this](int kind) {
-		Query middle = Query(kMiddleNs).InnerJoin("leaf_key", "id", CondEq, Query(kLeafNs).Where("kind", CondEq, kind));
-		return rt.Select(Query(kRootNs).InnerJoin("join_key", "outer_key", CondEq, std::move(middle)));
+		Query middle = Query(kMiddleNs).InnerJoin(Query(kLeafNs).Where("kind", CondEq, kind), "leaf_key", CondEq, "id");
+		return rt.Select(Query(kRootNs).InnerJoin(std::move(middle), "join_key", CondEq, "outer_key"));
 	};
 
 	auto kind1 = selectForLeafKind(1);
@@ -102,16 +112,16 @@ TEST_F(NestedJoinRegressionApi, JoinCacheKeyIncludesNestedQueryTree) {
 }
 
 TEST(NestedJoinRegression, MutableQueryOptionsReachEveryJoinDepth) {
-	Query level1 = Query("nested_options_level_1").InnerJoin("child_id", "id", CondEq, Query("nested_options_level_2"));
-	Query root = Query("nested_options_root").InnerJoin("child_id", "id", CondEq, std::move(level1));
+	Query level1 = Query("nested_options_level_1").InnerJoin(Query("nested_options_level_2"), "child_id", CondEq, "id");
+	Query root = Query("nested_options_root").InnerJoin(std::move(level1), "child_id", CondEq, "id");
 
 	root.Explain().Debug(3).Strict(StrictModeNames);
-	ASSERT_EQ(root.GetJoinQueries().size(), 1);
-	ASSERT_EQ(root.GetJoinQueries()[0].GetJoinQueries().size(), 1);
-	const Query& deepest = root.GetJoinQueries()[0].GetJoinQueries()[0];
-	EXPECT_TRUE(deepest.NeedExplain());
-	EXPECT_EQ(deepest.GetDebugLevel(), 3);
-	EXPECT_EQ(deepest.GetStrictMode(), StrictModeNames);
+	ASSERT_EQ(Impl(root).JoinQueries().size(), 1);
+	ASSERT_EQ(Impl(Impl(root).JoinQueries()[0]).JoinQueries().size(), 1);
+	const Query& deepest = Impl(Impl(root).JoinQueries()[0]).JoinQueries()[0];
+	EXPECT_TRUE(Impl(deepest).NeedExplain());
+	EXPECT_EQ(Impl(deepest).DebugLevel(), 3);
+	EXPECT_EQ(Impl(deepest).GetStrictMode(), StrictModeNames);
 }
 
 TEST(NestedJoinRegression, JoinedItemsCountIsNotTruncatedAtUint16Boundary) {
@@ -132,19 +142,19 @@ TEST(NestedJoinRegression, JoinedItemsCountIsNotTruncatedAtUint16Boundary) {
 // QueryFormatV1 has no recursive framing for joins. A client must either reject
 // a nested query during serialization or produce bytes which preserve the tree.
 TEST(NestedJoinRegression, QueryFormatV1DoesNotSilentlyFlattenNestedJoin) {
-	Query level1 = Query("nested_v1_level_1").InnerJoin("child_id", "id", CondEq, Query("nested_v1_level_2"));
-	Query root = Query("nested_v1_root").InnerJoin("child_id", "id", CondEq, std::move(level1));
+	Query level1 = Query("nested_v1_level_1").InnerJoin(Query("nested_v1_level_2"), "child_id", CondEq, "id");
+	Query root = Query("nested_v1_root").InnerJoin(std::move(level1), "child_id", CondEq, "id");
 
 	WrSerializer wrser;
 	try {
-		root.Serialize(wrser, Normal, QueryFormatV1);
+		Impl(root).Serialize(wrser, Normal, QueryFormatV1);
 	} catch (const Error&) {
 		return;	 // Explicit rejection is a valid compatibility policy.
 	}
 
 	try {
 		Serializer ser(wrser.Buf(), wrser.Len());
-		const Query decoded = Query::Deserialize(ser, QueryFormatV1);
+		const Query decoded = QueryImpl::Deserialize(ser, QueryFormatV1);
 		EXPECT_EQ(decoded, root);
 	} catch (const Error& err) {
 		FAIL() << "V1 serialization succeeded, but its output cannot represent the nested query: " << err.what();
@@ -158,8 +168,8 @@ TEST_F(ShardingApi, NestedJoinRequiresShardKeyAtEveryLevel) {
 	const auto rx = getNode(0)->api.reindexer;
 
 	Query deepest{default_namespace};  // Sharded namespace without its shard key.
-	Query middle = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").InnerJoin(kFieldId, kFieldId, CondEq, std::move(deepest));
-	Query root = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").InnerJoin(kFieldId, kFieldId, CondEq, std::move(middle));
+	Query middle = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").InnerJoin(std::move(deepest), kFieldId, CondEq, kFieldId);
+	Query root = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").InnerJoin(std::move(middle), kFieldId, CondEq, kFieldId);
 
 	client::QueryResults qr;
 	const Error err = rx->Select(root, qr);
@@ -263,8 +273,8 @@ TEST_F(NestedJoinRegressionApi, JoinLongCachePreservesNestedJoinedPayload) {
 	AwaitIndexOptimization(kMiddleNs);
 
 	auto runNestedSelect = [this] {
-		Query middle = Query(kMiddleNs).InnerJoin("leaf_key", "id", CondEq, Query(kLeafNs));
-		return rt.Select(Query(kRootNs).InnerJoin("join_key", "outer_key", CondEq, std::move(middle)));
+		Query middle = Query(kMiddleNs).InnerJoin(Query(kLeafNs), "leaf_key", CondEq, "id");
+		return rt.Select(Query(kRootNs).InnerJoin(std::move(middle), "join_key", CondEq, "outer_key"));
 	};
 
 	const std::set<int> kExpectedMiddle{10, 11};
@@ -291,13 +301,13 @@ TEST_F(NestedJoinRegressionApi, NestedJoinSubqueryOffsetDoesNotAffectPerItemSele
 
 	{
 		Query middle = Query(kMiddleNs).Offset(2);
-		auto flat = rt.Select(Query(kRootNs).InnerJoin("join_key", "outer_key", CondEq, std::move(middle)));
+		auto flat = rt.Select(Query(kRootNs).InnerJoin(std::move(middle), "join_key", CondEq, "outer_key"));
 		ASSERT_EQ(flat.Count(), 1);
 		ASSERT_EQ(JoinedMiddleIds(flat), kExpectedMiddle) << "flat join must ignore subquery Offset in per-item Select";
 	}
 
-	Query middle = Query(kMiddleNs).Offset(2).InnerJoin("leaf_key", "id", CondEq, Query(kLeafNs));
-	auto nested = rt.Select(Query(kRootNs).InnerJoin("join_key", "outer_key", CondEq, std::move(middle)));
+	Query middle = Query(kMiddleNs).Offset(2).InnerJoin(Query(kLeafNs), "leaf_key", CondEq, "id");
+	auto nested = rt.Select(Query(kRootNs).InnerJoin(std::move(middle), "join_key", CondEq, "outer_key"));
 	ASSERT_EQ(nested.Count(), 1);
 	EXPECT_EQ(JoinedMiddleIds(nested), kExpectedMiddle) << "nested join must ignore subquery Offset in per-item Select "
 														   "(Offset currently leaks from JoinedQuery copy into itemQuery; "

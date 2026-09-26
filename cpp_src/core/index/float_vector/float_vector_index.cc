@@ -287,7 +287,7 @@ void FloatVectorIndex::SetOpts(const IndexOpts& opts) {
 }
 
 IndexPerfStat FloatVectorIndex::GetIndexPerfStat() {
-	IndexPerfStat stat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>());
+	IndexPerfStat stat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>(), cleanPerfCounter_.Get<PerfStat>());
 	if (!opts_.FloatVector().Embedding().has_value()) {
 		return stat;
 	}

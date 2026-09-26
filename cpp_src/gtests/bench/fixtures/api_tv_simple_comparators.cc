@@ -141,9 +141,8 @@ void ApiTvSimpleComparators::WarmUpIndexes(State& state) {
 void ApiTvSimpleComparators::GetByRangeIDAndSort(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		Query q(nsdef_.name);
-		q.Where("id", CondRange, {idRange.first, idRange.second}).Sort("age", false).Limit(20);
+		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
+		const auto q = Query(nsdef_.name).Where("id", CondRange, {idRange.first, idRange.second}).Sort("age", SortOrder::Asc).Limit(20);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -161,8 +160,7 @@ template <typename Total>
 void ApiTvSimpleComparators::QueryFlatArrayLenIndexed(State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where(reindexer::functions::FlatArrayLen{"packages"}, CondGe, 1).Limit(20);
+		auto q = Query(nsdef_.name).Where(reindexer::functions::FlatArrayLen{"packages"}, CondGe, 1).Limit(20);
 		Total::Apply(q);
 
 		QueryResults qres;
@@ -183,8 +181,7 @@ template void ApiTvSimpleComparators::QueryFlatArrayLenIndexed<BaseFixture::ReqT
 void ApiTvSimpleComparators::QueryDistinctOneField(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Distinct("year");
+		const auto q = Query(nsdef_.name).Distinct("year");
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
@@ -196,8 +193,7 @@ void ApiTvSimpleComparators::QueryDistinctOneField(benchmark::State& state) {
 void ApiTvSimpleComparators::QueryDistinctTwoField(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Distinct("year", "location");
+		const auto q = Query(nsdef_.name).Distinct("year", "location");
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
@@ -209,8 +205,7 @@ void ApiTvSimpleComparators::QueryDistinctTwoField(benchmark::State& state) {
 void ApiTvSimpleComparators::QueryDistinctTwoFieldArray(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Distinct("packages", "countries");
+		const auto q = Query(nsdef_.name).Distinct("packages", "countries");
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
@@ -222,8 +217,7 @@ void ApiTvSimpleComparators::QueryDistinctTwoFieldArray(benchmark::State& state)
 void ApiTvSimpleComparators::QueryDistinctOneFieldLimit(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Distinct("year").Limit(20);
+		const auto q = Query(nsdef_.name).Distinct("year").Limit(20);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
@@ -235,8 +229,7 @@ void ApiTvSimpleComparators::QueryDistinctOneFieldLimit(benchmark::State& state)
 void ApiTvSimpleComparators::QueryDistinctTwoFieldLimit(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Distinct("year", "location").Limit(20);
+		const auto q = Query(nsdef_.name).Distinct("year", "location").Limit(20);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
@@ -248,8 +241,7 @@ void ApiTvSimpleComparators::QueryDistinctTwoFieldLimit(benchmark::State& state)
 void ApiTvSimpleComparators::QueryDistinctTwoFieldArrayLimit(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Distinct("packages", "countries").Limit(20);
+		const auto q = Query(nsdef_.name).Distinct("packages", "countries").Limit(20);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {

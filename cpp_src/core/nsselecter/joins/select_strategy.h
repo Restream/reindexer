@@ -56,7 +56,7 @@ public:
 		assertrx_throw(preselectProps.maxIterationsIdSetPreSelect > PreSelect::MaxIterationsForValuesOptimization);
 		if (preSelect.storedValuesOptStatus == PreSelect::ValuesOptimizationStatus::Enabled &&
 			preselectProps.qresMaxIterations <= PreSelect::MaxIterationsForValuesOptimization) {
-			preSelect.payload.template emplace<PreSelect::Values>(ns_.payloadType_, ns_.tagsMatcher_);
+			preSelect.payload.template emplace<PreSelect::Values>(ns_.payloadType(), ns_.tagsMatcher());
 		} else {
 			preselectProps.isLimitExceeded = (preselectProps.qresMaxIterations >= preselectProps.maxIterationsIdSetPreSelect);
 			preselectProps.isUnorderedIndexSort =

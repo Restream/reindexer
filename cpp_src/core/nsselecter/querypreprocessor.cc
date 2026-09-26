@@ -5,17 +5,57 @@
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/selectiteratorcontainer.h"
 #include "core/payload/fieldsset.h"
-#include "core/query/dsl/dslencoder.h"
-#include "core/query/queryentry.h"
 #include "core/queryresults/localqueryresults.h"
 #include "core/sorting/sortexpression.h"
 #include "core/type_consts.h"
+#include "core/type_consts_helpers.h"
 #include "nsselecter.h"
 #include "qresexplainholder.h"
 #include "sorting_heuristics.h"
 #include "substitutionhelpers.h"
+#include "tools/timetools.h"
 
 namespace reindexer {
+
+namespace {
+
+const ExprField* getField(const expressions::ArithmeticExpression& expression) noexcept {
+	const ExprNode* root = expression.Ast().Root();
+	return root && root->Type() == ExprNodeType::Field ? static_cast<const ExprField*>(root) : nullptr;
+}
+
+const ExprNumber* getNumber(const expressions::ArithmeticExpression& expression) noexcept {
+	const ExprNode* root = expression.Ast().Root();
+	return root && root->Type() == ExprNodeType::Number ? static_cast<const ExprNumber*>(root) : nullptr;
+}
+
+std::optional<CondType> invertTrivialCondition(CondType condition) {
+	switch (condition) {
+		case CondEq:
+		case CondSet:
+			return condition;
+		case CondLt:
+			return CondGt;
+		case CondLe:
+			return CondGe;
+		case CondGt:
+			return CondLt;
+		case CondGe:
+			return CondLe;
+		case CondAny:
+		case CondEmpty:
+		case CondAllSet:
+		case CondRange:
+		case CondLike:
+		case CondDWithin:
+		case CondKnn:
+			return std::nullopt;
+	}
+	assertrx_throw(false);
+	return std::nullopt;
+}
+
+}  // namespace
 
 QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, NamespaceImpl* ns, const SelectCtx& ctx)
 	: QueryEntries(std::move(queries)),
@@ -29,13 +69,14 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, NamespaceImpl* ns, 
 	  start_(ctx.offset),
 	  count_(ctx.limit),
 	  floatVectorsHolder_(ctx.floatVectorsHolder) {
+	substituteTrivialArithmeticExpressions();
 	if (forcedSortOrder_ && (start_ > QueryEntry::kDefaultOffset || count_ < QueryEntry::kDefaultLimit)) {
 		assertrx_throw(!query_.GetSortingEntries().empty());
 		const auto& sEntry = query_.GetSortingEntries()[0];
 		if (SortExpression::Parse(sEntry.expression, std::span<const joins::ItemsProcessor>{}).ByField()) {
 			int indexNo = IndexValueType::NotSet;
 			std::ignore = ns_.tryGetIndexByNameOrJsonPath(sEntry.expression, indexNo);
-			if (indexNo < 0 || !ns_.indexes_[indexNo]->IsFulltext()) {
+			if (indexNo < 0 || !ns_.indexes()[indexNo]->IsFulltext()) {
 				VariantArray values;
 				values.reserve(query_.ForcedSortOrder().size());
 				for (const auto& v : query_.ForcedSortOrder()) {
@@ -55,6 +96,68 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries&& queries, NamespaceImpl* ns, 
 	}
 }
 
+void QueryPreprocessor::substituteTrivialArithmeticExpressions() { substituteTrivialArithmeticExpressions(0, Size()); }
+
+void QueryPreprocessor::substituteTrivialArithmeticExpressions(size_t from, size_t to) {
+	for (size_t i = from; i < to;) {
+		const size_t next = Next(i);
+		if (Is<QueryEntriesBracket>(i)) {
+			substituteTrivialArithmeticExpressions(i + 1, next);
+			i = next;
+			continue;
+		}
+		if (!Is<QueryArithmeticEntry>(i)) {
+			i = next;
+			continue;
+		}
+		const auto& entry = Get<QueryArithmeticEntry>(i);
+
+		const ExprField* leftExpressionField =
+			entry.GetLeftKind() == QueryArithmeticEntry::LeftKind::Arithmetic ? getField(entry.LeftExpr()) : nullptr;
+		const ExprNumber* leftExpressionNumber =
+			entry.GetLeftKind() == QueryArithmeticEntry::LeftKind::Arithmetic ? getNumber(entry.LeftExpr()) : nullptr;
+		const std::string_view leftField = entry.GetLeftKind() == QueryArithmeticEntry::LeftKind::Field
+											   ? std::string_view{entry.LeftField().FieldName()}
+											   : (leftExpressionField ? std::string_view{leftExpressionField->name} : std::string_view{});
+
+		const auto isCompositeIndex = [this](std::string_view name) {
+			int idxNo = 0;
+			return ns_.tryGetIndexByNameOrJsonPath(name, idxNo) && IsComposite(ns_.indexes()[idxNo]->Type());
+		};
+
+		if (entry.GetRightKind() == QueryArithmeticEntry::RightKind::Values) {
+			if (leftExpressionField && !isCompositeIndex(leftExpressionField->name)) {
+				std::ignore = SetValue(i, QueryEntry{leftExpressionField->name, entry.Condition(), entry.Values()});
+			}
+			i = next;
+			continue;
+		}
+
+		const ExprField* rightExpressionField =
+			entry.GetRightKind() == QueryArithmeticEntry::RightKind::Arithmetic ? getField(entry.RightExpr()) : nullptr;
+		const ExprNumber* rightExpressionNumber =
+			entry.GetRightKind() == QueryArithmeticEntry::RightKind::Arithmetic ? getNumber(entry.RightExpr()) : nullptr;
+		const std::string_view rightField =
+			entry.GetRightKind() == QueryArithmeticEntry::RightKind::Field
+				? std::string_view{entry.RightField().FieldName()}
+				: (rightExpressionField ? std::string_view{rightExpressionField->name} : std::string_view{});
+
+		const bool leftIsComposite = leftExpressionField && isCompositeIndex(leftExpressionField->name);
+		const bool rightIsComposite = rightExpressionField && isCompositeIndex(rightExpressionField->name);
+
+		if (!leftField.empty() && !rightField.empty() && entry.Condition() != CondAllSet && !leftIsComposite && !rightIsComposite) {
+			std::ignore = SetValue(i, BetweenFieldsQueryEntry{leftField, entry.Condition(), rightField});
+		} else if (!leftField.empty() && rightExpressionNumber && !leftIsComposite) {
+			std::ignore = SetValue(i, QueryEntry{leftField, entry.Condition(), VariantArray{rightExpressionNumber->value}});
+		} else if (leftExpressionNumber && !rightField.empty() && !rightIsComposite) {
+			if (const auto condition = invertTrivialCondition(entry.Condition())) {
+				std::ignore = SetValue(i, QueryEntry{rightField, *condition, VariantArray{leftExpressionNumber->value}});
+			}
+		}
+		i = next;
+	}
+}
+
 void QueryPreprocessor::ExcludeFtQuery(const RdxContext& rdxCtx) {
 	if (Size() <= 1 || HasForcedSortOptimizationQueryEntry()) {
 		return;
@@ -66,7 +169,7 @@ void QueryPreprocessor::ExcludeFtQuery(const RdxContext& rdxCtx) {
 			if (!qe.IsFieldIndexed() || qe.IsDistinctOnly()) {
 				continue;
 			}
-			const auto& index = ns_.indexes_[qe.IndexNo()];
+			const auto& index = ns_.indexes()[qe.IndexNo()];
 			if (!IsFullText(index->Type())) {
 				continue;
 			}
@@ -156,7 +259,7 @@ void QueryPreprocessor::checkAllowedCondition(const QueryField& field, CondType 
 	if (!field.IsFieldIndexed()) {
 		return;
 	}
-	if (ns_.indexes_[field.IndexNo()]->IsFloatVector() && ((cond != CondKnn) && (cond != CondAny) && (cond != CondEmpty))) {
+	if (ns_.indexes()[field.IndexNo()]->IsFloatVector() && ((cond != CondKnn) && (cond != CondAny) && (cond != CondEmpty))) {
 		throw Error{errParams, "Valid conditions for float vector index are KNN, Empty, Any; attempt to use '{}' on field '{}'",
 					CondTypeToStrShort(cond), field.FieldName()};
 	}
@@ -188,7 +291,7 @@ int QueryPreprocessor::calculateMaxIterations(size_t from, size_t to, int maxMax
 				},
 				[&](const QueryEntry& qe) {
 					if (qe.IndexNo() >= 0) {
-						Index& index = *ns_.indexes_[qe.IndexNo()];
+						Index& index = *ns_.indexes()[qe.IndexNo()];
 						if (IsFullText(index.Type()) || IsStore(index.Type())) {
 							return maxMaxIters;
 						}
@@ -222,7 +325,7 @@ int QueryPreprocessor::calculateMaxIterations(size_t from, size_t to, int maxMax
 					}
 				},
 				[maxMaxIters](const concepts::OneOf<BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue, KnnQueryEntry,
-													MultiDistinctQueryEntry, QueryFunctionEntry> auto&) noexcept {
+													MultiDistinctQueryEntry, QueryFunctionEntry, QueryArithmeticEntry> auto&) noexcept {
 					return maxMaxIters;
 				},	// TODO maybe change for knn
 				[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) -> int { throw_as_assert; },
@@ -320,9 +423,8 @@ bool QueryPreprocessor::containsJoin(size_t n) noexcept {
 	return Visit(
 		n, [](const JoinQueryEntry&) noexcept { return true; },
 		[](const concepts::OneOf<QueryEntry, BetweenFieldsQueryEntry, AlwaysTrue, AlwaysFalse, SubQueryEntry, SubQueryFieldEntry,
-								 KnnQueryEntry, MultiDistinctQueryEntry, QueryFunctionEntry, SubQueryFunctionEntry> auto&) noexcept {
-			return false;
-		},
+								 KnnQueryEntry, MultiDistinctQueryEntry, QueryFunctionEntry, QueryArithmeticEntry,
+								 SubQueryFunctionEntry> auto&) noexcept { return false; },
 		[&](const QueryEntriesBracket&) noexcept {
 			for (size_t i = n, e = Next(n); i < e; ++i) {
 				if (Is<JoinQueryEntry>(i)) {
@@ -482,7 +584,7 @@ QueryPreprocessor::Ranked QueryPreprocessor::GetQueryRankType() const {
 			const auto& qe = it->Value<QueryEntry>();
 			if (qe.IsFieldIndexed()) {
 				const int indexNo = qe.IndexNo();
-				if (ns_.indexes_[indexNo]->IsFulltext()) {
+				if (ns_.indexes()[indexNo]->IsFulltext()) {
 					if (qe.IsDistinctOnly()) {
 						// distinct() condition over fulltext field may be combined with anything
 						continue;
@@ -506,7 +608,7 @@ QueryPreprocessor::Ranked QueryPreprocessor::GetQueryRankType() const {
 						default:
 							throw_as_assert;
 					}
-				} else if (ns_.indexes_[indexNo]->IsFloatVector()) {
+				} else if (ns_.indexes()[indexNo]->IsFloatVector()) {
 					floatVectorDetected = true;
 					switch (result.queryRankType) {
 						case QueryRankType::FullText:
@@ -539,7 +641,7 @@ QueryPreprocessor::Ranked QueryPreprocessor::GetQueryRankType() const {
 					result = {QueryRankType::Hybrid, IndexValueType::NotSet};
 					break;
 				case QueryRankType::No:
-					result = {ns_.indexes_[indexNo]->RankedType(), indexNo};
+					result = {ns_.indexes()[indexNo]->RankedType(), indexNo};
 					break;
 				case QueryRankType::NotSet:
 				default:
@@ -551,7 +653,7 @@ QueryPreprocessor::Ranked QueryPreprocessor::GetQueryRankType() const {
 }
 
 const std::vector<int>* QueryPreprocessor::getCompositeIndex(int field) const noexcept {
-	if (auto f = ns_.indexesToComposites_.find(field); f != ns_.indexesToComposites_.end()) {
+	if (auto f = ns_.indexesToComposites().find(field); f != ns_.indexesToComposites().end()) {
 		return &f->second;
 	}
 	return nullptr;
@@ -608,8 +710,8 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 		}
 		auto& qe = Get<QueryEntry>(cur);
 		if ((qe.Condition() != CondEq && qe.Condition() != CondSet) || !qe.IsFieldIndexed() ||
-			qe.IndexNo() >= ns_.payloadType_.NumFields() || qe.ForcedSortOptEntry() || qe.Distinct() ||
-			ns_.indexes_[qe.IndexNo()]->IsFulltext() || ns_.indexes_[qe.IndexNo()]->IsFloatVector()) {
+			qe.IndexNo() >= ns_.payloadType().NumFields() || qe.ForcedSortOptEntry() || qe.Distinct() ||
+			ns_.indexes()[qe.IndexNo()]->IsFulltext() || ns_.indexes()[qe.IndexNo()]->IsFloatVector()) {
 			continue;
 		}
 
@@ -652,7 +754,7 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 			const int idxNo = qe.IndexNo();
 			if (qe.FieldType().Is<KeyValueType::String>()) {
 				for (auto& v : qe.Values()) {
-					if (v.DoHold()) {
+					if (v.OwnsHeap()) {
 						compositeStringsContainer_.emplace_back(v);
 					}
 				}
@@ -660,10 +762,10 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 			values.emplace_back(idxNo, std::move(qe).Values());
 		}
 		{
-			VariantArray qValues = createCompositeKeyValues(values, ns_.payloadType_, resultSetSize);
+			VariantArray qValues = createCompositeKeyValues(values, ns_.payloadType(), resultSetSize);
 			const auto first = res.entries.front();
 			SetOperation(OpAnd, first);
-			QueryField fld{ns_.indexes_[res.idx]->Name()};
+			QueryField fld{ns_.indexes()[res.idx]->Name()};
 			setQueryIndex(fld, res.idx, ns_);
 			container_[first].Emplace<QueryEntry>(std::move(fld), qValues.size() == 1 ? CondEq : CondSet, std::move(qValues));
 		}
@@ -687,15 +789,15 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 					for (auto& epField : equalPositions) {
 						int idxNo = NotSet;
 						if (ns_.tryGetIndexByNameOrJsonPath(epField, idxNo)) {
-							epField.assign(ns_.indexes_[idxNo]->Name());
+							epField.assign(ns_.indexes()[idxNo]->Name());
 						}
 					}
 				}
 				initIndexedQueries(cur + 1, Next(cur));
 			},
 			[this]([[maybe_unused]] JoinQueryEntry& entry) {
-				assertrx_throw(query_.GetJoinQueries().size() > entry.joinIndex &&
-							   query_.GetJoinQueries()[entry.joinIndex].joinType != LeftJoin);
+				assertrx_throw(query_.JoinQueries().size() > entry.joinIndex &&
+							   JoinedImpl(query_.JoinQueries()[entry.joinIndex]).GetJoinType() != LeftJoin);
 			},
 			[this](BetweenFieldsQueryEntry& entry) {
 				if (!entry.FieldsHaveBeenSet()) {
@@ -703,7 +805,7 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 					SetQueryField(entry.RightFieldData(), ns_);
 				}
 				auto throwOnFulltext = [this](const QueryField& qfield) {
-					if (qfield.IsFieldIndexed() && ns_.indexes_[qfield.IndexNo()]->IsFulltext()) {
+					if (qfield.IsFieldIndexed() && ns_.indexes()[qfield.IndexNo()]->IsFulltext()) {
 						throw Error(errQueryExec, "Can't use fulltext field '{}' in between fields condition", qfield.FieldName());
 					}
 				};
@@ -720,7 +822,7 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 				}
 				checkStrictMode(qe.FieldData());
 				checkAllowedCondition(qe.FieldData(), qe.Condition());
-				qe.ConvertValuesToFieldType(ns_.payloadType_);
+				qe.ConvertValuesToFieldType(ns_.payloadType());
 			},
 			[this](QueryFunctionEntry& qe) {
 				for (size_t i = 0; i < qe.Fields(); ++i) {
@@ -732,13 +834,39 @@ void QueryPreprocessor::initIndexedQueries(size_t begin, size_t end) {
 				}
 				if (qe.HasComparisonField()) {
 					SetQueryField(qe.ComparisonField(), ns_);
+					checkStrictMode(qe.ComparisonField());
+				}
+			},
+			[this](QueryArithmeticEntry& qe) {
+				const auto checkExpressionFields = [this](const expressions::ArithmeticExpression& expression) {
+					for (const std::string_view fieldName : expression.Ast().ReferencedFields()) {
+						QueryField field{fieldName};
+						SetQueryField(field, ns_);
+						checkStrictMode(field);
+					}
+				};
+				if (qe.GetLeftKind() == QueryArithmeticEntry::LeftKind::Field) {
+					if (!qe.LeftField().FieldsHaveBeenSet()) {
+						SetQueryField(qe.LeftField(), ns_);
+					}
+					checkStrictMode(qe.LeftField());
+				} else {
+					checkExpressionFields(qe.LeftExpr());
+				}
+				if (qe.GetRightKind() == QueryArithmeticEntry::RightKind::Field) {
+					if (!qe.RightField().FieldsHaveBeenSet()) {
+						SetQueryField(qe.RightField(), ns_);
+					}
+					checkStrictMode(qe.RightField());
+				} else if (qe.GetRightKind() == QueryArithmeticEntry::RightKind::Arithmetic) {
+					checkExpressionFields(qe.RightExpr());
 				}
 			},
 			[this](KnnQueryEntry& qe) {
 				if (!qe.FieldsHaveBeenSet()) {
 					int idxNo = NotSet;
 					if (ns_.tryGetIndexByNameOrJsonPath(qe.FieldName(), idxNo)) {
-						auto& idx = *ns_.indexes_[idxNo];
+						auto& idx = *ns_.indexes()[idxNo];
 						if (!idx.IsFloatVector()) {
 							throw Error{errParams, "KNN allowed only for float vector index; {} is not float vector index", qe.FieldName()};
 						}
@@ -755,10 +883,10 @@ SortingEntries QueryPreprocessor::detectOptimalSortOrder() const {
 	if (!AvailableSelectBySortIndex()) {
 		return {};
 	}
-	sorting_heuristics::NamespaceData nsData{.indexes = ns_.indexes_, .itemsCount = ns_.itemsCount()};
+	sorting_heuristics::NamespaceData nsData{.indexes = ns_.indexes(), .itemsCount = ns_.itemsCount()};
 	if (const Index* maxIdx = sorting_heuristics::AdviceSortingIndex(*this, nsData); maxIdx) {
 		SortingEntries sortingEntries;
-		sortingEntries.emplace_back(maxIdx->Name(), false);
+		sortingEntries.emplace_back(maxIdx->Name(), Desc_False);
 		return sortingEntries;
 	}
 	return {};
@@ -1532,30 +1660,31 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 	joins::PreSelect::CPtr preSelect = joinItemsProcessor.PreSelectResultPtr();
 	const auto& rNsCfg = rightNs.config();
 	if (rNsCfg.maxPreselectSize == 0) {
-		limit = std::max<int64_t>(rNsCfg.minPreselectSize, rightNs.itemsCount() * rNsCfg.maxPreselectPart);
+		limit = std::max<int64_t>(rNsCfg.minPreselectSize, static_cast<int64_t>(double(rightNs.itemsCount()) * rNsCfg.maxPreselectPart));
 	} else if (fp::IsZero(rNsCfg.maxPreselectPart)) {
 		limit = rNsCfg.maxPreselectSize;
 	} else {
-		limit =
-			std::min(std::max<int64_t>(rNsCfg.minPreselectSize, rightNs.itemsCount() * rNsCfg.maxPreselectPart), rNsCfg.maxPreselectSize);
+		limit = std::min(
+			std::max<int64_t>(rNsCfg.minPreselectSize, static_cast<int64_t>(double(rightNs.itemsCount()) * rNsCfg.maxPreselectPart)),
+			rNsCfg.maxPreselectSize);
 	}
 	constexpr unsigned kExtraLimit = 2;
 	if (limit < 0 || limit > (std::numeric_limits<unsigned>::max() - kExtraLimit)) {
 		limit = std::numeric_limits<unsigned>::max() - kExtraLimit;
 	}
-	joinQuery.Explain(query_.NeedExplain());
-	joinQuery.Limit(limit + kExtraLimit);
-	joinQuery.Offset(QueryEntry::kDefaultOffset);
-	joinQuery.ClearSorting();
+	auto joinQueryImpl = Impl(joinQuery);
+	joinQuery.Explain(query_.NeedExplain()).Limit(limit + kExtraLimit).Offset(QueryEntry::kDefaultOffset);
+	joinQueryImpl.ClearSorting();
 	if (preSelect->sortOrder.index) {
-		joinQuery.Sort(preSelect->sortOrder.sortingEntry.expression, *preSelect->sortOrder.sortingEntry.desc);
+		joinQuery.Sort(preSelect->sortOrder.sortingEntry.expression,
+					   preSelect->sortOrder.sortingEntry.desc ? SortOrder::Desc : SortOrder::Asc);
 	}
 
-	joinQuery.aggregations_.clear();
+	joinQueryImpl.ClearAggregations();
 	switch (condition) {
 		case CondEq:
 		case CondSet:
-			joinQuery.Distinct(joinEntry.RightFieldName());
+			joinQuery.Aggregate(AggDistinct, {joinEntry.RightFieldName()});
 			oAggType = AggType::AggDistinct;
 			break;
 		case CondLt:
@@ -1580,7 +1709,8 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 
 	LocalQueryResults qr;
 	Explain explain;
-	JoinSelectCtx ctx{joinQuery, nullptr, joins::PreSelectExecuteCtx{std::move(preSelect), mainQueryMaxIterations}, floatVectorsHolder_};
+	JoinSelectCtx ctx{Impl(joinQuery), std::nullopt, joins::PreSelectExecuteCtx{std::move(preSelect), mainQueryMaxIterations},
+					  floatVectorsHolder_};
 	ctx.nsid = nsid_;
 	ctx.joinItemsProcessors = joinItemsProcessor.childItemsProcessors();
 	ctx.explain = &explain;
@@ -1592,7 +1722,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 	assertrx_throw(qr.aggregationResults.size() == 1);
 	auto& aggRes = qr.aggregationResults[0];
 
-	if (joinQuery.NeedExplain()) {
+	if (joinQueryImpl.NeedExplain()) {
 		explainStr = explain.GetJSON();
 	}
 	switch (condition) {
@@ -1710,6 +1840,10 @@ size_t QueryPreprocessor::briefDump(size_t from, size_t to, std::span<JS> joinIt
 								 ser << qe.DumpBrief() << ' ';
 								 totalQeValues += qe.Values().size();
 							 },
+							 [&ser, &totalQeValues](const QueryArithmeticEntry& qe) {
+								 ser << qe.Dump() << ' ';
+								 totalQeValues += qe.Values().size();
+							 },
 							 [&joinItemsProcessors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinItemsProcessors) << ' '; },
 							 [&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << ' '; },
 							 [&ser](const AlwaysFalse&) { ser << "AlwaysFalse" << ' '; },
@@ -1734,8 +1868,8 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 	for (size_t cur = from; cur < to; cur = Next(cur)) {
 		container_[cur].Visit(
 			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { throw_as_assert; },
-			Skip<QueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry, MultiDistinctQueryEntry,
-				 QueryFunctionEntry>{},
+			Skip<QueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry, MultiDistinctQueryEntry, QueryFunctionEntry,
+				 QueryArithmeticEntry>{},
 			[&](const QueryEntriesBracket&) {
 				const size_t injCount =
 					insertConditionsFromJoins<ExplainPolicy>(cur + 1, Next(cur), js, explainOnInsertions, maxIterations[cur], maxIterations,
@@ -1748,6 +1882,8 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 				const auto joinIndex = jqe.joinIndex;
 				assertrx_throw(js.size() > joinIndex);
 				joins::ItemsProcessor& joinItemsProcessor = js[joinIndex];
+				ConstQueryImpl joinQueryImpl = Impl(*joinItemsProcessor.joinQuery_);
+				ConstQueryImpl itemQueryImpl = Impl(joinItemsProcessor.itemQuery_);
 				const joins::PreSelect& preSelect = joinItemsProcessor.PreSelectResults();
 				assertrx_throw(joinItemsProcessor.PreSelectStrategy() == joins::PreSelectMode::Execute);
 				const bool byValues = std::holds_alternative<joins::PreSelect::Values>(preSelect.payload);
@@ -1768,7 +1904,7 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 						return;
 					}
 				}
-				const auto& joinEntries = joinItemsProcessor.joinQuery_.joinEntries_;
+				const auto& joinEntries = joinItemsProcessor.joinQuery_.JoinEntries();
 				assertrx_throw(joinEntries.empty() || joinEntries.front().Operation() != OpOr);
 				// LeftJoin-s shall not be in QueryEntries container_ by construction
 				assertrx_throw(joinItemsProcessor.Type() == InnerJoin || joinItemsProcessor.Type() == OrInnerJoin);
@@ -1803,8 +1939,7 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 				++to;
 				++insertedCount;
 				size_t count = InsertConditionsFromOnConditions<JoinConditionInsertionDirection::IntoMain>(
-					cur, joinEntries, joinItemsProcessor.joinQuery_.Entries(), joinIndex,
-					byValues ? nullptr : &joinItemsProcessor.RightNs()->indexes_);
+					cur, joinEntries, joinQueryImpl.Entries(), joinIndex, byValues ? nullptr : &joinItemsProcessor.RightNs()->indexes());
 				initIndexedQueries(cur, cur + count);
 				cur += count;
 				to += count;
@@ -1872,13 +2007,13 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 					VariantArray values;
 					if (byValues) {
 						[[maybe_unused]] const size_t itemQueryEntryIdx{joinItemsProcessor.JoinEntryIndex(i)};
-						assertrx_throw(joinItemsProcessor.itemQuery_.Entries().Is<QueryEntry>(itemQueryEntryIdx));
-						assertrx_throw(joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(itemQueryEntryIdx).FieldName() ==
+						assertrx_throw(itemQueryImpl.Entries().Is<QueryEntry>(itemQueryEntryIdx));
+						assertrx_throw(itemQueryImpl.Entries().Get<QueryEntry>(itemQueryEntryIdx).FieldName() ==
 									   joinEntry.RightFieldName());
 						static const CollateOpts collate;
 						const CollateOpts* collatePtr = &collate;
 						if (joinEntry.IsLeftFieldIndexed()) {
-							collatePtr = &ns_.indexes_[joinEntry.LeftIdxNo()]->Opts().collateOpts_;
+							collatePtr = &ns_.indexes()[joinEntry.LeftIdxNo()]->Opts().collateOpts_;
 						}
 						std::tie(queryCondition, values) =
 							queryValuesFromOnCondition(condition, joinEntry, joinItemsProcessor, *collatePtr);
@@ -1898,9 +2033,8 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 							case CondLe:
 							case CondGt:
 							case CondGe: {
-								const auto& qe =
-									joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(joinItemsProcessor.JoinEntryIndex(i));
-								if (qe.IsFieldIndexed() && IsFullText(joinItemsProcessor.RightNs()->indexes_[qe.IndexNo()]->Type())) {
+								const auto& qe = itemQueryImpl.Entries().Get<QueryEntry>(joinItemsProcessor.JoinEntryIndex(i));
+								if (qe.IsFieldIndexed() && IsFullText(joinItemsProcessor.RightNs()->indexes()[qe.IndexNo()]->Type())) {
 									skip = true;
 									explainEntry.Skipped("Skipped due to condition Lt|Le|Gt|Ge|Range with fulltext index"sv);
 									break;
@@ -1922,9 +2056,8 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 							case CondEq:
 							case CondSet:
 							case CondAllSet: {
-								const auto& qe =
-									joinItemsProcessor.itemQuery_.Entries().Get<QueryEntry>(joinItemsProcessor.JoinEntryIndex(i));
-								if (qe.IsFieldIndexed() && IsFullText(joinItemsProcessor.RightNs()->indexes_[qe.IndexNo()]->Type())) {
+								const auto& qe = itemQueryImpl.Entries().Get<QueryEntry>(joinItemsProcessor.JoinEntryIndex(i));
+								if (qe.IsFieldIndexed() && IsFullText(joinItemsProcessor.RightNs()->indexes()[qe.IndexNo()]->Type())) {
 									skip = true;
 									explainEntry.Skipped("Skipped due to condition Eq|Set|AllSet with fulltext index"sv);
 									break;
@@ -1949,7 +2082,7 @@ size_t QueryPreprocessor::insertConditionsFromJoins(const size_t from, size_t to
 								(!std::holds_alternative<SelectIteratorContainer>(preSelect.payload)
 									 ? queryValuesFromOnCondition(explainSelect, selectAggType, Query{joinItemsProcessor.RightNsName()},
 																  joinItemsProcessor, joinEntry, condition, embracedMaxIterations, rdxCtx)
-									 : queryValuesFromOnCondition(explainSelect, selectAggType, joinItemsProcessor.JoinQuery(),
+									 : queryValuesFromOnCondition(explainSelect, selectAggType, *joinItemsProcessor.JoinQuery(),
 																  joinItemsProcessor, joinEntry, condition, embracedMaxIterations, rdxCtx));
 
 							explainEntry.ExplainSelect(std::move(explainSelect), selectAggType);
@@ -2114,9 +2247,9 @@ private:
 };
 
 void QueryPreprocessor::setQueryIndex(QueryField& qField, int idxNo, const NamespaceImpl& ns) {
-	const auto& idx = *ns.indexes_[idxNo];
+	const auto& idx = *ns.indexes()[idxNo];
 	QueryField::CompositeTypesVecT compositeFieldsTypes;
-	if (idxNo >= ns.indexes_.firstCompositePos()) {
+	if (idxNo >= ns.indexes().firstCompositePos()) {
 #ifndef NDEBUG
 		const bool ftIdx = IsFullText(idx.Type());
 #endif
@@ -2124,8 +2257,8 @@ void QueryPreprocessor::setQueryIndex(QueryField& qField, int idxNo, const Names
 		compositeFieldsTypes.reserve(fields.size());
 		for (const auto f : fields) {
 			if (f != IndexValueType::SetByJsonPath) [[likely]] {
-				assertrx_throw(f <= ns.indexes_.firstCompositePos());
-				compositeFieldsTypes.emplace_back(ns.indexes_[f]->SelectKeyType());
+				assertrx_throw(f <= ns.indexes().firstCompositePos());
+				compositeFieldsTypes.emplace_back(ns.indexes()[f]->SelectKeyType());
 			} else {
 				// not indexed fields allowed only in ft composite indexes
 				assertrx_throw(ftIdx);
@@ -2141,16 +2274,16 @@ void QueryPreprocessor::SetQueryField(QueryField& qField, const NamespaceImpl& n
 	if (ns.tryGetIndexByNameOrJsonPath(qField.FieldName(), idxNo)) {
 		setQueryIndex(qField, idxNo, ns);
 	} else {
-		qField.SetField({ns.tagsMatcher_.path2tag(qField.FieldName())});
+		qField.SetField({ns.tagsMatcher().path2tag(qField.FieldName())});
 	}
 }
 
 void QueryPreprocessor::VerifyOnStatementField(const QueryField& qField, const NamespaceImpl& ns, StrictMode strictMode) {
 	if (qField.IsFieldIndexed()) {
-		if (ns.indexes_[qField.IndexNo()]->IsFloatVector()) [[unlikely]] {
+		if (ns.indexes()[qField.IndexNo()]->IsFloatVector()) [[unlikely]] {
 			throw Error(errParams, "Float vector indexes are not allowed in ON statement: {}", qField.FieldName());
 		}
-		if (ns.indexes_[qField.IndexNo()]->IsFulltext()) [[unlikely]] {
+		if (ns.indexes()[qField.IndexNo()]->IsFulltext()) [[unlikely]] {
 			throw Error(errParams, "Fulltext indexes are not allowed in ON statement: {}", qField.FieldName());
 		}
 		return;
@@ -2158,7 +2291,7 @@ void QueryPreprocessor::VerifyOnStatementField(const QueryField& qField, const N
 	if (strictMode == StrictModeIndexes) [[unlikely]] {
 		throw Error(errStrictMode, "Current query strict mode allows using only indexed fields in ON statement: {}", qField.FieldName());
 	} else if (strictMode == StrictModeNames) {
-		if (ns.tagsMatcher_.path2tag(qField.FieldName()).empty()) [[unlikely]] {
+		if (ns.tagsMatcher().path2tag(qField.FieldName()).empty()) [[unlikely]] {
 			throw Error(errStrictMode, "Current query strict mode allows using only existing fields in ON statement: {}",
 						qField.FieldName());
 		}

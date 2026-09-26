@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "aggregator.h"
 #include "core/enums.h"
 #include "core/index/ft_preselect.h"
@@ -59,6 +60,7 @@ public:
 	int CalculateMaxIterationsForStreamingKnn(bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx) const;
 	bool MoreThanOneEvaluation() const noexcept { return HasForcedSortOptimizationQueryEntry(); }
 	bool AvailableSelectBySortIndex() const noexcept { return !HasForcedSortOptimizationQueryEntry() || !forcedStage(); }
+	std::optional<int64_t> ExecutionNowNsec() const noexcept { return query_.ExecutionNowNsec(); }
 	void InsertConditionsFromJoins(std::span<joins::ItemsProcessor> js, OnConditionInsertions& explainOnInsertions, LogLevel,
 								   bool inTransaction, bool enableSortOrders, const RdxContext& rdxCtx);
 	void Reduce();
@@ -105,6 +107,8 @@ private:
 	enum class [[nodiscard]] NeedSwitch : bool { Yes = true, No = false };
 	enum class [[nodiscard]] MergeOrdered : bool { Yes = true, No = false };
 
+	void substituteTrivialArithmeticExpressions();
+	void substituteTrivialArithmeticExpressions(size_t from, size_t to);
 	static void setQueryIndex(QueryField&, int idxNo, const NamespaceImpl&);
 	SortingEntries detectOptimalSortOrder() const;
 	bool forcedStage() const noexcept {
@@ -178,7 +182,7 @@ private:
 
 	NamespaceImpl& ns_;
 	const int nsid_;
-	const Query& query_;
+	ConstQueryImpl query_;
 	StrictMode strictMode_;
 	Desc desc_ = Desc_False;
 	bool forcedSortOrder_ = false;

@@ -2,6 +2,7 @@
 #include <unordered_set>
 #include "cluster/stats/replicationstats.h"
 #include "core/formatters/uuid_fmt.h"
+#include "core/namespace/system_index_names.h"
 #include "replication_load_api.h"
 #include "wal/walrecord.h"
 
@@ -247,19 +248,17 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 	InitNs();
 
 	const std::string nsName("some");
-	auto master = GetSrv(masterId_)->api.reindexer;
+	auto& master = GetSrv(masterId_)->api;
 	// Check new wal size with empty namespace
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 1000, nsName));
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(0)), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(0)), qr);
 		EXPECT_EQ(qr.Count(), 4);
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(2)), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(2)), qr);
 		EXPECT_EQ(qr.Count(), 2);
 	}
 
@@ -272,24 +271,22 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(0)), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(0)), qr);
 		EXPECT_EQ(qr.Count(), 504);
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(503)), qr);
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(504)), qr);
+		Error err = master.SelectErr(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(504)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
 	{
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(404)), qrLast100_1);
+		Error err = master.SelectErr(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(404)), qrLast100_1);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qrLast100_1.Count(), 100);
 	}
@@ -297,23 +294,21 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 100, nsName));
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(403)), qr);
+		Error err = master.SelectErr(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(403)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 	}
 	{
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(404)), qrLast100_2);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(404)), qrLast100_2);
 		EXPECT_EQ(qrLast100_2.Count(), 100);
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(503)), qr);
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(504)), qr);
+		Error err = master.SelectErr(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(504)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
@@ -321,24 +316,22 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 2000, nsName));
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(403)), qr);
+		Error err = master.SelectErr(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(403)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
 	{
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(404)), qrLast100_3);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(404)), qrLast100_3);
 		EXPECT_EQ(qrLast100_3.Count(), 100);
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(503)), qr);
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(504)), qr);
+		Error err = master.SelectErr(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(504)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
@@ -378,18 +371,17 @@ TEST_F(ReplicationLoadApi, WALResizeDynamicData) {
 	FillData(500);
 
 	// Check case, when new wal size is less, than actual records count
-	auto master = GetSrv(masterId_)->api.reindexer;
+	auto& master = GetSrv(masterId_)->api;
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 100, nsName));
 	FillData(50);
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(453)), qr);
+		Error err = master.SelectErr(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(453)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(454)), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(454)), qr);
 		EXPECT_EQ(qr.Count(), 100);
 	}
 	// Check case, when new wal size is larger, than actual records count, and records count exceeds wal size after setting
@@ -397,25 +389,23 @@ TEST_F(ReplicationLoadApi, WALResizeDynamicData) {
 	FillData(500);
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(853)), qr);
+		Error err = master.SelectErr(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(853)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(854)), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(854)), qr);
 		EXPECT_EQ(qr.Count(), 200);
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(1053)), qr);
-		EXPECT_TRUE(err.ok()) << err.what();
+		master.Select(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(1053)), qr);
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
 		BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(1054)), qr);
+		Error err = master.SelectErr(Query(nsName).Where(kLsnIndexName, CondGt, int64_t(1054)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
@@ -445,7 +435,7 @@ TEST_F(ReplicationLoadApi, ConfigReadingOnStartup) {
 					"server_id: 4\n"
 					"cluster_id: 2\n");
 	StartServer(kTestServerID);
-	AsyncReplicationConfigTest config("none", {}, true, false, 4, "node_XXX", {}, "default", 200);
+	AsyncReplicationConfigTest config("none", {}, true, false, 4, "node_XXX", {}, "default", 200, 3000);
 	CheckReplicationConfigNamespace(kTestServerID, config);
 }
 
@@ -544,7 +534,7 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 									  "server_id: 3\n"
 									  "cluster_id: 2\n");
 	// Validate config file
-	AsyncReplicationConfigTest config("none", {}, true, false, 3, "node_1", {}, "default");
+	AsyncReplicationConfigTest config("none", {}, true, false, 3, "node_1", {}, "default", 100, 3000);
 	CheckReplicationConfigNamespace(kTestServerID, config);
 
 	config =
@@ -592,7 +582,7 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 			"    dsn: cproto://127.0.0.1:53002/db2\n");
 	config = AsyncReplicationConfigTest(
 		"leader", {ReplNode{DSN("cproto://127.0.0.1:53001/db1"), {{"ns4"}}}, ReplNode{DSN("cproto://127.0.0.1:53002/db2")}}, false, true, 3,
-		"node_1", {"ns1", "ns3"}, "default", 50);
+		"node_1", {"ns1", "ns3"}, "default", 50, 3000);
 	// Validate #config namespace
 	CheckReplicationConfigNamespace(kTestServerID, config, std::chrono::seconds(3));
 

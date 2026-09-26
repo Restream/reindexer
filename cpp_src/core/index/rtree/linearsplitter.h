@@ -110,8 +110,12 @@ class [[nodiscard]] LinearSplitter : public GuttmanSplitter<Entry, Node, Traits,
 			}
 		}
 
-		const auto xDiff = std::abs((maxX - minX) / (wholeRect.Right() - wholeRect.Left()));
-		const auto yDiff = std::abs((maxY - minY) / (wholeRect.Top() - wholeRect.Bottom()));
+		// Zero extent means that all entries share the same coordinate along the axis, so there is no separation along it
+		const auto normalizedSeparation = [](double separation, double extent) noexcept {
+			return extent > 0.0 ? std::abs(separation / extent) : 0.0;
+		};
+		const auto xDiff = normalizedSeparation(maxX - minX, wholeRect.Right() - wholeRect.Left());
+		const auto yDiff = normalizedSeparation(maxY - minY, wholeRect.Top() - wholeRect.Bottom());
 
 		const size_t seed1 = (xDiff > yDiff) ? minXIdx : minYIdx;
 		const size_t seed2 = (xDiff > yDiff) ? maxXIdx : maxYIdx;

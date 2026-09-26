@@ -54,7 +54,7 @@ class [[nodiscard]] Namespace {
 				cg.Reset();
 				qr.AddNamespace(ns, true);
 				if (ns->haveFloatVectorsIndexes()) {
-					qr.addNSContext(ns->payloadType_, ns->tagsMatcher_, FieldsFilter::AllFields(), ns->schema_, ns->incarnationTag_);
+					qr.addNSContext(ns->payloadType(), ns->tagsMatcher(), FieldsFilter::AllFields(), ns->schema_, ns->incarnationTag_);
 				}
 				added = true;
 				(*ns.*fn)(v, mode, pendedRepl, nsCtx);

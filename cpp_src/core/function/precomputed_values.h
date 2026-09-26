@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "function.h"
 
 namespace reindexer::functions {
@@ -12,6 +13,7 @@ public:
 	void Put(const functions::Now& f);
 
 	std::optional<Variant> Get(const FunctionVariant& function) const;
+	std::optional<int64_t> GetNowNsec() const;
 
 private:
 	std::optional<Variant> get(FunctionType type) const;

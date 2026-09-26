@@ -111,7 +111,7 @@ void ItemsLoader::reading() {
 
 			auto& sliceStorageP = slices_[sliceId];
 			if (sliceStorageP.len < dataSlice.size()) {
-				sliceStorageP.len = dataSlice.size() * 1.1;
+				sliceStorageP.len = dataSlice.size() + dataSlice.size() / 10;
 				sliceStorageP.data.reset(new char[sliceStorageP.len]);
 			}
 			memcpy(sliceStorageP.data.get(), dataSlice.data(), dataSlice.size());
@@ -185,15 +185,15 @@ void ItemsLoader::insertion() {
 	bool terminated = false;
 	bool requireNotification = false;
 
-	assertrx(ns_.indexes_.firstCompositePos() != 0);
+	assertrx(ns_.indexes().firstCompositePos() != 0);
 
-	IndexInserters indexInserters(ns_.indexes_, ns_.payloadType_, annCacheReader_ ? annCacheReader_.get() : nullptr);
+	IndexInserters indexInserters(ns_.indexes(), ns_.payloadType(), annCacheReader_ ? annCacheReader_.get() : nullptr);
 	indexInserters.Run(indexInsertionThreads_);
 
 	std::span<ItemData> items;
 	VariantArray krefs, skrefs;
-	const unsigned totalIndexesSize = ns_.indexes_.totalSize();
-	const unsigned compositeIndexesSize = ns_.indexes_.compositeIndexesSize();
+	const unsigned totalIndexesSize = ns_.indexes().totalSize();
+	const unsigned compositeIndexesSize = ns_.indexes().compositeIndexesSize();
 	DummyMutex dummyMtx;
 	do {
 		unique_lock lck(mtx_);
@@ -223,10 +223,10 @@ void ItemsLoader::insertion() {
 			for (unsigned i = 0; i < items.size(); ++i) {
 				const auto rowId = IdType::FromNumber(i + startId);
 				auto& plData = ns_.items_[rowId];
-				Payload pl(ns_.payloadType_, plData);
+				Payload pl(ns_.payloadType(), plData);
 				Payload plNew(items[i].impl.GetPayload());
 				// Index [0] must be inserted after all other simple indexes
-				doInsertField(ns_.indexes_, 0, rowId, pl, plNew, krefs, skrefs, dummyMtx, annCacheReader_.get());
+				doInsertField(ns_.indexes(), 0, rowId, pl, plNew, krefs, skrefs, dummyMtx, annCacheReader_.get());
 			}
 
 			if (compositeIndexesSize) {
@@ -236,7 +236,7 @@ void ItemsLoader::insertion() {
 				const auto rowId = IdType::FromNumber(i + startId);
 				auto& plData = ns_.items_[rowId];
 				plData.SetLSN(items[i].impl.Value().GetLSN());
-				ns_.repl_.dataHash ^= ns_.calculateItemChecksum(rowId);
+				ns_.repl_.checksum ^= ns_.calculateItemChecksum(rowId);
 				ns_.itemsDataSize_ += plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
 			}
 			if (compositeIndexesSize) {
@@ -263,7 +263,7 @@ void ItemsLoader::loadCachedANNIndexes() {
 	for (auto cachedIndex = annCacheReader_->GetNextCachedIndex(); cachedIndex.has_value();
 		 cachedIndex = annCacheReader_->GetNextCachedIndex()) {
 		logFmt(LogInfo, "[{}] Trying to load ANN index '{}' from storage cache", ns_.name_, cachedIndex->name);
-		auto idxPtr = dynamic_cast<FloatVectorIndex*>(ns_.indexes_[cachedIndex->field].get());
+		auto idxPtr = dynamic_cast<FloatVectorIndex*>(ns_.indexes()[cachedIndex->field].get());
 		assertrx(idxPtr);
 		assertrx(!idxPtr->Opts().IsSparse());
 		const auto vecSizeBytes = sizeof(float) * idxPtr->Opts().FloatVector().Dimension();
@@ -291,7 +291,7 @@ void ItemsLoader::loadCachedANNIndexes() {
 		VariantArray resBuf;
 		for (size_t id = 0, s = ns_.items_.size(); id < s; ++id) {
 			const auto rowId = IdType::FromNumber(id);
-			Payload pl(ns_.payloadType_, ns_.items_[rowId]);
+			Payload pl(ns_.payloadType(), ns_.items_[rowId]);
 			const auto elemsCount = pl.GetFieldLen(cachedIndex->field);
 			bool clearCache = false;
 			if (elemsCount == 0) {
@@ -321,7 +321,7 @@ void ItemsLoader::loadCachedANNIndexes() {
 void ItemsLoader::loadCachedANNIndexesFallback(const std::vector<unsigned>& indexes) {
 	VariantArray krefs, skrefs;
 	for (auto field : indexes) {
-		auto& idxPtr = ns_.indexes_[field];
+		auto& idxPtr = ns_.indexes()[field];
 		krefs.clear<false>();
 		auto vectorsDataIt = vectorsData_.find(field);
 		assertrx(vectorsDataIt != vectorsData_.end());
@@ -333,7 +333,7 @@ void ItemsLoader::loadCachedANNIndexesFallback(const std::vector<unsigned>& inde
 			if (pv.IsFree()) [[unlikely]] {
 				continue;
 			}
-			Payload pl(ns_.payloadType_, pv);
+			Payload pl(ns_.payloadType(), pv);
 			auto& vecArr = vectorsData[id];
 			skrefs.reserve(vecArr.size());
 			for (const auto& vec : vecArr) {
@@ -355,14 +355,14 @@ void ItemsLoader::clearIndexCache() {
 		bool IsCanceled() const noexcept override { return false; }
 	};
 	static const NeverCancel kNeverCancel;
-	for (auto& idx : ns_.indexes_) {
+	for (auto& idx : ns_.indexes()) {
 		idx->DestroyCache();
 		std::ignore = idx->Commit(kNeverCancel);
 	}
 }
 
 template <typename MutexT>
-void ItemsLoader::doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned field, IdType id, Payload& pl, Payload& plNew,
+void ItemsLoader::doInsertField(const NamespaceImpl::IndexesStorage& indexes, unsigned field, IdType id, Payload& pl, Payload& plNew,
 								VariantArray& krefs, VariantArray& skrefs, MutexT& mtx, const ann_storage_cache::Reader* annCache) {
 	Index& index = *indexes[field];
 	const IsSparse isIndexSparse = index.Opts().IsSparse();
@@ -409,7 +409,7 @@ void ItemsLoader::doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned
 	}
 }
 
-IndexInserters::IndexInserters(NamespaceImpl::IndexesStorage& indexes, PayloadType pt, const ann_storage_cache::Reader* annCache)
+IndexInserters::IndexInserters(const NamespaceImpl::IndexesStorage& indexes, PayloadType pt, const ann_storage_cache::Reader* annCache)
 	: indexes_{indexes}, pt_{std::move(pt)}, annCache_{annCache} {
 	for (int i = 1; i < indexes_.firstCompositePos(); ++i) {
 		if (indexes_[i]->Opts().IsArray()) {

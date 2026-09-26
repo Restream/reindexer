@@ -133,7 +133,6 @@ public:
 	const NsShardsIncarnationTags& GetIncarnationTags() && = delete;
 	size_t GetNamespacesCount() const noexcept { return i_.nsArray_.size(); }
 	bool IsCacheEnabled() const noexcept { return i_.queryParams_.flags & kResultsWithItemID; }
-	int GetMergedNSCount() const noexcept { return i_.nsArray_.size(); }
 
 	TagsMatcher GetTagsMatcher(int nsid) const noexcept;
 	TagsMatcher GetTagsMatcher(std::string_view ns) const noexcept;

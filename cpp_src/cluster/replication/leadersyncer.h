@@ -22,7 +22,7 @@ class [[nodiscard]] LeaderSyncQueue {
 public:
 	struct [[nodiscard]] Entry {
 		struct [[nodiscard]] NodeData {
-			ReplicationDataHash hash;
+			uint64_t checksum = 0;
 			uint64_t count = 0;
 		};
 

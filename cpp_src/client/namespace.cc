@@ -1,6 +1,7 @@
 #include "client/namespace.h"
 #include "client/itemimpl.h"
 #include "client/rpcclient.h"
+#include "core/namespace/indexes/index_names.h"
 #include "estl/lock.h"
 
 namespace reindexer {
@@ -8,7 +9,7 @@ namespace client {
 
 Namespace::Namespace(std::string _name)
 	: name(std::move(_name)),
-	  payloadType(name, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, IsArray_False)}),
+	  payloadType(name, {PayloadFieldType(KeyValueType::String{}, ns_indexes::kTupleName, {}, IsArray_False)}),
 	  tagsMatcher_(payloadType, {}) {}
 
 Item Namespace::NewItem() {

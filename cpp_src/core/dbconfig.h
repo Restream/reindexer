@@ -113,6 +113,8 @@ struct [[nodiscard]] NamespaceConfigData {
 	int txVecInsertionThreads = 4;
 	int optimizationTimeout = 800;
 	int optimizationSortWorkers = 4;
+	// Delay before background fulltext postings cleanup after last update. 0 - disable cleanup.
+	int ftCleanupTimeout = 50;
 	int64_t walSize = 4'000'000;
 	int64_t minPreselectSize = 1'000;
 	int64_t maxPreselectSize = 1'000;

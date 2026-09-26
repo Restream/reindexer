@@ -15,11 +15,10 @@ namespace cproto {
 using std::chrono::milliseconds;
 
 struct [[nodiscard]] RPCCall {
-	RPCCall(CmdCode cmd_, uint32_t seq_, uint32_t version_, Args args_, milliseconds execTimeout_, lsn_t lsn_, int emitterServerId_,
-			int shardId_, bool shardingParallelExecution_)
+	RPCCall(CmdCode cmd_, uint32_t seq_, Args args_, milliseconds execTimeout_, lsn_t lsn_, int emitterServerId_, int shardId_,
+			bool shardingParallelExecution_)
 		: cmd{cmd_},
 		  seq{seq_},
-		  version{version_},
 		  args{std::move(args_)},
 		  execTimeout{execTimeout_},
 		  lsn{lsn_},
@@ -29,7 +28,6 @@ struct [[nodiscard]] RPCCall {
 
 	CmdCode cmd;
 	uint32_t seq;
-	uint32_t version;
 	Args args;
 	milliseconds execTimeout;
 	lsn_t lsn;

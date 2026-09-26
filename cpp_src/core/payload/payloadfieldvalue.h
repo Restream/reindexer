@@ -39,7 +39,7 @@ public:
 									   }
 								   },
 								   [&](KeyValueType::FloatVector) noexcept {
-									   assertrx(!kv.DoHold());
+									   assertrx(!kv.OwnsHeap());
 									   ConstFloatVectorView vect{kv};
 									   uint64_t v = vect.Payload();
 									   std::memcpy(p_, &v, sizeof(uint64_t));

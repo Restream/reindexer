@@ -1,4 +1,5 @@
 #include "clientsstats_api.h"
+#include "core/query/query.h"
 #include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
 #include "tools/fsops.h"
@@ -54,7 +55,7 @@ std::string ClientsStatsApi::GetConnectionString() {
 }
 
 void ClientsStatsApi::SetProfilingFlag(bool val, const std::string& column, CoroReindexer& c) {
-	Query qup{Query(kConfigNamespace).Where("type", CondEq, "profiling").Set(column, val)};
+	const auto qup = Query(kConfigNamespace).Where("type", CondEq, "profiling").Set(column, val);
 	CoroQueryResults result;
 	auto err = c.Update(qup, result);
 	ASSERT_TRUE(err.ok()) << err.what();

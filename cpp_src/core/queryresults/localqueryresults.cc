@@ -1,9 +1,11 @@
 #include "localqueryresults.h"
-#include "additionaldatasource.h"
 #include "cluster/sharding/sharding.h"
 #include "core/cbinding/resultserializer.h"
+#include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsonbuilder.h"
 #include "core/cjson/csvbuilder.h"
+#include "core/cjson/encoderdatasources.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/id_type.h"
@@ -185,7 +187,7 @@ int LocalQueryResults::GetJoinedNsCtxIndex(int nsid, int joinedField) const noex
 }
 
 template <typename Builder>
-class [[nodiscard]] LocalQueryResults::EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins<Builder> {
+class [[nodiscard]] LocalQueryResults::EncoderDatasourceWithJoins final : public IJoinsDatasource<Builder> {
 public:
 	EncoderDatasourceWithJoins(const joins::Results& joined, const joins::ItemIterator& joinedItemIt, const ContextsVector& ctxs,
 							   ConstIterator::NsNamesCache& nsNamesCache, size_t nsid, bool needOutputRank, int outputShardId)
@@ -196,7 +198,7 @@ public:
 		  nsNamesCache_(nsNamesCache),
 		  nsid_(nsid),
 		  needOutputRank_(needOutputRank),
-		  dsShardId_(outputShardId) {
+		  outputShardId_(outputShardId) {
 		if (nsNamesCache.size() <= nsid_) {
 			nsNamesCache.resize(nsid_ + 1);
 		}
@@ -228,7 +230,7 @@ public:
 		}
 	}
 
-	h_vector<IAdditionalDatasource<Builder>*, 2> BuildJoinedFieldDatasources(size_t joinedField, size_t itemIdx) override {
+	EncoderContext<Builder> BuildFieldJoinsDatasourceContext(size_t joinedField, size_t itemIdx) override {
 		const size_t joinedNsId{static_cast<size_t>(joinsTable_.GetJoinedNsId(nsid_, joinedField))};
 		if (joinedNsId < joined_.size()) {
 			assertrx(static_cast<int>(joinedField) < joinedItemIt_.GetFieldsCount());
@@ -239,49 +241,40 @@ public:
 			const auto joinedItemsCount{joinedItemIt.GetItemsCount()};
 			if (joinedItemsCount > 0) {
 				datasourcesWithJoins_.emplace_front(joined_, joinedItemIt, ctxs_, nsNamesCache_, joinedNsId, needOutputRank_,
-													dsShardId_.GetShardId());
+													outputShardId_);
 
-				h_vector<IAdditionalDatasource<Builder>*, 2> datasources;
-				if (dsShardId_.GetShardId() > 0) {
-					datasources.emplace_back(&dsShardId_);
+				EncoderContext<Builder> ctx;
+				ctx.joins = &datasourcesWithJoins_.front();
+				if (outputShardId_ > 0) {
+					ctx.fields.shardId = outputShardId_;
 				}
-
 				if (needOutputRank_) {
-					additionalDatasources_.emplace_front(
-						AdditionalDatasource<Builder>{joinedFieldIt.GetItemRefRanked(itemIdx).Rank(), &datasourcesWithJoins_.front()});
-				} else {
-					additionalDatasources_.emplace_front(AdditionalDatasource<Builder>{&datasourcesWithJoins_.front()});
+					ctx.fields.rank = joinedFieldIt.GetItemRefRanked(itemIdx).Rank();
 				}
-
-				datasources.emplace_back(&additionalDatasources_.front());
-				return datasources;
+				return ctx;
 			}
 		}
 		return {};
 	}
 
-	size_t GetJoinedFieldsCount() const noexcept override { return joinedItemIt_.GetFieldsCount(); }
-	size_t GetJoinedRowItemsCount(size_t joinedField) const override final {
+	size_t GetFieldsCount() const noexcept override { return joinedItemIt_.GetFieldsCount(); }
+	size_t GetRowItemsCount(size_t joinedField) const override final {
 		auto fieldIt{joinedItemIt_.At(joinedField)};
 		return fieldIt.ItemsCount();
 	}
-	ConstPayload GetJoinedItemPayload(size_t joinedField, size_t itemIdx) override {
+	ConstPayload GetItemPayload(size_t joinedField, size_t itemIdx) override {
 		auto fieldIt{joinedItemIt_.At(joinedField)};
 		const ItemRef& itemRef{fieldIt[itemIdx]};
 		const Context& ctx{getJoinedFieldCtx(joinedField)};
 		return ConstPayload(ctx.type_, itemRef.Value());
 	}
-	const TagsMatcher& GetJoinedItemTagsMatcher(size_t joinedField) & noexcept override {
-		return getJoinedFieldCtx(joinedField).tagsMatcher_;
-	}
-	const FieldsFilter& GetJoinedItemFieldsFilter(size_t joinedField) & noexcept override {
-		return getJoinedFieldCtx(joinedField).fieldsFilter_;
-	}
-	const std::string& GetJoinedItemNamespace(size_t joinedField) & noexcept override { return nsNamesCache_[nsid_][joinedField]; }
+	const TagsMatcher& GetItemTagsMatcher(size_t joinedField) & noexcept override { return getJoinedFieldCtx(joinedField).tagsMatcher_; }
+	const FieldsFilter& GetItemFieldsFilter(size_t joinedField) & noexcept override { return getJoinedFieldCtx(joinedField).fieldsFilter_; }
+	const std::string& GetItemNamespace(size_t joinedField) & noexcept override { return nsNamesCache_[nsid_][joinedField]; }
 
-	auto GetJoinedItemNamespace(size_t) && = delete;
-	auto GetJoinedItemTagsMatcher(size_t) && = delete;
-	auto GetJoinedItemFieldsFilter(size_t) && = delete;
+	auto GetItemNamespace(size_t) && = delete;
+	auto GetItemTagsMatcher(size_t) && = delete;
+	auto GetItemFieldsFilter(size_t) && = delete;
 
 private:
 	const Context& getJoinedFieldCtx(size_t joinedField) const { return ctxs_[joinsTable_.GetJoinedNsId(nsid_, joinedField)]; }
@@ -293,9 +286,8 @@ private:
 	ConstIterator::NsNamesCache& nsNamesCache_;
 	const size_t nsid_;
 	const bool needOutputRank_;
-	AdditionalDatasourceShardId<Builder> dsShardId_;
+	const int outputShardId_;
 	std::forward_list<EncoderDatasourceWithJoins> datasourcesWithJoins_;
-	std::forward_list<AdditionalDatasource<Builder>> additionalDatasources_;
 };
 
 void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::NsNamesCache& nsNamesCache) const {
@@ -311,9 +303,9 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::Ns
 		return;
 	}
 
-	auto& ctx{ctxs[itemRef.Nsid()]};
-	ConstPayload pl(ctx.type_, itemRef.Value());
-	JsonEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
+	auto& nsCtx{ctxs[itemRef.Nsid()]};
+	ConstPayload pl(nsCtx.type_, itemRef.Value());
+	JsonEncoder encoder(&nsCtx.tagsMatcher_, &nsCtx.fieldsFilter_);
 	JsonBuilder builder(ser, ObjType::TypePlain);
 	const auto& joined{Joined()};
 	if (!joined.empty()) {
@@ -322,33 +314,29 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer& ser, ConstIterator::Ns
 		if (joinedItemsCount > 0) {
 			EncoderDatasourceWithJoins<JsonBuilder> joinsDs(joined, itemIt, ctxs, nsNamesCache, itemRef.Nsid(), needOutputRank,
 															outputShardId);
-			h_vector<IAdditionalDatasource<JsonBuilder>*, 2> dss;
-			AdditionalDatasource ds =
-				needOutputRank ? AdditionalDatasource(items_.GetItemRefRanked(idx).Rank(), &joinsDs) : AdditionalDatasource(&joinsDs);
-			dss.emplace_back(&ds);
-			AdditionalDatasourceShardId<JsonBuilder> dsShardId(outputShardId);
-			if (outputShardId >= 0) {
-				dss.emplace_back(&dsShardId);
+			EncoderContext<JsonBuilder> encoderCtx;
+			encoderCtx.joins = &joinsDs;
+			if (needOutputRank) {
+				encoderCtx.fields.rank = items_.GetItemRefRanked(idx).Rank();
 			}
-			encoder.Encode(pl, builder, dss);
+			if (outputShardId >= 0) {
+				encoderCtx.fields.shardId = outputShardId;
+			}
+			encoder.Encode(pl, builder, encoderCtx);
 
 			return;
 		}
 	}
 
-	h_vector<IAdditionalDatasource<JsonBuilder>*, 2> dss;
-
-	std::optional<AdditionalDatasource<JsonBuilder>> ds;
+	EncoderContext<JsonBuilder> encoderCtx;
 	if (needOutputRank) {
-		ds = AdditionalDatasource<JsonBuilder>{items_.GetItemRefRanked(idx).Rank(), nullptr};
-		dss.push_back(&*ds);
+		encoderCtx.fields.rank = items_.GetItemRefRanked(idx).Rank();
 	}
-	AdditionalDatasourceShardId<JsonBuilder> dsShardId(outputShardId);
 	if (outputShardId >= 0) {
-		dss.push_back(&dsShardId);
+		encoderCtx.fields.shardId = outputShardId;
 	}
 
-	encoder.Encode(pl, builder, dss);
+	encoder.Encode(pl, builder, encoderCtx);
 }
 
 template <typename QR>
@@ -491,15 +479,15 @@ Error LocalQueryResults::IteratorImpl<QR>::GetCSV(WrSerializer& ser, CsvOrdering
 	try {
 		auto& itemRef = qr_->items_.GetItemRef(idx_);
 		assertrx(qr_->ctxs.size() > itemRef.Nsid());
-		auto& ctx = qr_->ctxs[itemRef.Nsid()];
+		auto& nsCtx = qr_->ctxs[itemRef.Nsid()];
 
 		if (itemRef.Value().IsFree()) {
 			return Error(errNotFound, "Item not found");
 		}
 
-		ConstPayload pl(ctx.type_, itemRef.Value());
+		ConstPayload pl(nsCtx.type_, itemRef.Value());
 		CsvBuilder builder(ser, ordering);
-		CsvEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
+		CsvEncoder encoder(&nsCtx.tagsMatcher_, &nsCtx.fieldsFilter_);
 
 		if (!qr_->Joined().empty()) {
 			joins::ItemIterator itemIt = (qr_->begin() + idx_).GetJoined();
@@ -507,10 +495,9 @@ Error LocalQueryResults::IteratorImpl<QR>::GetCSV(WrSerializer& ser, CsvOrdering
 			if (joinedItemsCount > 0) {
 				EncoderDatasourceWithJoins<CsvBuilder> joinsDs(qr_->Joined(), itemIt, qr_->ctxs, nsNamesCache, itemRef.Nsid(),
 															   qr_->needOutputRank, qr_->outputShardId);
-				h_vector<IAdditionalDatasource<CsvBuilder>*, 2> dss;
-				AdditionalDatasourceCSV ds(&joinsDs);
-				dss.push_back(&ds);
-				encoder.Encode(pl, builder, dss);
+				EncoderContext<CsvBuilder> encoderCtx;
+				encoderCtx.joins = &joinsDs;
+				encoder.Encode(pl, builder, encoderCtx);
 				return errOK;
 			}
 		}
@@ -610,7 +597,7 @@ int LocalQueryResults::getNsNumber(int nsid) const noexcept {
 	return ctxs[nsid].schema_->GetProtobufNsNumber();
 }
 
-int LocalQueryResults::getMergedNSCount() const noexcept { return ctxs.size(); }
+size_t LocalQueryResults::getNamespacesCount() const noexcept { return ctxs.size(); }
 
 void LocalQueryResults::addNSContext(const PayloadType& type, const TagsMatcher& tagsMatcher, const FieldsFilter& filter,
 									 std::shared_ptr<const Schema> schema, lsn_t nsIncarnationTag) {

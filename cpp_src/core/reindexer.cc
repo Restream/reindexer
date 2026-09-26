@@ -1,4 +1,5 @@
 #include "core/reindexer.h"
+#include "core/query/query_impl.h"
 #include "core/shardingproxy.h"
 #include "estl/defines.h"
 #include "reindexer_version.h"
@@ -231,8 +232,8 @@ Error Reindexer::DeleteMeta(std::string_view nsName, const std::string& key) noe
 }
 Error Reindexer::Delete(const Query& q, QueryResults& result) noexcept {
 	return callWithConnectCheck([&] {
-		const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);
-		return impl_->Delete(q, result, rdxCtx);
+		const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { Impl(q).GetSQL(s); }, result);
+		return impl_->Delete(Impl(q), result, rdxCtx);
 	});
 }
 Error Reindexer::ExecSQL(std::string_view query, QueryResults& result, unsigned proxyFetchLimit) noexcept {
@@ -243,14 +244,14 @@ Error Reindexer::ExecSQL(std::string_view query, QueryResults& result, unsigned 
 }
 Error Reindexer::Select(const Query& q, QueryResults& result, unsigned proxyFetchLimit) noexcept {
 	return callWithConnectCheck([&] {
-		const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);
-		return impl_->Select(q, result, proxyFetchLimit, rdxCtx);
+		const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { Impl(q).GetSQL(s); }, result);
+		return impl_->Select(Impl(q), result, proxyFetchLimit, rdxCtx);
 	});
 }
 Error Reindexer::Update(const Query& q, QueryResults& result) noexcept {
 	return callWithConnectCheck([&] {
-		const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { q.GetSQL(s); }, result);
-		return impl_->Update(q, result, rdxCtx);
+		const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { Impl(q).GetSQL(s); }, result);
+		return impl_->Update(Impl(q), result, rdxCtx);
 	});
 }
 Error Reindexer::AddIndex(std::string_view nsName, const IndexDef& idx) noexcept {

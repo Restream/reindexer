@@ -7,11 +7,11 @@
 #include "client/item.h"
 #include "client/reindexerconfig.h"
 #include "core/definitions/namespacedef.h"
-#include "core/query/query.h"
 #include "core/shardedmeta.h"
 #include "net/ev/ev.h"
 
 namespace reindexer {
+
 class SnapshotChunk;
 struct SnapshotOpts;
 struct ReplicationStateV2;

@@ -2,7 +2,7 @@
 
 #include "core/idset/idset.h"
 #include "core/lrucache.h"
-#include "core/query/query.h"
+#include "core/query/query_impl.h"
 #include "tools/serilize/wrserializer.h"
 #include "vendor/murmurhash/MurmurHash3.h"
 
@@ -14,13 +14,13 @@ struct [[nodiscard]] CacheKey {
 	CacheKey(const CacheKey& other) = default;
 	CacheKey& operator=(CacheKey&& other) = default;
 	CacheKey& operator=(const CacheKey& other) = delete;
-	void SetData(const Query& q) {
+	void SetData(ConstQueryImpl q) {
 		WrSerializer ser;
 		q.Serialize(ser, SkipMergeQueries, QueryFormatV2);
 		buf_.reserve(buf_.size() + ser.Len());
 		buf_.insert(buf_.end(), ser.Buf(), ser.Buf() + ser.Len());
 	}
-	void SetData(const Query& q1, const Query& q2) {
+	void SetData(ConstQueryImpl q1, ConstQueryImpl q2) {
 		WrSerializer ser;
 		q1.Serialize(ser, SkipMergeQueries, QueryFormatV2);
 		q2.Serialize(ser, SkipMergeQueries, QueryFormatV2);

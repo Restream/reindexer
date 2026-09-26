@@ -36,7 +36,7 @@ struct [[nodiscard]] AsyncReplicationConfigTest {
 							   std::string _mode = std::string());
 	AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers, bool _forceSyncOnLogicError, bool _forceSyncOnWrongDataHash,
 							   int _serverId = 0, std::string _appName = std::string(), NsSet _namespaces = NsSet(),
-							   std::string _mode = std::string(), int _onlineUpdatesDelayMSec = 100);
+							   std::string _mode = std::string(), int _onlineUpdatesDelayMSec = 100, int _retrySyncIntervalMSec = 1000);
 
 	bool operator==(const AsyncReplicationConfigTest& config) const;
 	bool operator!=(const AsyncReplicationConfigTest& config) const { return !(this->operator==(config)); }
@@ -55,6 +55,7 @@ struct [[nodiscard]] AsyncReplicationConfigTest {
 	NsSet namespaces;
 	int serverId;
 	int onlineUpdatesDelayMSec = 100;
+	int retrySyncIntervalMSec = 1000;
 	std::string selfReplicationToken;
 	reindexer::NsNamesHashMapT<std::string> admissibleTokens;
 };
@@ -117,6 +118,10 @@ public:
 		void MakeFollower();
 
 		void SetReplicationConfig(const AsyncReplicationConfigTest& config);
+		// RPC CloseNamespace is a no-op. Use these on an in-process server
+		// (asServerProcess=false) to emit real Close/Open into the leader's updates queue.
+		void CloseNamespaceOnServer(std::string_view ns);
+		void OpenNamespaceOnServer(std::string_view ns, const StorageOpts& storage = StorageOpts().Enabled().CreateIfMissing());
 		void AddFollower(const ServerControl::Interface::Ptr& follower,
 						 std::optional<std::vector<std::string>>&& nsList = std::optional<std::vector<std::string>>(),
 						 reindexer::cluster::AsyncReplicationMode replMode = reindexer::cluster::AsyncReplicationMode::Default);

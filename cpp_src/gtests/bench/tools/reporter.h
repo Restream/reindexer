@@ -57,7 +57,7 @@ protected:
 				continue;
 			}
 			const std::size_t cNameLen = std::max(std::string::size_type(10), c.first.length());
-			const auto& s = HumanReadableNumber(c.second.value, true);
+			const auto& s = HumanReadableNumber(static_cast<size_t>(c.second.value), true);
 			if (output_options_ & OO_Tabular) {
 				if (c.second.flags & ::benchmark::Counter::kIsRate) {
 					IgnoreColorPrint(Out, " %*s/s", cNameLen - 2, s.c_str());

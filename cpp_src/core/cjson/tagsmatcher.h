@@ -10,6 +10,14 @@
 
 namespace reindexer {
 
+class SharedTransactionData;
+
+namespace ns_indexes {
+class Registry;
+class TargetState;
+class TransactionDDL;
+}  // namespace ns_indexes
+
 class [[nodiscard]] TagsMatcher {
 public:
 	struct [[nodiscard]] unsafe_empty_t {};
@@ -41,9 +49,7 @@ public:
 		return res.empty() && canAdd ? impl_.clone()->path2tag(jsonPath, canAdd, wasUpdated_) : res;
 	}
 	IndexedTagsPath path2indexedtag(std::string_view jsonPath) const {
-		IndexedTagsPath tagsPath = impl_->path2indexedtag(jsonPath);
-		assertrx(!wasUpdated_);
-		return tagsPath;
+		return jsonPath.empty() ? IndexedTagsPath() : impl_->path2indexedtag(jsonPath);
 	}
 	IndexedTagsPath path2indexedtag(std::string_view jsonPath, CanAddField canAdd) {
 		if (jsonPath.empty()) {
@@ -89,8 +95,6 @@ public:
 			impl_ = tmp;
 		}
 	}
-	void AddSparseIndex(const Index& sparse) { impl_.clone()->AddSparseIndex(sparse); }
-	void DropSparseIndex(std::string_view name) { impl_.clone()->DropSparseIndex(name); }
 	std::string Path2Name(const TagsPath& tp) const { return impl_->Path2Name(tp); }
 	std::string_view SparseName(size_t n) const& { return impl_->SparseName(n); }
 	const std::vector<SparseIndexData>& SparseIndexes() const& noexcept { return impl_->SparseIndexes(); }
@@ -100,12 +104,6 @@ public:
 	auto SparseIndexes() const&& = delete;
 	auto SparseIndex(size_t) const&& = delete;
 
-	void UpdatePayloadType(PayloadType payloadType, std::span<std::unique_ptr<Index>> sparseIndexes, NeedChangeTmVersion changeVersion) {
-		impl_.clone()->UpdatePayloadType(std::move(payloadType), sparseIndexes, wasUpdated_, changeVersion);
-	}
-	void UpdatePayloadType(PayloadType payloadType, const std::vector<SparseIndexData>& sparseIndexes, NeedChangeTmVersion changeVersion) {
-		impl_.clone()->UpdatePayloadType(std::move(payloadType), sparseIndexes, wasUpdated_, changeVersion);
-	}
 	static TagsMatcher CreateMergedTagsMatcher(const std::vector<TagsMatcher>& tmList) {
 		TagsMatcherImpl::TmListT implList;
 		implList.reserve(tmList.size());
@@ -119,6 +117,23 @@ public:
 	std::string Dump() const { return impl_->DumpTags() + '\n' + impl_->DumpNames() + '\n' + impl_->DumpPaths(); }
 
 private:
+	// The methods below change the fields layout, described by the tags matcher, therefore they must be called
+	// simultaneously with the corresponding change of the indexes registry - and that is what the indexes module does.
+	// SharedTransactionData is an exception: it keeps its own copy of the metadata, taken from the namespace as a whole
+	friend class ns_indexes::Registry;
+	friend class ns_indexes::TargetState;
+	friend class ns_indexes::TransactionDDL;
+	friend class SharedTransactionData;
+
+	void addSparseIndex(const Index& sparse) { impl_.clone()->AddSparseIndex(sparse); }
+	void dropSparseIndex(std::string_view name) { impl_.clone()->DropSparseIndex(name); }
+	void updatePayloadType(PayloadType payloadType, std::span<std::unique_ptr<Index>> sparseIndexes, NeedChangeTmVersion changeVersion) {
+		impl_.clone()->UpdatePayloadType(std::move(payloadType), sparseIndexes, wasUpdated_, changeVersion);
+	}
+	void updatePayloadType(PayloadType payloadType, const std::vector<SparseIndexData>& sparseIndexes, NeedChangeTmVersion changeVersion) {
+		impl_.clone()->UpdatePayloadType(std::move(payloadType), sparseIndexes, wasUpdated_, changeVersion);
+	}
+
 	TagsMatcher(intrusive_ptr<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>&& impl) : impl_(std::move(impl)), wasUpdated_(false) {}
 
 	shared_cow_ptr<TagsMatcherImpl> impl_;

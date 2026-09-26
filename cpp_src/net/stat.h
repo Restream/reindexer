@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include "debug/allocdebug.h"
 #include "tools/clock.h"
 
 namespace reindexer {
@@ -10,7 +11,8 @@ class [[nodiscard]] HandlerStat {
 public:
 	using ClockT = system_clock_w;
 
-	HandlerStat() noexcept : tmpoint_(ClockT::now()), time_us_(0), allocs_cnt_(0), allocs_bytes_(0) {}
+	HandlerStat() noexcept
+		: tmpoint_(ClockT::now()), time_us_(0), allocs_cnt_(get_alloc_cnt_total()), allocs_bytes_(get_alloc_size_total()) {}
 
 	HandlerStat operator-(const HandlerStat& other) const noexcept {
 		HandlerStat res = *this;

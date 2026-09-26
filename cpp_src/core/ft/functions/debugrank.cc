@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-bool DebugRank::Process(ItemRef& res, PayloadType& plType, const FtFuncStruct& func, std::vector<key_string>& stringsHolder) {
+bool DebugRank::Process(ItemRef& res, const PayloadType& plType, const FtFuncStruct& func, std::vector<key_string>& stringsHolder) {
 	if (!func.funcArgs.empty()) {
 		throw Error(errParams, "'debug_rank()' does not expect any arguments, but got {}", func.funcArgs.size());
 	}

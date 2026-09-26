@@ -56,16 +56,17 @@ public:
 		  inTransaction_{inTransaction},
 		  lastUpdateTime_{lastUpdateTime},
 		  limit0_(limit0),
-		  childItemsProcessors_{std::move(childItemsProcessors)} {
+		  childItemsProcessors_{std::move(childItemsProcessors)},
+		  skipJoinCache_{Impl(itemQuery_).HasVolatileExpressions() || joinQuery_.HasVolatileExpressions()} {
 #ifndef NDEBUG
-		for (const auto& jqe : joinQuery_.joinEntries_) {
+		for (const auto& jqe : joinQuery_.JoinEntries()) {
 			assertrx_throw(jqe.FieldsHaveBeenSet());
 		}
 #endif
 	}
 
 	template <typename Locker>
-	static ItemsProcessors BuildForQuery(int nsid, const Query& q, LocalQueryResults&, Locker&, FtFunctionsHolder&,
+	static ItemsProcessors BuildForQuery(int nsid, ConstQueryImpl q, LocalQueryResults&, Locker&, FtFunctionsHolder&,
 										 std::vector<QueryResultsContext>&, IsModifyQuery isModifyQuery, const RdxContext&);
 
 	ItemsProcessor(ItemsProcessor&&) = default;
@@ -79,9 +80,9 @@ public:
 
 	JoinType Type() const noexcept { return joinType_; }
 	void SetType(JoinType type) noexcept { joinType_ = type; }
-	const std::string& RightNsName() const noexcept { return itemQuery_.NsName(); }
+	const std::string& RightNsName() const noexcept { return Impl(itemQuery_).NsName(); }
 	int64_t LastUpdateTime() const noexcept { return lastUpdateTime_; }
-	const JoinedQuery& JoinQuery() const noexcept { return joinQuery_; }
+	ConstJoinedQueryImpl JoinQuery() const noexcept { return joinQuery_; }
 	int LeftNsId() const { return leftNsId_; }
 	size_t JoinEntryIndex(size_t joinEntry) const noexcept { return joinEntriesStart_ + joinEntry; }
 	int Called() const noexcept { return called_; }
@@ -111,19 +112,19 @@ private:
 	VariantArray readValuesFromPreSelect(const QueryJoinEntry&) const;
 	template <typename Cont, typename Fn>
 	VariantArray readValuesOfRightNsFrom(const Cont& from, const Fn& createPayload, const QueryJoinEntry&, const PayloadType&) const;
-	void selectFromRightNs(LocalQueryResults& joinItemR, const Query&, FloatVectorsHolderMap*, bool& found, bool& matchedAtLeastOnce);
-	void selectFromPreSelectValues(LocalQueryResults& joinItemR, const Query&, bool& found, bool& matchedAtLeastOnce) const;
+	void selectFromRightNs(LocalQueryResults& joinItemR, ConstQueryImpl, FloatVectorsHolderMap*, bool& found, bool& matchedAtLeastOnce);
+	void selectFromPreSelectValues(LocalQueryResults& joinItemR, ConstQueryImpl, bool& found, bool& matchedAtLeastOnce) const;
 
-	static PreSelect::ValuesOptimizationStatus isValuesOptimizationEnabled(const Query& jItemQ, const NamespaceImpl::Ptr& jns,
-																		   const Query& mainQ);
+	static PreSelect::ValuesOptimizationStatus isValuesOptimizationEnabled(ConstQueryImpl jItemQ, const NamespaceImpl::Ptr& jns,
+																		   ConstQueryImpl mainQ);
 
-	static joins::PreSelect::CPtr buildPreSelect(int nsid, const Query& query, size_t joinedField,
+	static joins::PreSelect::CPtr buildPreSelect(int nsid, ConstQueryImpl query, size_t joinedField,
 												 std::span<ItemsProcessor> itemsProcessors, PreSelect::ValuesOptimizationStatus,
 												 const NamespaceImpl::Ptr& ns, const NamespaceImpl::Ptr& jns, LocalQueryResults&,
 												 FtFunctionsHolder&, CacheRes&, const RdxContext&);
 
 	template <typename Locker>
-	static ItemsProcessor buildItemsProcessor(int nsid, const Query& query, size_t joinedField, LocalQueryResults&, Locker& locks,
+	static ItemsProcessor buildItemsProcessor(int nsid, ConstQueryImpl query, size_t joinedField, LocalQueryResults&, Locker& locks,
 											  FtFunctionsHolder&, std::vector<QueryResultsContext>&, IsModifyQuery isModifyQuery,
 											  const RdxContext&, size_t depth);
 
@@ -138,7 +139,7 @@ private:
 	Query itemQuery_;
 	FieldsFilter fieldsFilter_;
 	LocalQueryResults& result_;
-	const JoinedQuery& joinQuery_;
+	ConstJoinedQueryImpl joinQuery_;
 	size_t joinEntriesStart_ = 0;
 	PreSelectExecuteCtx preSelectCtx_;
 	std::string explainOneSelect_;
@@ -154,6 +155,7 @@ private:
 
 	// For nested join queries.
 	ItemsProcessors childItemsProcessors_;
+	bool skipJoinCache_ = false;
 };
 
 }  // namespace joins

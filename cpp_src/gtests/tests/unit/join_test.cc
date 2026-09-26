@@ -1,20 +1,24 @@
-#include <functional>
+#include <thread>
+#include <unordered_set>
 #include "core/nsselecter/joins/item_context.h"
-#include "core/nsselecter/joins/items_processor.h"
 #include "core/nsselecter/joins/iterators.h"
+#include "core/nsselecter/joins/preselect.h"
+#include "core/query/query_impl.h"
+#include "core/queryresults/localqueryresults.h"
 #include "join_on_conditions_api.h"
 #include "test_helpers.h"
 
 namespace reindexer_tests {
 
 using reindexer::IndexOpts;
+using reindexer::LocalQueryResults;
 
 TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
 	Query queryGenres{Query(genres_namespace).Not().Where(genreid, CondEq, 1)};
 	Query queryAuthors{Query(authors_namespace).Where(authorid, CondGe, 10).Where(authorid, CondLe, 25)};
 	Query queryAuthors2{Query(authors_namespace).Where(authorid, CondGe, 300).Where(authorid, CondLe, 400)};
 	// clang-format off
-	Query queryBooks{Query(books_namespace, 0, 50)
+	Query queryBooks{Query(books_namespace).Limit(50)
 						 .OpenBracket()
 							 .Where(price, CondGe, 9540)
 							 .Where(price, CondLe, 9550)
@@ -22,13 +26,13 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
 						 .Or().OpenBracket()
 							 .Where(price, CondGe, 1000)
 							 .Where(price, CondLe, 2000)
-							 .InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors))
-							 .OrInnerJoin(genreId_fk, genreid, CondEq, std::move(queryGenres))
+							 .InnerJoin(std::move(queryAuthors), authorid_fk, CondEq, authorid)
+							 .Or().InnerJoin(std::move(queryGenres), genreId_fk, CondEq, genreid )
 						 .CloseBracket()
 						 .Or().OpenBracket()
 							 .Where(pages, CondEq, 0)
 						 .CloseBracket()
-						 .Or().InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors2))};
+						 .Or().InnerJoin(std::move(queryAuthors2), authorid_fk, CondEq, authorid )};
 	// clang-format on
 
 	QueryWatcher watcher{queryBooks};
@@ -39,13 +43,64 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
 
 TEST_F(JoinSelectsApi, JoinsLockWithCache_364) {
 	Query queryGenres{Query(genres_namespace).Where(genreid, CondEq, 1)};
-	Query queryBooks{Query(books_namespace, 0, 50).InnerJoin(genreId_fk, genreid, CondEq, std::move(queryGenres))};
+	Query queryBooks{Query(books_namespace).Limit(50).InnerJoin(std::move(queryGenres), genreId_fk, CondEq, genreid)};
 	QueryWatcher watcher{queryBooks};
 	TurnOnJoinCache(genres_namespace);
 
 	for (int i = 0; i < 10; ++i) {
 		SCOPED_TRACE(std::to_string(i));
 		std::ignore = rt.Select(queryBooks);
+	}
+}
+
+TEST_F(JoinSelectsApi, ArithmeticInJoinPreselect) {
+	auto joinedQuery = Query(authors_namespace)
+						   .Where(reindexer::expressions::ArithmeticExpression(std::string(authorid) + "+1"), CondGe,
+								  reindexer::VariantArray{Variant{11}});
+	auto query = Query(books_namespace).InnerJoin(std::move(joinedQuery), authorid_fk, CondEq, authorid);
+
+	EXPECT_GT(rt.Select(query).Count(), 0);
+}
+
+TEST_F(JoinSelectsApi, ArithmeticInJoinPreselectWithCache) {
+	TurnOnJoinCache(authors_namespace);
+
+	const auto makeQuery = [this] {
+		return Query(books_namespace)
+			.InnerJoin(Query(authors_namespace)
+						   .Where(reindexer::expressions::ArithmeticExpression(std::string(authorid) + "+1"), CondGe,
+								  reindexer::VariantArray{Variant{11}}),
+					   authorid_fk, CondEq, authorid);
+	};
+
+	const auto expectedCount = rt.Select(makeQuery()).Count();
+	ASSERT_GT(expectedCount, 0);
+	for (int i = 0; i < 10; ++i) {
+		SCOPED_TRACE(std::to_string(i));
+		EXPECT_EQ(rt.Select(makeQuery()).Count(), expectedCount);
+	}
+}
+
+TEST_F(JoinSelectsApi, ArithmeticNowBypassesJoinCache) {
+	for (const auto* mode : {"on", "aggressive"}) {
+		SCOPED_TRACE(mode);
+		TurnOnJoinCache(authors_namespace, mode);
+		AwaitIndexOptimization(authors_namespace);
+
+		const Query query = Query(books_namespace)
+								.Offset(0)
+								.Limit(100)
+								.InnerJoin(Query(authors_namespace)
+											   .Where(reindexer::expressions::ArithmeticExpression("now(nsec)"), CondGt,
+													  reindexer::VariantArray{Variant{0}}),
+										   authorid_fk, CondEq, authorid);
+		const auto before = getMemStat(*rt.reindexer, authors_namespace)["join_cache.items_count"].As<int64_t>();
+
+		for (int i = 0; i < 5; ++i) {
+			ASSERT_GT(rt.Select(query).Count(), 0);
+		}
+		const auto after = getMemStat(*rt.reindexer, authors_namespace)["join_cache.items_count"].As<int64_t>();
+		EXPECT_EQ(after, before);
 	}
 }
 
@@ -84,7 +139,7 @@ TEST_F(JoinSelectsApi, JoinsAsWhereNotSQLConditionsTest) {
 		"books_namespace.authorid_fk";
 
 	auto query = Query::FromSQL(sql);
-	auto q = Query(books_namespace).Not().InnerJoin("authorid_fk", "authorid", CondEq, Query(authors_namespace));
+	auto q = Query(books_namespace).Not().InnerJoin(Query(authors_namespace), "authorid_fk", CondEq, "authorid");
 	EXPECT_EQ(query, q);
 }
 
@@ -119,27 +174,27 @@ TEST_F(JoinSelectsApi, SqlParsingTest) {
 		"(authorid >= 10 AND authorid <= 20) limit 100) on "
 		"authors_namespace.authorid = books_namespace.authorid_fk) or pages == 3 limit 20";
 
-	Query srcQuery = Query::FromSQL(sql);
+	auto srcQuery = Query::FromSQL(sql);
 	QueryWatcher watcher{srcQuery};
 
 	reindexer::WrSerializer wrser;
-	srcQuery.GetSQL(wrser);
+	Impl(srcQuery).GetSQL(wrser);
 
-	Query dstQuery = Query::FromSQL(wrser.Slice());
+	auto dstQuery = Query::FromSQL(wrser.Slice());
 	ASSERT_EQ(srcQuery, dstQuery);
 
 	wrser.Reset();
 	BindingCapabilities caps{kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs | kBindingCapabilityIncarnationTags |
 							 kBindingCapabilityComplexRank | kBindingCapabilityQueryFormatV2};
-	srcQuery.Serialize(wrser, Normal, caps.GetQueryFormat());
+	Impl(srcQuery).Serialize(wrser, Normal, caps.GetQueryFormat());
 	reindexer::Serializer ser(wrser.Buf(), wrser.Len());
-	Query deserializedQuery1 = Query::Deserialize(ser, caps.GetQueryFormat());
+	Query deserializedQuery1 = QueryImpl::Deserialize(ser, caps.GetQueryFormat());
 	ASSERT_EQ(srcQuery, deserializedQuery1) << "Original query:\n"
 											<< srcQuery.GetSQL() << "\nDeserialized query:\n"
 											<< deserializedQuery1.GetSQL();
 
 	const auto json = srcQuery.GetJSON();
-	Query deserializedQuery2 = Query::FromJSON(json);
+	auto deserializedQuery2 = Query::FromJSON(json);
 	ASSERT_EQ(srcQuery, deserializedQuery2) << "Original query:\n"
 											<< srcQuery.GetSQL() << "\nDeserialized query:\n"
 											<< deserializedQuery2.GetSQL();
@@ -147,8 +202,8 @@ TEST_F(JoinSelectsApi, SqlParsingTest) {
 
 TEST_F(JoinSelectsApi, InnerJoinTest) {
 	Query queryAuthors(authors_namespace);
-	Query queryBooks{Query(books_namespace, 0, 10).Where(price, CondGe, 600)};
-	Query joinQuery = queryBooks.InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors));
+	Query queryBooks{Query(books_namespace).Limit(10).Where(price, CondGe, 600)};
+	Query joinQuery = queryBooks.InnerJoin(std::move(queryAuthors), authorid_fk, CondEq, authorid);
 	QueryWatcher watcher{joinQuery};
 
 	auto joinQueryRes = rt.Select(joinQuery);
@@ -183,25 +238,30 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 }
 
 TEST_F(JoinSelectsApi, InnerJoinWithNestedJoinTest) {
-	Query queryLocations{location_namespace, 0, 100};
-	queryLocations.Not().Where(code, CondEq, 13);
-	queryLocations.InnerJoin(countryid_fk, countryid, CondEq, Query{countries_namespace});
+	auto queryLocations = Query{location_namespace}
+							  .Limit(100)
+							  .Not()
+							  .Where(code, CondEq, 13)
+							  .InnerJoin(Query{countries_namespace}, countryid_fk, CondEq, countryid);
 
-	Query queryAuthors{authors_namespace, 0, 100};
-	queryAuthors.InnerJoin(locationid_fk, locationid, CondEq, queryLocations);
-	queryAuthors.InnerJoin(locationid_fk, locationid, CondEq, Query{location_namespace, 0, 100}.Where(code, CondGe, 1));
+	auto queryAuthors = Query{authors_namespace}
+							.Limit(100)
+							.InnerJoin(Query{queryLocations}, locationid_fk, CondEq, locationid)
+							.InnerJoin(Query{location_namespace}.Limit(100).Where(code, CondGe, 1), locationid_fk, CondEq, locationid);
 
-	Query queryBooks{Query(books_namespace, 0, 50).Where(price, CondGe, 2)};
-	Query joinQuery{queryBooks.InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors))};
-	joinQuery.Merge(Query{authors_namespace});
-	joinQuery.Merge(Query{books_namespace});
-	joinQuery.Merge(Query{location_namespace});
-	joinQuery.Merge(Query{location_namespace}.InnerJoin(countryid_fk, countryid, CondEq, Query{countries_namespace}));
-	joinQuery.Merge(Query{countries_namespace});
-	QueryWatcher watcher{joinQuery};
+	auto queryBooks = Query(books_namespace)
+						  .Limit(50)
+						  .Where(price, CondGe, 2)
+						  .InnerJoin(std::move(queryAuthors), authorid_fk, CondEq, authorid)
+						  .Merge(Query{authors_namespace})
+						  .Merge(Query{books_namespace})
+						  .Merge(Query{location_namespace})
+						  .Merge(Query{location_namespace}.InnerJoin(Query{countries_namespace}, countryid_fk, CondEq, countryid))
+						  .Merge(Query{countries_namespace});
+	QueryWatcher watcher{queryBooks};
 
-	const int mergedSize{static_cast<int>(joinQuery.GetMergeQueries().size())};
-	reindexer::joins::QueryJoinsTable joinsInfo{joinQuery};
+	const int mergedSize{static_cast<int>(Impl(queryBooks).MergeQueries().size())};
+	reindexer::joins::QueryJoinsTable joinsInfo{Impl(queryBooks)};
 	const int booksNsId{0};
 	const int authorsNsId{joinsInfo.GetJoinedNsId(booksNsId, 0)};
 	const int locations1NsId{joinsInfo.GetJoinedNsId(authorsNsId, 0)};
@@ -212,7 +272,7 @@ TEST_F(JoinSelectsApi, InnerJoinWithNestedJoinTest) {
 	ASSERT_TRUE(countryNsId == 3 + mergedSize);
 	ASSERT_TRUE(locations2NsId == 4 + mergedSize);
 
-	auto joinQr{rt.Select(joinQuery)};
+	auto joinQr{rt.Select(queryBooks)};
 	auto err{VerifyResJSON(joinQr)};
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(joinQr.Count() > 0);
@@ -226,8 +286,8 @@ TEST_F(JoinSelectsApi, InnerJoinWithNestedJoinTest) {
 		Item bookItem(bookIt.GetItem(false));
 		Variant authorId{bookItem[authorid_fk]};
 
-		ASSERT_TRUE(Variant{bookItem[price]}.As<int>() >= 2);
-		auto booksQr{rt.Select(Query{books_namespace, 0, 50}.Where(price, CondGe, 2).Where(bookid, CondEq, Variant(bookItem[bookid])))};
+		ASSERT_GE(Variant{bookItem[price]}.As<int>(), 2);
+		auto booksQr{rt.Select(Query{books_namespace}.Limit(50).Where(price, CondGe, 2).Where(bookid, CondEq, Variant(bookItem[bookid])))};
 		ASSERT_TRUE(booksQr.Count() > 0);
 
 		auto joinedAuthorsCtx{bookIt.GetJoinedContext()};
@@ -324,6 +384,210 @@ TEST_F(JoinSelectsApi, InnerJoinWithNestedJoinTest) {
 	}
 }
 
+TEST_F(JoinSelectsApi, InnerJoinWithSubqueryInJoinedQueryTest) {
+	constexpr int kAuthorId = 990001;
+	constexpr int kBookId = 990002;
+	constexpr int kAge = 73;
+
+	{
+		Item authorItem = NewItem(authors_namespace);
+		authorItem[authorid] = kAuthorId;
+		authorItem[name] = "Joined Subquery Author";
+		authorItem[age] = kAge;
+		authorItem[locationid_fk] = 0;
+		Upsert(authors_namespace, authorItem);
+	}
+	{
+		Item bookItem = NewItem(books_namespace);
+		bookItem[bookid] = kBookId;
+		bookItem[title] = "Joined Subquery Book";
+		bookItem[pages] = 321;
+		bookItem[price] = 1234;
+		bookItem[genreId_fk] = 4;
+		bookItem[authorid_fk] = kAuthorId;
+		Upsert(books_namespace, bookItem);
+	}
+
+	Query authorsSubQuery = Query(authors_namespace).Select(authorid).Where(age, CondEq, kAge);
+	Query authorsQuery = Query(authors_namespace).Where(authorid, CondSet, std::move(authorsSubQuery));
+	Query joinQuery =
+		Query(books_namespace).Where(bookid, CondEq, kBookId).InnerJoin(std::move(authorsQuery), authorid_fk, CondEq, authorid);
+	QueryWatcher watcher{joinQuery};
+
+	auto qr = rt.Select(joinQuery);
+	auto err = VerifyResJSON(qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	auto rowIt = qr.begin();
+	Item bookItem = rowIt.GetItem(false);
+	ASSERT_EQ(bookItem[authorid_fk].As<int>(), kAuthorId);
+
+	auto joinedCtx = rowIt.GetJoinedContext();
+	auto& joinedIt = joinedCtx.iterator;
+	ASSERT_EQ(joinedIt.GetFieldsCount(), 1);
+	auto authorsField = joinedIt.Begin();
+	ASSERT_EQ(authorsField.ItemsCount(), 1);
+
+	auto authorItem = authorsField.ToQueryResults(joinedCtx)[0].GetItem();
+	ASSERT_EQ(authorItem[authorid].As<int>(), kAuthorId);
+	ASSERT_EQ(authorItem[age].As<int>(), kAge);
+}
+
+TEST_F(JoinSelectsApi, LeftJoinWithSubqueryInJoinedQueryTest) {
+	constexpr int kAuthorId = 990101;
+	constexpr int kBookId = 990102;
+	constexpr int kPrice = 2345;
+
+	{
+		Item authorItem = NewItem(authors_namespace);
+		authorItem[authorid] = kAuthorId;
+		authorItem[name] = "Left Joined Subquery Author";
+		authorItem[age] = 71;
+		authorItem[locationid_fk] = 0;
+		Upsert(authors_namespace, authorItem);
+	}
+	{
+		Item bookItem = NewItem(books_namespace);
+		bookItem[bookid] = kBookId;
+		bookItem[title] = "Left Joined Subquery Book";
+		bookItem[pages] = 123;
+		bookItem[price] = kPrice;
+		bookItem[genreId_fk] = 4;
+		bookItem[authorid_fk] = kAuthorId;
+		Upsert(books_namespace, bookItem);
+	}
+
+	Query booksSubQuery = Query(books_namespace).Select(bookid).Where(price, CondEq, kPrice);
+	Query booksQuery = Query(books_namespace).Where(bookid, CondSet, std::move(booksSubQuery));
+	Query joinQuery =
+		Query(authors_namespace).Where(authorid, CondEq, kAuthorId).LeftJoin(std::move(booksQuery), authorid, CondEq, authorid_fk);
+	QueryWatcher watcher{joinQuery};
+
+	auto qr = rt.Select(joinQuery);
+	auto err = VerifyResJSON(qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	auto rowIt = qr.begin();
+	Item authorItem = rowIt.GetItem(false);
+	ASSERT_EQ(authorItem[authorid].As<int>(), kAuthorId);
+
+	auto joinedCtx = rowIt.GetJoinedContext();
+	auto& joinedIt = joinedCtx.iterator;
+	ASSERT_EQ(joinedIt.GetFieldsCount(), 1);
+	auto booksField = joinedIt.Begin();
+	ASSERT_EQ(booksField.ItemsCount(), 1);
+
+	auto bookItem = booksField.ToQueryResults(joinedCtx)[0].GetItem();
+	ASSERT_EQ(bookItem[bookid].As<int>(), kBookId);
+	ASSERT_EQ(bookItem[price].As<int>(), kPrice);
+}
+
+TEST_F(JoinSelectsApi, InnerJoinWithSubqueriesInNestedJoinedQueriesTest) {
+	constexpr int kCountryId = 991001;
+	constexpr int kCountryCode = 991002;
+	constexpr int kLocationId = 991003;
+	constexpr int kLocationCode = 991004;
+	constexpr int kAuthorId = 991005;
+	constexpr int kBookId = 991006;
+
+	{
+		Item countryItem = NewItem(countries_namespace);
+		countryItem[countryid] = kCountryId;
+		countryItem[countryName] = "Subquery Country";
+		countryItem[countryCode] = kCountryCode;
+		Upsert(countries_namespace, countryItem);
+	}
+	{
+		Item locationItem = NewItem(location_namespace);
+		locationItem[locationid] = kLocationId;
+		locationItem[countryid_fk] = kCountryId;
+		locationItem[code] = kLocationCode;
+		locationItem[city] = "Subquery City";
+		Upsert(location_namespace, locationItem);
+	}
+	{
+		Item authorItem = NewItem(authors_namespace);
+		authorItem[authorid] = kAuthorId;
+		authorItem[name] = "Nested Joined Subquery Author";
+		authorItem[age] = 67;
+		authorItem[locationid_fk] = kLocationId;
+		Upsert(authors_namespace, authorItem);
+	}
+	{
+		Item bookItem = NewItem(books_namespace);
+		bookItem[bookid] = kBookId;
+		bookItem[title] = "Nested Joined Subquery Book";
+		bookItem[pages] = 654;
+		bookItem[price] = 4321;
+		bookItem[genreId_fk] = 4;
+		bookItem[authorid_fk] = kAuthorId;
+		Upsert(books_namespace, bookItem);
+	}
+
+	Query countrySubQuery = Query(countries_namespace).Select(countryid).Where(countryCode, CondEq, kCountryCode);
+	Query countriesQuery = Query(countries_namespace).Where(countryid, CondSet, std::move(countrySubQuery));
+
+	Query locationSubQuery = Query(location_namespace).Select(locationid).Where(code, CondEq, kLocationCode);
+	Query locationsQuery = Query(location_namespace)
+							   .Where(locationid, CondSet, std::move(locationSubQuery))
+							   .InnerJoin(std::move(countriesQuery), countryid_fk, CondEq, countryid);
+
+	Query authorSubQuery = Query(authors_namespace).Select(authorid).Where(name, CondEq, "Nested Joined Subquery Author");
+	Query authorsQuery = Query(authors_namespace)
+							 .Where(authorid, CondSet, std::move(authorSubQuery))
+							 .InnerJoin(std::move(locationsQuery), locationid_fk, CondEq, locationid);
+
+	Query joinQuery =
+		Query(books_namespace).Where(bookid, CondEq, kBookId).InnerJoin(std::move(authorsQuery), authorid_fk, CondEq, authorid);
+	QueryWatcher watcher{joinQuery};
+
+	auto qr = rt.Select(joinQuery);
+	auto err = VerifyResJSON(qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	reindexer::joins::QueryJoinsTable joinsInfo{Impl(joinQuery)};
+	const int authorsNsId = joinsInfo.GetJoinedNsId(0, 0);
+	const int locationsNsId = joinsInfo.GetJoinedNsId(authorsNsId, 0);
+	const int countriesNsId = joinsInfo.GetJoinedNsId(locationsNsId, 0);
+
+	auto bookIt = qr.begin();
+	auto authorsCtx = bookIt.GetJoinedContext();
+	auto& authorsIt = authorsCtx.iterator;
+	ASSERT_EQ(authorsIt.GetFieldsCount(), 1);
+	auto authorsField = authorsIt.Begin();
+	ASSERT_EQ(authorsField.ItemsCount(), 1);
+
+	auto authorItem = authorsField.GetItem(0, qr.GetPayloadType(authorsNsId), qr.GetTagsMatcher(authorsNsId));
+	ASSERT_EQ(authorItem.GetField(authorItem.FieldIndex(authorid)).As<int>(), kAuthorId);
+
+	auto authorQr = authorsField.ToQueryResults(authorsCtx);
+	ASSERT_EQ(authorQr.Count(), 1);
+	auto locationsCtx = authorQr.begin().GetJoinedContext();
+	auto& locationsIt = locationsCtx.iterator;
+	ASSERT_EQ(locationsIt.GetFieldsCount(), 1);
+	auto locationsField = locationsIt.Begin();
+	ASSERT_EQ(locationsField.ItemsCount(), 1);
+
+	auto locationItem = locationsField.GetItem(0, qr.GetPayloadType(locationsNsId), qr.GetTagsMatcher(locationsNsId));
+	ASSERT_EQ(locationItem.GetField(locationItem.FieldIndex(locationid)).As<int>(), kLocationId);
+	ASSERT_EQ(locationItem.GetField(locationItem.FieldIndex(code)).As<int>(), kLocationCode);
+
+	auto locationQr = locationsField.ToQueryResults(locationsCtx);
+	ASSERT_EQ(locationQr.Count(), 1);
+	auto countriesCtx = locationQr.begin().GetJoinedContext();
+	auto& countriesIt = countriesCtx.iterator;
+	ASSERT_EQ(countriesIt.GetFieldsCount(), 1);
+	auto countriesField = countriesIt.Begin();
+	ASSERT_EQ(countriesField.ItemsCount(), 1);
+
+	auto countryItem = countriesField.GetItem(0, qr.GetPayloadType(countriesNsId), qr.GetTagsMatcher(countriesNsId));
+	ASSERT_EQ(countryItem.GetField(countryItem.FieldIndex(countryid)).As<int>(), kCountryId);
+	ASSERT_EQ(countryItem.GetField(countryItem.FieldIndex(countryCode)).As<int>(), kCountryCode);
+}
+
 TEST_F(JoinSelectsApi, TestNestedJoinsSQL) {
 	{
 		constexpr auto sql = R"(
@@ -343,28 +607,30 @@ TEST_F(JoinSelectsApi, TestNestedJoinsSQL) {
 				ON books_namespace.authorid_fk = authors_namespace.authorid;)";
 
 		Query query{Query::FromSQL(sql)};
-		ASSERT_EQ(query.GetJoinQueries().size(), 1);
-		ASSERT_EQ(query.GetJoinQueries()[0].GetJoinQueries().size(), 2);
-		ASSERT_EQ(query.GetJoinQueries()[0].GetJoinQueries()[0].NsName(), location_namespace);
-		ASSERT_EQ(query.GetJoinQueries()[0].GetJoinQueries()[0].GetJoinQueries().size(), 1);
-		ASSERT_EQ(query.GetJoinQueries()[0].GetJoinQueries()[0].GetJoinQueries()[0].NsName(), countries_namespace);
-		ASSERT_EQ(query.GetJoinQueries()[0].GetJoinQueries()[1].NsName(), genres_namespace);
+		const auto queryImpl = Impl(query);
+		ASSERT_EQ(queryImpl.JoinQueries().size(), 1);
+		ASSERT_EQ(Impl(queryImpl.JoinQueries()[0]).JoinQueries().size(), 2);
+		ASSERT_EQ(Impl(Impl(queryImpl.JoinQueries()[0]).JoinQueries()[0]).NsName(), location_namespace);
+		ASSERT_EQ(Impl(Impl(queryImpl.JoinQueries()[0]).JoinQueries()[0]).JoinQueries().size(), 1);
+		ASSERT_EQ(Impl(Impl(Impl(queryImpl.JoinQueries()[0]).JoinQueries()[0]).JoinQueries()[0]).NsName(), countries_namespace);
+		ASSERT_EQ(Impl(Impl(queryImpl.JoinQueries()[0]).JoinQueries()[1]).NsName(), genres_namespace);
 
 		const Query queryFromSql{Query::FromSQL(query.GetSQL())};
 		ASSERT_EQ(query, queryFromSql) << query.GetSQL();
 	}
 	{
-		Query queryLocations{location_namespace, 0, 100};
-		queryLocations.Where(code, CondGe, 1);
-		queryLocations.InnerJoin(countryid_fk, countryid, CondEq, Query{countries_namespace});
+		auto queryLocations = Query{location_namespace}
+								  .Limit(100)
+								  .Where(code, CondGe, 1)
+								  .InnerJoin(Query{countries_namespace}, countryid_fk, CondEq, countryid);
 
-		Query queryAuthors{authors_namespace, 0, 100};
-		queryAuthors.InnerJoin(locationid_fk, locationid, CondEq, std::move(queryLocations));
-		queryAuthors.InnerJoin(authorid, genreid, CondGe, Query{genres_namespace});
+		auto queryAuthors = Query{authors_namespace}
+								.Limit(100)
+								.InnerJoin(std::move(queryLocations), locationid_fk, CondEq, locationid)
+								.InnerJoin(Query{genres_namespace}, authorid, CondGe, genreid);
 
-		Query queryBooks{books_namespace, 0, 50};
-		queryBooks.Where(price, CondGe, 2);
-		queryBooks.InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors));
+		auto queryBooks =
+			Query{books_namespace}.Limit(50).Where(price, CondGe, 2).InnerJoin(std::move(queryAuthors), authorid_fk, CondEq, authorid);
 
 		const auto querySql{queryBooks.GetSQL()};
 		constexpr auto expectedSQL =
@@ -382,17 +648,17 @@ static void VerifyNestedJoinChain(reindexer::joins::JoinedItemContext& ctx, int 
 	auto& joinedIt = ctx.iterator;
 
 	if (depth == kJoinLevels) {
-		ASSERT_TRUE(joinedIt.GetFieldsCount() == 0) << "Expected 0 joined fields at leaf, depth=" << depth;
+		ASSERT_EQ(joinedIt.GetFieldsCount(), 0) << "Expected 0 joined fields at leaf, depth=" << depth;
 		const auto joinedItemsCount{joinedIt.GetItemsCount()};
-		ASSERT_TRUE(joinedItemsCount == 0) << "Expected 0 joined items at leaf, depth=" << depth;
+		ASSERT_EQ(joinedItemsCount, 0) << "Expected 0 joined items at leaf, depth=" << depth;
 		return;
 	}
 
-	ASSERT_TRUE(joinedIt.GetFieldsCount() == 1) << "Expected 1 joined field at depth " << depth;
+	ASSERT_EQ(joinedIt.GetFieldsCount(), 1) << "Expected 1 joined field at depth " << depth;
 
 	auto fieldIt = joinedIt.Begin();
-	ASSERT_TRUE(fieldIt != joinedIt.End()) << "No joined fields at depth " << depth;
-	ASSERT_TRUE(fieldIt.ItemsCount() == 1) << "Expected 1 joined item at depth " << depth;
+	ASSERT_NE(fieldIt, joinedIt.End()) << "No joined fields at depth " << depth;
+	ASSERT_EQ(fieldIt.ItemsCount(), 1) << "Expected 1 joined item at depth " << depth;
 
 	auto nestedItem = fieldIt.GetItem(0, joinQr.GetPayloadType(chainNsIds[depth]), joinQr.GetTagsMatcher(chainNsIds[depth]));
 	const int pkValue = nestedItem.GetField(nestedItem.FieldIndex("id")).As<int>();
@@ -452,7 +718,7 @@ TEST_F(JoinSelectsApi, InnerJoinWithNestedJoinBigDepthTest) {
 	Query leafQuery = Query(nsNames.back()).Limit(100);
 	Query joinQuery = std::move(leafQuery);
 	for (int level = kChainDepth - 2; level >= 0; --level) {
-		joinQuery = Query(nsNames[level]).InnerJoin("fk_" + std::to_string(level), "id", CondEq, std::move(joinQuery));
+		joinQuery = Query(nsNames[level]).InnerJoin(std::move(joinQuery), "fk_" + std::to_string(level), CondEq, "id");
 	}
 
 	// Add merge queries
@@ -465,7 +731,7 @@ TEST_F(JoinSelectsApi, InnerJoinWithNestedJoinBigDepthTest) {
 	const int kJoinLevels{kChainDepth - 1};	 // Number of join levels in the chain
 	std::vector<int> chainNsIds(kJoinLevels);
 
-	reindexer::joins::QueryJoinsTable joinsInfo{joinQuery};
+	reindexer::joins::QueryJoinsTable joinsInfo{Impl(joinQuery)};
 	int prevNsId{rootNsId};
 	for (int depth = 0; depth < kJoinLevels; ++depth) {
 		chainNsIds[depth] = joinsInfo.GetJoinedNsId(prevNsId, 0);
@@ -473,7 +739,7 @@ TEST_F(JoinSelectsApi, InnerJoinWithNestedJoinBigDepthTest) {
 		prevNsId = chainNsIds[depth];
 	}
 
-	const int mergedSize{static_cast<int>(joinQuery.GetMergeQueries().size())};
+	const int mergedSize{static_cast<int>(Impl(joinQuery).MergeQueries().size())};
 	for (int i = 0; i < kJoinLevels; ++i) {
 		ASSERT_TRUE(chainNsIds[i] == i + 1 + mergedSize) << "nsId mismatch at depth " << i;
 	}
@@ -514,8 +780,8 @@ TEST_F(JoinSelectsApi, InnerJoinSmallNsPreselectTest) {
 
 	auto executeAndCheck = [this](unsigned booksLimit, const std::string& method) {
 		Query queryAuthors(authors_namespace);
-		Query queryBooks{Query(books_namespace, 0, booksLimit).Where(price, CondLe, 10000)};
-		Query joinQuery{queryBooks.Explain().InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors))};
+		Query queryBooks{Query(books_namespace).Limit(booksLimit).Where(price, CondLe, 10000)};
+		Query joinQuery{queryBooks.Explain().InnerJoin(std::move(queryAuthors), authorid_fk, CondEq, authorid)};
 		QueryWatcher watcher{joinQuery};
 
 		auto qr{rt.Select(joinQuery)};
@@ -557,7 +823,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 		FillQueryResultFromItem(item, resultRow);
 	}
 
-	Query joinQuery{Query(authors_namespace).LeftJoin(authorid, authorid_fk, CondEq, std::move(booksQuery))};
+	Query joinQuery{Query(authors_namespace).LeftJoin(std::move(booksQuery), authorid, CondEq, authorid_fk)};
 
 	QueryWatcher watcher{joinQuery};
 	auto joinQueryRes = rt.Select(joinQuery);
@@ -626,9 +892,9 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 	Query queryGenres(genres_namespace);
 	Query queryAuthors(authors_namespace);
-	Query queryBooks{Query(books_namespace, 0, 10).Where(price, CondGe, 500)};
-	Query innerJoinQuery = std::move(queryBooks.InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors)));
-	Query orInnerJoinQuery = std::move(innerJoinQuery.OrInnerJoin(genreId_fk, genreid, CondEq, std::move(queryGenres)));
+	Query queryBooks{Query(books_namespace).Limit(10).Where(price, CondGe, 500)};
+	Query innerJoinQuery = std::move(queryBooks.InnerJoin(std::move(queryAuthors), authorid_fk, CondEq, authorid));
+	Query orInnerJoinQuery = std::move(innerJoinQuery.Or().InnerJoin(std::move(queryGenres), genreId_fk, CondEq, genreid));
 	QueryWatcher watcher{orInnerJoinQuery};
 
 	const int authorsNsJoinIndex = 0;
@@ -671,11 +937,12 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 		ChangeNsOptimizationTimeout(books_namespace, booksTimeout);
 		ChangeNsOptimizationTimeout(authors_namespace, authorsTimeout);
 		std::this_thread::sleep_for(std::chrono::milliseconds(150));
-		Query booksQuery{Query(books_namespace, 11, 1111).Where(pages, CondGe, 100).Where(price, CondGe, 200).Sort(price, true)};
+		Query booksQuery{
+			Query(books_namespace).Offset(11).Limit(1111).Where(pages, CondGe, 100).Where(price, CondGe, 200).Sort(price, SortOrder::Desc)};
 		Query joinQuery{Query(authors_namespace)
 							.Where(authorid, CondLe, 100)
-							.LeftJoin(authorid, authorid_fk, CondEq, std::move(booksQuery))
-							.Sort(age, false)
+							.LeftJoin(std::move(booksQuery), authorid, CondEq, authorid_fk)
+							.Sort(age, SortOrder::Asc)
 							.Limit(10)};
 
 		QueryWatcher watcher{joinQuery};
@@ -727,8 +994,8 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
 	Query joinedQuery1 = Query(books_namespace);
 	Query query1{Query(authors_namespace)
-					 .LeftJoin(authorid, authorid_fk, CondEq, std::move(joinedQuery1))
-					 .Sort(books_namespace + '.' + price, false)};
+					 .LeftJoin(std::move(joinedQuery1), authorid, CondEq, authorid_fk)
+					 .Sort(books_namespace + '.' + price, SortOrder::Asc)};
 
 	reindexer::QueryResults joinQueryRes1;
 	Error err = rt.reindexer->Select(query1, joinQueryRes1);
@@ -738,8 +1005,8 @@ TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
 
 	Query joinedQuery2 = Query(authors_namespace);
 	Query query2{Query(books_namespace)
-					 .InnerJoin(authorid_fk, authorid, CondEq, std::move(joinedQuery2))
-					 .Sort(authors_namespace + '.' + age, false)};
+					 .InnerJoin(std::move(joinedQuery2), authorid_fk, CondEq, authorid)
+					 .Sort(authors_namespace + '.' + age, SortOrder::Asc)};
 
 	QueryWatcher watcher{query2};
 	auto joinQueryRes2 = rt.Select(query2);
@@ -765,11 +1032,11 @@ TEST_F(JoinSelectsApi, JoinTestSelectNonIndexedField) {
 	Query authorsQuery = Query(authors_namespace);
 	auto qr = rt.Select(Query(books_namespace)
 							.Where(rating, CondEq, Variant(static_cast<int64_t>(100)))
-							.InnerJoin(authorid_fk, authorid, CondEq, std::move(authorsQuery)));
+							.InnerJoin(std::move(authorsQuery), authorid_fk, CondEq, authorid));
 	ASSERT_EQ(qr.Count(), 1);
 
 	Item theOnlyItem = qr.begin().GetItem(false);
-	VariantArray krefs = theOnlyItem[title];
+	reindexer::VariantArray krefs = theOnlyItem[title];
 	ASSERT_EQ(krefs.size(), 1);
 	ASSERT_EQ(krefs[0].As<std::string>(), "Crime and Punishment");
 }
@@ -785,14 +1052,14 @@ TEST_F(JoinSelectsApi, JoinByNonIndexedField) {
 	Query authorsQuery = Query(authors_namespace);
 	auto qr = rt.Select(Query(default_namespace)
 							.Where(authorid_fk, CondEq, Variant(DostoevskyAuthorId))
-							.InnerJoin(authorid_fk, authorid, CondEq, std::move(authorsQuery)));
+							.InnerJoin(std::move(authorsQuery), authorid_fk, CondEq, authorid));
 	ASSERT_EQ(qr.Count(), 1);
 
 	// And backwards even!
 	Query testNsQuery = Query(default_namespace);
 	auto qr2 = rt.Select(Query(authors_namespace)
 							 .Where(authorid, CondEq, Variant(DostoevskyAuthorId))
-							 .InnerJoin(authorid, authorid_fk, CondEq, std::move(testNsQuery)));
+							 .InnerJoin(std::move(testNsQuery), authorid, CondEq, authorid_fk));
 	ASSERT_EQ(qr2.Count(), 1);
 }
 
@@ -800,18 +1067,18 @@ TEST_F(JoinSelectsApi, JoinsEasyStressTest) {
 	auto selectTh = [this]() {
 		Query queryGenres(genres_namespace);
 		Query queryAuthors(authors_namespace);
-		Query queryBooks{Query(books_namespace, 0, 10).Where(price, CondGe, 600).Sort(bookid, false)};
-		Query joinQuery1 = std::move(queryBooks.InnerJoin(authorid_fk, authorid, CondEq, queryAuthors).Sort(pages, false));
-		Query joinQuery2 = std::move(joinQuery1.LeftJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors)));
-		Query orInnerJoinQuery =
-			std::move(joinQuery2.OrInnerJoin(genreId_fk, genreid, CondEq, std::move(queryGenres)).Sort(price, true).Limit(20));
+		Query queryBooks{Query(books_namespace).Limit(10).Where(price, CondGe, 600).Sort(bookid, SortOrder::Asc)};
+		Query joinQuery1 = std::move(queryBooks.InnerJoin(Query{queryAuthors}, authorid_fk, CondEq, authorid).Sort(pages, SortOrder::Asc));
+		Query joinQuery2 = std::move(joinQuery1.LeftJoin(std::move(queryAuthors), authorid_fk, CondEq, authorid));
+		Query orInnerJoinQuery = std::move(
+			joinQuery2.Or().InnerJoin(std::move(queryGenres), genreId_fk, CondEq, genreid).Sort(price, SortOrder::Desc).Limit(20));
 		for (size_t i = 0; i < 10; ++i) {
 			auto queryRes = rt.Select(orInnerJoinQuery);
 			EXPECT_GT(queryRes.Count(), 0);
 		}
 	};
 
-	auto removeTh = [this]() { std::ignore = rt.Delete(Query(books_namespace, 0, 10).Where(price, CondGe, 5000)); };
+	auto removeTh = [this]() { std::ignore = rt.Delete(Query(books_namespace).Limit(10).Where(price, CondGe, 5000)); };
 
 	int32_t since = 0, count = 1000;
 	std::vector<std::thread> threads;
@@ -875,7 +1142,7 @@ TEST_F(JoinSelectsApi, PreSelectStoreValuesOptimizationStressTest) {
 		fill(leftNs[i], 0, maxLeftNsRowCount);
 		threads.emplace_back([this, i, &start]() {
 			// about 50% of queries will use the optimization
-			Query q{Query(leftNs[i]).InnerJoin(data, data, CondEq, Query(rightNs).Where(data, CondEq, rand() % maxDataValue))};
+			Query q{Query(leftNs[i]).InnerJoin(Query(rightNs).Where(data, CondEq, rand() % maxDataValue), data, CondEq, data)};
 			while (!start) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
@@ -898,12 +1165,12 @@ static void checkForAllowedJsonTags(const std::vector<std::string>& tags, gason:
 }
 
 TEST_F(JoinSelectsApi, JoinWithSelectFilter) {
-	Query queryAuthors = Query(authors_namespace).Select({name, age});
+	Query queryAuthors = Query(authors_namespace).Select(name, age);
 
 	Query queryBooks{Query(books_namespace)
 						 .Where(pages, CondGe, 100)
-						 .InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors))
-						 .Select({title, price})};
+						 .InnerJoin(std::move(queryAuthors), authorid_fk, CondEq, authorid)
+						 .Select(title, price)};
 
 	auto qr = rt.Select(queryBooks);
 	for (auto it : qr) {
@@ -938,13 +1205,9 @@ TEST_F(JoinSelectsApi, JoinWithSelectFilter) {
 // as the main NS of the merged query.
 TEST_F(JoinSelectsApi, TestMergeWithJoins) {
 	// Build the 1st query with 'authors_namespace' as join.
-	Query queryBooks = Query(books_namespace);
-	queryBooks.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace));
-
-	// Build the 2nd query (with join) with 'authors_namespace' as the main NS.
-	Query queryAuthors = Query(authors_namespace);
-	queryAuthors.LeftJoin(locationid_fk, locationid, CondEq, Query(location_namespace));
-	queryBooks.Merge(std::move(queryAuthors));
+	const auto queryBooks = Query(books_namespace)
+								.InnerJoin(Query(authors_namespace), authorid_fk, CondEq, authorid)
+								.Merge(Query(authors_namespace).LeftJoin(Query(location_namespace), locationid_fk, CondEq, locationid));
 
 	// Execute it
 	auto qr = rt.Select(queryBooks);
@@ -984,6 +1247,60 @@ TEST_F(JoinSelectsApi, TestMergeWithJoins) {
 	}
 }
 
+TEST_F(JoinSelectsApi, TestMergeWithSubqueryInJoinedQuery) {
+	constexpr int kAuthorId = 991101;
+	constexpr int kBookId = 991102;
+	constexpr int kPrice = 991103;
+
+	{
+		Item authorItem = NewItem(authors_namespace);
+		authorItem[authorid] = kAuthorId;
+		authorItem[name] = "Merge Joined Subquery Author";
+		authorItem[age] = 69;
+		authorItem[locationid_fk] = 0;
+		Upsert(authors_namespace, authorItem);
+	}
+	{
+		Item bookItem = NewItem(books_namespace);
+		bookItem[bookid] = kBookId;
+		bookItem[title] = "Merge Joined Subquery Book";
+		bookItem[pages] = 987;
+		bookItem[price] = kPrice;
+		bookItem[genreId_fk] = 4;
+		bookItem[authorid_fk] = kAuthorId;
+		Upsert(books_namespace, bookItem);
+	}
+
+	Query booksSubQuery = Query(books_namespace).Select(bookid).Where(price, CondEq, kPrice);
+	Query booksQuery = Query(books_namespace).Where(bookid, CondSet, std::move(booksSubQuery));
+	Query queryAuthors =
+		Query(authors_namespace).Where(authorid, CondEq, kAuthorId).InnerJoin(std::move(booksQuery), authorid, CondEq, authorid_fk);
+
+	Query queryBooks = Query(books_namespace).Where(bookid, CondEq, kBookId + 1);
+	queryBooks.Merge(std::move(queryAuthors));
+	QueryWatcher watcher{queryBooks};
+
+	auto qr = rt.Select(queryBooks);
+	auto err = VerifyResJSON(qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	auto rowIt = qr.begin();
+	ASSERT_EQ(rowIt.GetItemRef().Nsid(), 1);
+	Item authorItem = rowIt.GetItem(false);
+	ASSERT_EQ(authorItem[authorid].As<int>(), kAuthorId);
+
+	auto joinedCtx = rowIt.GetJoinedContext();
+	auto& joinedIt = joinedCtx.iterator;
+	ASSERT_EQ(joinedIt.GetFieldsCount(), 1);
+	auto booksField = joinedIt.Begin();
+	ASSERT_EQ(booksField.ItemsCount(), 1);
+
+	auto bookItem = booksField.ToQueryResults(joinedCtx)[0].GetItem();
+	ASSERT_EQ(bookItem[bookid].As<int>(), kBookId);
+	ASSERT_EQ(bookItem[price].As<int>(), kPrice);
+}
+
 // Check MERGEs nested into the JOINs (expecting errors)
 TEST_F(JoinSelectsApi, TestNestedMergesInJoinsError) {
 	constexpr auto sqlPattern =
@@ -1006,11 +1323,11 @@ TEST_F(JoinSelectsApi, CountCachedWithDifferentJoinConditions) {
 	// Test checks if cached total values is changing after inner join's condition change
 
 	const std::vector<Query> kBaseQueries = {
-		Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace)).Limit(10),
-		Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondLe, 100)).Limit(10),
-		Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 200)).Limit(10),
-		Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondLe, 400)).Limit(10),
-		Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 400)).Limit(10)};
+		Query(books_namespace).InnerJoin(Query(authors_namespace), authorid_fk, CondEq, authorid).Limit(10),
+		Query(books_namespace).InnerJoin(Query(authors_namespace).Where(authorid, CondLe, 100), authorid_fk, CondEq, authorid).Limit(10),
+		Query(books_namespace).InnerJoin(Query(authors_namespace).Where(authorid, CondGe, 200), authorid_fk, CondEq, authorid).Limit(10),
+		Query(books_namespace).InnerJoin(Query(authors_namespace).Where(authorid, CondLe, 400), authorid_fk, CondEq, authorid).Limit(10),
+		Query(books_namespace).InnerJoin(Query(authors_namespace).Where(authorid, CondGe, 400), authorid_fk, CondEq, authorid).Limit(10)};
 
 	SetQueriesCacheHitsCount(1);
 	for (auto& bq : kBaseQueries) {
@@ -1031,43 +1348,46 @@ TEST_F(JoinSelectsApi, CountCachedWithJoinNsUpdates) {
 	const Genre kLastGenre = *genres.rbegin();
 	const std::vector<Query> kBaseQueries = {
 		Query(books_namespace)
-			.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 100))
-			.OrInnerJoin(genreId_fk, genreid, CondEq,
-						 Query(genres_namespace)
-							 .Where(genrename, CondSet,
-									{Variant{"non fiction"}, Variant{"poetry"}, Variant{"documentary"}, Variant{kLastGenre.name}}))
-			.Limit(10),
-		Query(books_namespace)
-			.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 100))
-			.InnerJoin(genreId_fk, genreid, CondEq,
-					   Query(genres_namespace)
+			.InnerJoin(Query(authors_namespace).Where(authorid, CondGe, 100), authorid_fk, CondEq, authorid)
+			.Or()
+			.InnerJoin(Query(genres_namespace)
 						   .Where(genrename, CondSet,
-								  {Variant{"non fiction"}, Variant{"poetry"}, Variant{"documentary"}, Variant{kLastGenre.name}}))
+								  {Variant{"non fiction"}, Variant{"poetry"}, Variant{"documentary"}, Variant{kLastGenre.name}}),
+					   genreId_fk, CondEq, genreid)
 			.Limit(10),
 		Query(books_namespace)
-			.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 100))
+			.InnerJoin(Query(authors_namespace).Where(authorid, CondGe, 100), authorid_fk, CondEq, authorid)
+			.InnerJoin(Query(genres_namespace)
+						   .Where(genrename, CondSet,
+								  {Variant{"non fiction"}, Variant{"poetry"}, Variant{"documentary"}, Variant{kLastGenre.name}}),
+					   genreId_fk, CondEq, genreid)
+			.Limit(10),
+		Query(books_namespace)
+			.InnerJoin(Query(authors_namespace).Where(authorid, CondGe, 100), authorid_fk, CondEq, authorid)
 			.OpenBracket()
-			.InnerJoin(genreId_fk, genreid, CondEq,
-					   Query(genres_namespace).Where(genrename, CondSet, {Variant{"non fiction"}, Variant{kLastGenre.name}}))
-			.OrInnerJoin(
-				genreId_fk, genreid, CondEq,
-				Query(genres_namespace).Where(genrename, CondSet, {Variant{"poetry"}, Variant{"documentary"}, Variant{kLastGenre.name}}))
+			.InnerJoin(Query(genres_namespace).Where(genrename, CondSet, {Variant{"non fiction"}, Variant{kLastGenre.name}}), genreId_fk,
+					   CondEq, genreid)
+			.Or()
+			.InnerJoin(
+				Query(genres_namespace).Where(genrename, CondSet, {Variant{"poetry"}, Variant{"documentary"}, Variant{kLastGenre.name}}),
+				genreId_fk, CondEq, genreid)
 			.CloseBracket()
 			.Limit(10),
 		Query(books_namespace)
-			.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 100))
+			.InnerJoin(Query(authors_namespace).Where(authorid, CondGe, 100), authorid_fk, CondEq, authorid)
 			.OpenBracket()
-			.InnerJoin(genreId_fk, genreid, CondEq,
-					   Query(genres_namespace).Where(genrename, CondSet, {Variant{"non fiction"}, Variant{kLastGenre.name}}))
-			.InnerJoin(genreId_fk, genreid, CondEq, Query(genres_namespace))
+			.InnerJoin(Query(genres_namespace).Where(genrename, CondSet, {Variant{"non fiction"}, Variant{kLastGenre.name}}), genreId_fk,
+					   CondEq, genreid)
+			.InnerJoin(Query(genres_namespace), genreId_fk, CondEq, genreid)
 			.CloseBracket()
 			.Limit(10),
 		Query(books_namespace)
-			.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 100))
+			.InnerJoin(Query(authors_namespace).Where(authorid, CondGe, 100), authorid_fk, CondEq, authorid)
 			.OpenBracket()
-			.InnerJoin(genreId_fk, genreid, CondEq,
-					   Query(genres_namespace).Where(genrename, CondSet, {Variant{"non fiction"}, Variant{kLastGenre.name}}))
-			.OrInnerJoin(genreId_fk, genreid, CondEq, Query(genres_namespace))
+			.InnerJoin(Query(genres_namespace).Where(genrename, CondSet, {Variant{"non fiction"}, Variant{kLastGenre.name}}), genreId_fk,
+					   CondEq, genreid)
+			.Or()
+			.InnerJoin(Query(genres_namespace), genreId_fk, CondEq, genreid)
 			.CloseBracket()
 			.Limit(10)};
 
@@ -1144,9 +1464,9 @@ TEST_F(JoinOnConditionsApi, TestComparisonConditions) {
 	for (size_t i = 0; i < sqlTemplates.size(); ++i) {
 		const auto& sqlTemplate = sqlTemplates[i];
 		for (const auto& condition : conditions) {
-			Query query1 = Query::FromSQL(GetSql(sqlTemplate.first, condition.first));
+			auto query1 = Query::FromSQL(GetSql(sqlTemplate.first, condition.first));
 			auto qr1 = rt.Select(query1);
-			Query query2 = Query::FromSQL(GetSql(sqlTemplate.second, condition.second));
+			auto query2 = Query::FromSQL(GetSql(sqlTemplate.second, condition.second));
 			auto qr2 = rt.Select(query2);
 			ASSERT_EQ(query1.GetJSON(), query2.GetJSON());
 			ASSERT_EQ(qr1.Count(), qr2.Count());
@@ -1221,10 +1541,9 @@ TEST_F(JoinOnConditionsApi, TestLeftJoinOnCondSet) {
 	};
 
 	{
-		Query q(leftNs);
-		q.Sort("id", false);
+		auto q = Query(leftNs).Sort("id", SortOrder::Asc);
 		reindexer::Query qj(rightNs);
-		q.LeftJoin("id", "set", CondSet, qj);
+		q.LeftJoin(std::move(qj), "id", CondSet, "set");
 		reindexer::WrSerializer ser;
 		execQuery(q);
 	}
@@ -1247,13 +1566,13 @@ TEST_F(JoinOnConditionsApi, TestInvalidConditions) {
 		R"(select * from books_namespace inner join authors_namespace on (books_namespace.authorid_fk = books_namespace.authorid_fk and books_namespace.pages in(1, 50, 100, 500, 1000, 1500));)",
 	};
 	for (const std::string& sql : sqls) {
-		EXPECT_THROW((void)Query::FromSQL(sql), Error);
+		EXPECT_THROW(std::ignore = Query::FromSQL(sql), Error);
 	}
 	QueryResults qr;
-	Error err = rt.reindexer->Select(Query(books_namespace).InnerJoin(authorid_fk, authorid, CondAllSet, Query(authors_namespace)), qr);
+	Error err = rt.reindexer->Select(Query(books_namespace).InnerJoin(Query(authors_namespace), authorid_fk, CondAllSet, authorid), qr);
 	EXPECT_FALSE(err.ok());
 	qr.Clear();
-	err = rt.reindexer->Select(Query(books_namespace).InnerJoin(authorid_fk, authorid, CondLike, Query(authors_namespace)), qr);
+	err = rt.reindexer->Select(Query(books_namespace).InnerJoin(Query(authors_namespace), authorid_fk, CondLike, authorid), qr);
 	EXPECT_FALSE(err.ok());
 }
 
@@ -1336,19 +1655,19 @@ TEST_F(JoinSelectsApi, SeveralJoinsByTheSameNs) {
 	joinItem["id"] = 3;
 	Upsert(joinNs, joinItem);
 
-	auto qr = rt.Select(Query(mainNs).InnerJoin("id", "id", CondEq, Query(joinNs)));
+	auto qr = rt.Select(Query(mainNs).InnerJoin(Query(joinNs), "id", CondEq, "id"));
 	CheckJoinIds({{0, {{0}}}, {1, {{1}}}}, qr);
 
-	qr = rt.Select(Query(mainNs).InnerJoin("id", "id", CondEq, Query(joinNs)).LeftJoin("join_id", "id", CondEq, Query(joinNs)));
+	qr = rt.Select(Query(mainNs).InnerJoin(Query(joinNs), "id", CondEq, "id").LeftJoin(Query(joinNs), "join_id", CondEq, "id"));
 	CheckJoinIds({{0, {{0}, {2}}}, {1, {{1}, {3}}}}, qr);
 
-	qr = rt.Select(Query(mainNs).InnerJoin("id", "id", CondEq, Query(joinNs)).LeftJoin("join_id", "id", CondGe, Query(joinNs)));
+	qr = rt.Select(Query(mainNs).InnerJoin(Query(joinNs), "id", CondEq, "id").LeftJoin(Query(joinNs), "join_id", CondGe, "id"));
 	CheckJoinIds({{0, {{0}, {0, 1, 2}}}, {1, {{1}, {0, 1, 2, 3}}}}, qr);
 
 	qr = rt.Select(Query(mainNs)
-					   .InnerJoin("id", "id", CondEq, Query(joinNs))
-					   .LeftJoin("join_id", "id", CondGe, Query(joinNs))
-					   .LeftJoin("join_id", "id", CondEq, Query(joinNs)));
+					   .InnerJoin(Query(joinNs), "id", CondEq, "id")
+					   .LeftJoin(Query(joinNs), "join_id", CondGe, "id")
+					   .LeftJoin(Query(joinNs), "join_id", CondEq, "id"));
 	CheckJoinIds({{0, {{0}, {0, 1, 2}, {2}}}, {1, {{1}, {0, 1, 2, 3}, {3}}}}, qr);
 }
 

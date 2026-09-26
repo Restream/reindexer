@@ -67,14 +67,16 @@ public:
 	explicit Variant(Uuid) noexcept;
 	explicit Variant(ConstFloatVectorView v, NoHoldT = noHold) noexcept : variant_{0, 0, KeyValueType::FloatVector{}, v.Payload()} {}
 	Variant(ConstFloatVectorView v, HoldT) : Variant(FloatVector(v)) {}
-	Variant(FloatVector&& v) noexcept : variant_{0, 1, KeyValueType::FloatVector{}, ConstFloatVectorView(v).Payload()} {
-		std::ignore = std::move(v).Release();
+	Variant(FloatVector&& v) noexcept : variant_{0, uint8_t(!v.IsEmpty()), KeyValueType::FloatVector{}, ConstFloatVectorView(v).Payload()} {
+		if (variant_.ownsHeap) {
+			std::ignore = std::move(v).Release();
+		}
 	}
 	Variant(const Variant& other) : uuid_{other.uuid_} {
 		if (!isUuid()) {
 			uuid_.~UUID();
 			new (&variant_) Var{other.variant_};
-			if (variant_.hold != 0) {
+			if (variant_.ownsHeap != 0) {
 				copy(other);
 			}
 		}
@@ -83,14 +85,14 @@ public:
 		if (!isUuid()) {
 			uuid_.~UUID();
 			new (&variant_) Var{other.variant_};
-			other.variant_.hold = 0;
+			other.variant_.ownsHeap = 0;
 		}
 	}
 	template <typename... Ts>
 	Variant(const std::tuple<Ts...>&);
 
 	~Variant() {
-		if (!isUuid() && variant_.hold != 0) {
+		if (!isUuid() && variant_.ownsHeap != 0) {
 			free();
 		}
 	}
@@ -105,10 +107,10 @@ public:
 			} else {
 				uuid_.~UUID();
 				new (&variant_) Var{other.variant_};
-				other.variant_.hold = 0;
+				other.variant_.ownsHeap = 0;
 			}
 		} else {
-			if (variant_.hold != 0) {
+			if (variant_.ownsHeap != 0) {
 				free();
 			}
 			if (other.isUuid()) {
@@ -116,7 +118,7 @@ public:
 				new (&uuid_) UUID{other.uuid_};
 			} else {
 				variant_ = other.variant_;
-				other.variant_.hold = 0;
+				other.variant_.ownsHeap = 0;
 			}
 		}
 		return *this;
@@ -184,14 +186,14 @@ public:
 	size_t Hash() const noexcept;
 	void EnsureUTF8() const;
 	Variant& EnsureHold() & {
-		if (isUuid() || variant_.hold == 1) {
+		if (isUuid() || variant_.ownsHeap == 1) {
 			return *this;
 		}
 		return ensureHoldImpl();
 	}
 	Variant EnsureHold() && { return std::move(EnsureHold()); }
 	size_t HeldHeapSize() const noexcept {
-		if (!DoHold() || isUuid()) {
+		if (!OwnsHeap() || isUuid()) {
 			return 0;
 		}
 		return heldHeapSizeImpl();
@@ -244,7 +246,7 @@ public:
 	private:
 		const CollateOpts* collate_;
 	};
-	bool DoHold() const noexcept { return !isUuid() && variant_.hold; }
+	bool OwnsHeap() const noexcept { return !isUuid() && variant_.ownsHeap; }
 
 private:
 	template <NotComparable>
@@ -275,16 +277,16 @@ private:
 	ComparationResult relaxCompareWithString(std::string_view) const noexcept(notComparable == NotComparable::Return);
 
 	struct [[nodiscard]] Var {
-		Var(uint8_t isu, uint8_t h, KeyValueType t) noexcept : isUuid{isu}, hold{h}, type{t} {}
-		Var(uint8_t isu, uint8_t h, KeyValueType t, bool b) noexcept : isUuid{isu}, hold{h}, type{t}, value_bool{b} {}
-		Var(uint8_t isu, uint8_t h, KeyValueType t, int i) noexcept : isUuid{isu}, hold{h}, type{t}, value_int{i} {}
-		Var(uint8_t isu, uint8_t h, KeyValueType t, int64_t i) noexcept : isUuid{isu}, hold{h}, type{t}, value_int64{i} {}
-		Var(uint8_t isu, uint8_t h, KeyValueType t, uint64_t u) noexcept : isUuid{isu}, hold{h}, type{t}, value_uint64{u} {}
-		Var(uint8_t isu, uint8_t h, KeyValueType t, double d) noexcept : isUuid{isu}, hold{h}, type{t}, value_double{d} {}
-		Var(uint8_t isu, uint8_t h, KeyValueType t, float d) noexcept : isUuid{isu}, hold{h}, type{t}, value_float{d} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t) noexcept : isUuid{isu}, ownsHeap{h}, type{t} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, bool b) noexcept : isUuid{isu}, ownsHeap{h}, type{t}, value_bool{b} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, int i) noexcept : isUuid{isu}, ownsHeap{h}, type{t}, value_int{i} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, int64_t i) noexcept : isUuid{isu}, ownsHeap{h}, type{t}, value_int64{i} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, uint64_t u) noexcept : isUuid{isu}, ownsHeap{h}, type{t}, value_uint64{u} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, double d) noexcept : isUuid{isu}, ownsHeap{h}, type{t}, value_double{d} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, float d) noexcept : isUuid{isu}, ownsHeap{h}, type{t}, value_float{d} {}
 
 		uint8_t isUuid : 1;
-		uint8_t hold : 1;
+		uint8_t ownsHeap : 1;
 		KeyValueType type;
 		union {
 			bool value_bool;

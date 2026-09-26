@@ -77,7 +77,7 @@ class [[nodiscard]] ConstFloatVectorView : public FloatVectorImplView<const floa
 	using Base = FloatVectorImplView<const float>;
 
 public:
-	ConstFloatVectorView(FloatVectorView other) : Base{std::span<const float>(other.Data(), other.Dimension().Value())} {}
+	ConstFloatVectorView(FloatVectorView other) : Base{other.Span()} {}
 	ConstFloatVectorView(Base other) noexcept : Base{other} {}
 	template <typename T>
 	explicit ConstFloatVectorView(const FloatVectorImpl<T>&) noexcept;
@@ -117,7 +117,7 @@ public:
 		noexcept(FloatVectorDimension(dimension)))
 		: Base{std::move(ptr)}, dimension_(std::move(dimension)) {}
 
-	explicit FloatVectorImpl(ConstFloatVectorView other) : FloatVectorImpl{std::span<const T>{other.Data(), other.Dimension().Value()}} {}
+	explicit FloatVectorImpl(ConstFloatVectorView other) : FloatVectorImpl{other.Span()} {}
 	template <typename U>
 	explicit FloatVectorImpl(const FloatVectorImpl<U>& other) : dimension_{other.Dimension()} {
 		static_assert(std::is_same_v<std::remove_const_t<U>, UnderlyingT>);

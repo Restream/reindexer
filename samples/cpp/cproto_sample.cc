@@ -1,4 +1,5 @@
 #include <client/reindexer.h>
+#include <core/query/query.h>
 
 using namespace reindexer::client;
 using reindexer::Error;

@@ -17,7 +17,7 @@ public:
 
 	explicit ResultHandler(Result& result) noexcept : result_{result} {}
 
-	RX_ALWAYS_INLINE void AddItem(Ctx& ctx, RankT rank, IdType rowId, IdType properRowId, const PayloadValue& item, TagsMatcher& tm,
+	RX_ALWAYS_INLINE void AddItem(Ctx& ctx, RankT rank, IdType rowId, IdType properRowId, const PayloadValue& item, const TagsMatcher& tm,
 								  const PayloadType& pt, const NamespaceName& nsName) {
 		if constexpr (IsJoinPreSelectResult) {
 			addItemForPreSelectBuild(ctx, rank, rowId, properRowId, item, tm, pt);
@@ -76,7 +76,7 @@ public:
 	}
 
 private:
-	RX_ALWAYS_INLINE void addItem(Ctx& ctx, RankT rank, IdType rowId, IdType properRowId, const PayloadValue& item, TagsMatcher& tm,
+	RX_ALWAYS_INLINE void addItem(Ctx& ctx, RankT rank, IdType rowId, IdType properRowId, const PayloadValue& item, const TagsMatcher& tm,
 								  const PayloadType& pt, const NamespaceName& nsName) {
 		if (!ctx.sortingContext.expressions.empty()) {
 			if (result_.haveRank) {
@@ -101,7 +101,7 @@ private:
 	}
 
 	RX_ALWAYS_INLINE void addItemForPreSelectBuild(JoinPreSelectCtx& ctx, RankT rank, IdType rowId, IdType properRowId,
-												   const PayloadValue& item, TagsMatcher& tm, const PayloadType& pt) {
+												   const PayloadValue& item, const TagsMatcher& tm, const PayloadType& pt) {
 		std::visit(overloaded{[rowId](IdSetPlain& ids) { ids.AddUnordered(rowId); },
 							  [&](joins::PreSelect::Values& values) {
 								  if (!ctx.sortingContext.expressions.empty()) {
@@ -124,7 +124,8 @@ private:
 				   ctx.preSelect.Result().payload);
 	}
 
-	void calculateSortExpressions(Ctx& ctx, RankT rank, IdType rowId, const PayloadValue& pv, TagsMatcher& tm, const PayloadType& pt) {
+	void calculateSortExpressions(Ctx& ctx, RankT rank, IdType rowId, const PayloadValue& pv, const TagsMatcher& tm,
+								  const PayloadType& pt) {
 		const auto& exprs = ctx.sortingContext.expressions;
 		auto& exprResults = ctx.sortingContext.exprResults;
 		assertrx_throw(exprs.size() == exprResults.size());

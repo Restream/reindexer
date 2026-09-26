@@ -2,7 +2,9 @@
 #include <sstream>
 #include "core/index/index.h"
 #include "core/namespace/namespaceimpl.h"
+#include "core/payload/payloadtype.h"
 #include "core/query/fields_names_filter.h"
+#include "estl/h_vector.h"
 
 namespace reindexer {
 
@@ -21,26 +23,41 @@ template FieldsFilter::FieldsFilter(const std::string_view&, const NamespaceImpl
 
 FieldsFilter::FieldsFilter(std::span<const std::string> fields, const NamespaceImpl& ns) : FieldsFilter{false, false} { fill(fields, ns); }
 
+FieldsFilter FieldsFilter::FromFieldsSet(const FieldsSet& fields, const PayloadType& pt, const NamespaceImpl& ns) {
+	h_vector<std::string, 4> jsonPaths;
+	for (int f : fields) {
+		if (f >= 0 && f < pt.NumFields()) {
+			const auto& paths = pt.Field(f).JsonPaths();
+			jsonPaths.insert(jsonPaths.end(), paths.begin(), paths.end());
+		}
+	}
+	for (size_t i = 0, s = fields.getJsonPathsLength(); i < s; ++i) {
+		jsonPaths.emplace_back(fields.getJsonPath(i));
+	}
+	assertrx_throw(!jsonPaths.empty());
+	return FieldsFilter{jsonPaths, ns};
+}
+
 template <concepts::ConvertibleToString Str>
 void FieldsFilter::add(const Str& field, const NamespaceImpl& ns) {
 	int idx = IndexValueType::NotSet;
 	const auto foundIdx = ns.tryGetIndexByJsonPath(field, idx);
 	if (foundIdx) {
-		if (ns.indexes_[idx]->IsFloatVector()) {
+		if (ns.indexes()[idx]->IsFloatVector()) {
 			if (!allVectorFields_) {
 				vectorFields_.push_back(idx);
-				const auto& jsonPaths = ns.payloadType_->Field(idx).JsonPaths();
+				const auto& jsonPaths = ns.payloadType()->Field(idx).JsonPaths();
 				assertrx(jsonPaths.size() == 1);
-				vectorFields_.push_back(ns.tagsMatcher_.path2tag(jsonPaths[0]));
+				vectorFields_.push_back(ns.tagsMatcher().path2tag(jsonPaths[0]));
 			}
 		} else if (!allRegularFields_) {
-			if (idx < ns.payloadType_->NumFields()) {
+			if (idx < ns.payloadType()->NumFields()) {
 				regularFields_.push_back(idx);
-				for (const auto& jsonPath : ns.payloadType_->Field(idx).JsonPaths()) {
-					regularFields_.push_back(ns.tagsMatcher_.path2tag(jsonPath));
+				for (const auto& jsonPath : ns.payloadType()->Field(idx).JsonPaths()) {
+					regularFields_.push_back(ns.tagsMatcher().path2tag(jsonPath));
 				}
 			} else {
-				const auto& idxFields = ns.indexes_[idx]->Fields();
+				const auto& idxFields = ns.indexes()[idx]->Fields();
 				for (int fldIdx : idxFields) {
 					if (fldIdx >= 0) {
 						regularFields_.push_back(fldIdx);
@@ -52,7 +69,7 @@ void FieldsFilter::add(const Str& field, const NamespaceImpl& ns) {
 			}
 		}
 	} else if (!allRegularFields_) {
-		auto tagsPath = ns.tagsMatcher_.path2tag(field);
+		auto tagsPath = ns.tagsMatcher().path2tag(field);
 		if (!tagsPath.empty()) {
 			regularFields_.push_back(std::move(tagsPath));
 		}

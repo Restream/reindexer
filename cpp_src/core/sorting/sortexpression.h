@@ -29,7 +29,7 @@ struct [[nodiscard]] Value {
 
 struct [[nodiscard]] Index {
 	Index(std::string c) : column{std::move(c)}, index{IndexValueType::NotSet} {}
-	double GetValue(ConstPayload, TagsMatcher&) const;
+	double GetValue(ConstPayload, const TagsMatcher&) const;
 	bool operator==(const Index& other) const noexcept { return column == other.column && index == other.index; }
 
 	std::string column;
@@ -38,7 +38,7 @@ struct [[nodiscard]] Index {
 
 struct [[nodiscard]] ProxiedField {
 	ProxiedField(std::string j) : json{std::move(j)} {}
-	double GetValue(ConstPayload, TagsMatcher&) const;
+	double GetValue(ConstPayload, const TagsMatcher&) const;
 	bool operator==(const ProxiedField& other) const noexcept { return json == other.json; }
 
 	std::string json;
@@ -109,7 +109,7 @@ private:
 
 struct [[nodiscard]] DistanceFromPoint {
 	DistanceFromPoint(std::string c, Point p) : column{std::move(c)}, index{IndexValueType::NotSet}, point{p} {}
-	double GetValue(ConstPayload, TagsMatcher&) const;
+	double GetValue(ConstPayload, const TagsMatcher&) const;
 	bool operator==(const DistanceFromPoint& other) const noexcept {
 		return column == other.column && index == other.index && point == other.point;
 	}
@@ -121,7 +121,7 @@ struct [[nodiscard]] DistanceFromPoint {
 
 struct [[nodiscard]] ProxiedDistanceFromPoint {
 	ProxiedDistanceFromPoint(std::string j, Point p) : json{std::move(j)}, point{p} {}
-	double GetValue(ConstPayload, TagsMatcher&) const;
+	double GetValue(ConstPayload, const TagsMatcher&) const;
 	bool operator==(const ProxiedDistanceFromPoint& other) const noexcept { return json == other.json && point == other.point; }
 
 	std::string json;
@@ -145,7 +145,7 @@ struct [[nodiscard]] DistanceJoinedIndexFromPoint {
 struct [[nodiscard]] DistanceBetweenIndexes {
 	DistanceBetweenIndexes(std::string c1, std::string c2)
 		: column1{std::move(c1)}, index1{IndexValueType::NotSet}, column2{std::move(c2)}, index2{IndexValueType::NotSet} {}
-	double GetValue(ConstPayload, TagsMatcher&) const;
+	double GetValue(ConstPayload, const TagsMatcher&) const;
 	bool operator==(const DistanceBetweenIndexes& other) const noexcept {
 		return column1 == other.column1 && index1 == other.index1 && column2 == other.column2 && index2 == other.index2;
 	}
@@ -158,7 +158,7 @@ struct [[nodiscard]] DistanceBetweenIndexes {
 
 struct [[nodiscard]] ProxiedDistanceBetweenFields {
 	ProxiedDistanceBetweenFields(std::string j1, std::string j2) : json1{std::move(j1)}, json2{std::move(j2)} {}
-	double GetValue(ConstPayload, TagsMatcher&) const;
+	double GetValue(ConstPayload, const TagsMatcher&) const;
 	bool operator==(const ProxiedDistanceBetweenFields& other) const noexcept { return json1 == other.json1 && json2 == other.json2; }
 
 	std::string json1;
@@ -168,7 +168,8 @@ struct [[nodiscard]] ProxiedDistanceBetweenFields {
 struct [[nodiscard]] DistanceBetweenIndexAndJoinedIndex {
 	DistanceBetweenIndexAndJoinedIndex(std::string c, size_t jNsInd, std::string jc)
 		: column{std::move(c)}, index{IndexValueType::NotSet}, jNsIdx{jNsInd}, jColumn{std::move(jc)}, jIndex{IndexValueType::NotSet} {}
-	double GetValue(ConstPayload, TagsMatcher&, IdType rowId, const joins::NamespaceResults&, std::span<const joins::ItemsProcessor>) const;
+	double GetValue(ConstPayload, const TagsMatcher&, IdType rowId, const joins::NamespaceResults&,
+					std::span<const joins::ItemsProcessor>) const;
 	bool operator==(const DistanceBetweenIndexAndJoinedIndex& other) const noexcept {
 		return column == other.column && index == other.index && jNsIdx == other.jNsIdx && jColumn == other.jColumn &&
 			   jIndex == other.jIndex;
@@ -264,7 +265,7 @@ public:
 	template <typename T>
 	static SortExpression Parse(std::string_view, std::span<T> joinItemsProcessors);
 	double Calculate(IdType rowId, ConstPayload pv, const joins::NamespaceResults* results, std::span<const joins::ItemsProcessor> js,
-					 RankT proc, TagsMatcher& tagsMatcher, uint32_t shardIdHash) const {
+					 RankT proc, const TagsMatcher& tagsMatcher, uint32_t shardIdHash) const {
 		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher, shardIdHash);
 	}
 	bool ByField() const noexcept;
@@ -296,7 +297,7 @@ private:
 	void parseRank(std::string_view& expr, std::span<T> joinItemsProcessors, std::string_view fullExpr, ArithmeticOpType, bool negative,
 				   const SkipSW& skipSpaces);
 	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, const joins::NamespaceResults*,
-							std::span<const joins::ItemsProcessor>, RankT, TagsMatcher&, uint32_t);
+							std::span<const joins::ItemsProcessor>, RankT, const TagsMatcher&, uint32_t);
 
 	void openBracketBeforeLastAppended();
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
@@ -322,7 +323,7 @@ class [[nodiscard]] ProxiedSortExpression
 							SortExprFuncs::ProxiedDistanceBetweenFields> {
 public:
 	ProxiedSortExpression(const SortExpression& se, const NamespaceImpl& ns) { fill(se.cbegin(), se.cend(), ns); }
-	double Calculate(IdType rowId, ConstPayload pv, RankT rank, TagsMatcher& tagsMatcher, uint32_t shardIdHash) const {
+	double Calculate(IdType rowId, ConstPayload pv, RankT rank, const TagsMatcher& tagsMatcher, uint32_t shardIdHash) const {
 		return calculate(cbegin(), cend(), rowId, pv, rank, tagsMatcher, shardIdHash);
 	}
 	std::string Dump() const;
@@ -330,7 +331,7 @@ public:
 private:
 	void fill(SortExpression::const_iterator begin, SortExpression::const_iterator end, const NamespaceImpl&);
 	static std::string getJsonPath(std::string_view columnName, int idxNo, const NamespaceImpl&);
-	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, RankT, TagsMatcher&, uint32_t);
+	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, RankT, const TagsMatcher&, uint32_t);
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
 };
 std::ostream& operator<<(std::ostream&, const ProxiedSortExpression&);

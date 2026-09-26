@@ -9,6 +9,8 @@
 
 namespace reindexer_tests {
 
+using reindexer::Query;
+
 template <typename Client>
 struct [[nodiscard]] QueryResType {
 	using type = reindexer::client::QueryResults;
@@ -83,9 +85,7 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 
 	auto testUnit = [&](const std::string& field, AggType type, StrictMode mode, [[maybe_unused]] StrictError expectedError) {
 		QueryResType qr;
-		auto query = reindexer::Query(kNsName);
-
-		query.Strict(mode);
+		auto query = Query(kNsName).Strict(mode);
 		switch (type) {
 			case AggCount:
 			case AggCountCached:

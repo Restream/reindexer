@@ -1,5 +1,7 @@
 #include "indextext.h"
+#include <cmath>
 #include <memory>
+#include <utility>
 #include "core/dbconfig.h"
 #include "core/formatters/id_type_fmt.h"
 #include "core/ft/ft_fast/selecterimpl.h"
@@ -14,7 +16,9 @@
 #include "sort/pdqsort.hpp"
 #include "tools/clock.h"
 #include "tools/errors.h"
+#include "tools/flagguard.h"
 #include "tools/logger.h"
+#include "tools/randomgenerator.h"
 
 namespace {
 // Available stemmers for languages
@@ -30,7 +34,8 @@ static FtCtx::Ptr createFtCtx(const Index::SelectContext& selectCtx) {
 	assertrx_throw(selectCtx.selectFuncCtx);
 	assertrx_dbg(!selectCtx.selectFuncCtx->ranks);
 	selectCtx.selectFuncCtx->ranks = make_intrusive<RanksHolder>();
-	return selectCtx.selectFuncCtx->selectFunc.CreateCtx(selectCtx.selectFuncCtx->indexNo, selectCtx.selectFuncCtx->ranks);
+	return selectCtx.selectFuncCtx->selectFunc.CreateCtx(selectCtx.selectFuncCtx->nm, selectCtx.selectFuncCtx->indexNo,
+														 selectCtx.selectFuncCtx->ranks);
 }
 
 template <typename StoreType>
@@ -95,7 +100,8 @@ void IndexText<StoreType>::initHolder(FTConfig& cfg) {
 		holder_->stemmers_.emplace(*lang, *lang);
 	}
 
-	vdocsIndexed_ = 0;
+	holder_->needRebuild_ = true;
+	deletedDocsSinceOptimization_ = 0;
 
 	initTermBoosts(cfg);
 }
@@ -118,15 +124,16 @@ IndexText<StoreType>::IndexText(const IndexText<StoreType>& other, IndexCloneKin
 	  cache_ft_(other.cacheMaxSize_, other.hitsToCache_),
 	  cacheMaxSize_(other.cacheMaxSize_),
 	  hitsToCache_(other.hitsToCache_),
-	  rowId2Vdoc_(other.rowId2Vdoc_),
-	  removedVdocs_(other.removedVdocs_),
-	  vdocsCompactions_(other.vdocsCompactions_),
+	  rowId2VdocId_(other.rowId2VdocId_),
 	  vdocs_(other.vdocs_),
+	  vdocMergeInfo_(other.vdocMergeInfo_),
+	  freeVdocIds_(other.freeVdocIds_),
+	  unindexedVdocs_(other.unindexedVdocs_),
+	  sumWordsCount_(other.sumWordsCount_),
+	  deletedDocsSinceOptimization_(other.deletedDocsSinceOptimization_),
 	  vdocSet_(other.vdocSet_.begin(), other.vdocSet_.end(), other.vdocSet_.bucket_count(), hash_vdoc(payloadType_, fields_, vdocs_),
 			   equal_vdoc(payloadType_, fields_, vdocs_)) {
 	cache_ft_.CopyInternalPerfStatsFrom(other.cache_ft_);
-
-	vdocsIndexed_ = 0;
 
 	initSearchers();
 	initConfig(other.cfg_.get());
@@ -153,7 +160,7 @@ IndexText<StoreType>::IndexText(const IndexDef& idef, PayloadType&& payloadType,
 	this->selectKeyType_ = KeyValueType::String{};
 
 	// create empty vdoc
-	vdocs_.emplace_back();
+	std::ignore = appendVdocSlot();
 	static_assert(kEmptyVDocId == 0);
 	vdocsHeapSize_ += vdocs_[0].heap_size();
 }
@@ -187,7 +194,7 @@ void IndexText<StoreType>::SetOpts(const IndexOpts& opts) {
 			oldCfg.splitOptions != cfg_->splitOptions) {
 			initHolder(*cfg_);
 		} else {
-			holder_->Clear();
+			clearInvertedIndex();
 		}
 
 		holder_->needRebuild_ = true;
@@ -214,21 +221,92 @@ void IndexText<StoreType>::ReconfigureCache(const NamespaceCacheConfigData& cach
 }
 
 template <typename StoreType>
+bool IndexText<StoreType>::NeedsClean() const noexcept {
+	smart_lock lck(mtx_, NonUnique);
+	if (holder_->needRebuild_) {
+		return false;
+	}
+	if (holder_->HasPendingOptimization()) {
+		return true;
+	}
+	const size_t liveDocs = NumLiveDocs();
+	const size_t deletedThreshold = static_cast<size_t>(std::ceil(cfg_->deletedDocsOptimizationThreshold * liveDocs));
+	return deletedDocsSinceOptimization_ > deletedThreshold;
+}
+
+template <typename StoreType>
+void IndexText<StoreType>::Clean(const index::ICancelable& cancelable, bool enablePerfCounters) {
+	PerfStatCalculatorMT calc(cleanPerfCounter_, enablePerfCounters);
+	// Serialize with CommitFulltext()/build(), which mutate holder_ under Unique lock on mtx_.
+	// Clean itself is allowed to run concurrently with FT selects (CoW posting lists).
+	smart_lock lck(mtx_, NonUnique);
+	calc.LockHit();
+	if (holder_->needRebuild_) {
+		// Full rebuild of postings is pending; scrubbing stale entries would be discarded.
+		return;
+	}
+	if (!holder_->HasPendingOptimization()) {
+		const size_t liveDocs = NumLiveDocs();
+		const size_t deletedThreshold = static_cast<size_t>(std::ceil(cfg_->deletedDocsOptimizationThreshold * liveDocs));
+		if (deletedDocsSinceOptimization_ <= deletedThreshold) {
+			return;
+		}
+		deletedDocsSinceOptimization_ = 0;
+	}
+
+	class [[nodiscard]] CleanCancel final : public index::ICancelable {
+	public:
+		CleanCancel(const index::ICancelable& outer, const std::atomic_int32_t& cancelCleanCnt) noexcept
+			: outer_{outer}, cancelCleanCnt_{cancelCleanCnt} {}
+		bool IsCanceled() const noexcept override { return outer_.IsCanceled() || cancelCleanCnt_.load(std::memory_order_relaxed); }
+
+	private:
+		const index::ICancelable& outer_;
+		const std::atomic_int32_t& cancelCleanCnt_;
+	};
+	const CleanCancel cleanCancel(cancelable, cancelCleanCnt_);
+
+	const DeletedScanStat stat =
+		holder_->OptimizeDeleted([this](uint32_t vdocId, VDocVersion version) { return this->IsDeleted(vdocId, version); }, cleanCancel);
+	if (stat.canceled) {
+		calc.Disable();
+		return;
+	}
+	if (cfg_->logLevel >= LogTrace) [[unlikely]] {
+		logFmt(LogTrace, "IndexText::Optimize scanned {} posting lists and found {} stale postings", stat.listsScanned,
+			   stat.deletedPostings);
+	}
+}
+
+template <typename StoreType>
 IndexMemStat IndexText<StoreType>::GetMemStat(const RdxContext& ctx) const {
 	contexted_shared_lock lck(this->mtx_, ctx);
 	IndexMemStat ret;
 	ret.name = name_;
 	ret.indexingStructSize = this->holder_->GetMemStat();
-	ret.indexingStructSize += rowId2Vdoc_.capacity() * sizeof(uint32_t);
+	ret.indexingStructSize += rowId2VdocId_.capacity() * sizeof(uint32_t);
+	ret.indexingStructSize += freeVdocIds_.capacity() * sizeof(uint32_t);
+	ret.indexingStructSize += unindexedVdocs_.capacity() * sizeof(VDocPosting);
 	ret.idsetCache = this->cache_ft_.GetMemStat();
 	ret.isBuilt = this->isBuilt_;
 
-	ret.indexingStructSize += vdocsHeapSize_ + vdocs_.capacity() * sizeof(VDoc<StoreType>);
+	size_t vdocMergeInfoHeap = 0;
+	for (const auto& mergeInfo : vdocMergeInfo_) {
+		vdocMergeInfoHeap += mergeInfo.heap_size();
+	}
+	ret.indexingStructSize += vdocsHeapSize_ + vdocs_.capacity() * sizeof(VDoc<StoreType>) +
+							  vdocMergeInfo_.capacity() * sizeof(VDocMergeInfo) + vdocMergeInfoHeap;
+	ret.indexingStructSize += sumWordsCount_.capacity() * sizeof(uint64_t);
+	ret.indexingStructSize += vdocSet_.size() * sizeof(uint32_t);
 	ret.dataSize += stringsHeapSize_;
+	const size_t allocatedVdocs = vdocs_.empty() ? 0 : (vdocs_.size() - 1);	 // exclude sentinel slot 0
+	const size_t liveVdocs = vdocSet_.size();
+	const size_t removedVdocs = freeVdocIds_.size();
+	assertrx_dbg(allocatedVdocs >= liveVdocs + removedVdocs);
 	ret.textIndexStats = TextIndexStats{
-		.totalVdocs = vdocs_.size() - 1,
-		.removedVdocs = removedVdocs_,
-		.vdocsCompactions = vdocsCompactions_,
+		.totalVdocs = liveVdocs,
+		.removedVdocs = removedVdocs,
+		.deadVdocs = allocatedVdocs - liveVdocs - removedVdocs,
 	};
 
 	return ret;
@@ -237,55 +315,78 @@ IndexMemStat IndexText<StoreType>::GetMemStat(const RdxContext& ctx) const {
 template <typename StoreType>
 template <typename DataType>
 void IndexText<StoreType>::excludeFromVdoc(IdType rowId, DataType& dataDetached) {
-	if (static_cast<size_t>(rowId.ToNumber()) >= rowId2Vdoc_.size()) {
+	if (static_cast<size_t>(rowId.ToNumber()) >= rowId2VdocId_.size()) {
 		return;
 	}
 
-	uint32_t vdocId = rowId2Vdoc_[rowId.ToNumber()];
+	const uint32_t vdocId = rowId2VdocId_[rowId.ToNumber()];
 	if (vdocId == kEmptyVDocId) {
 		return;
 	}
-	rowId2Vdoc_[rowId.ToNumber()] = kEmptyVDocId;
+	rowId2VdocId_[rowId.ToNumber()] = kEmptyVDocId;
+
+	assertrx_dbg(vdocId < vdocs_.size());
 	auto& vdoc = vdocs_[vdocId];
 	vdocsHeapSize_ -= vdoc.heap_size();
 	if (vdoc.NumRows() == 1) {
-		// removing final row, need to remove vdoc
 		vdocSet_.erase(vdocId);
 		stringsHeapSize_ -= vdoc.strings_heap_size();
-		++removedVdocs_;
+		if (!vdocMergeInfo_[vdocId].wordCounts_.empty()) {
+			subFromWordCountSum(vdocMergeInfo_[vdocId].wordCounts_);
+		}
 	}
 
 	vdoc.RemoveRow(rowId, dataDetached);
-	vdocsHeapSize_ += vdoc.heap_size();
+	if (vdoc.Removed()) {
+		retireVdocSlot(vdocId);
+	} else {
+		vdocsHeapSize_ += vdoc.heap_size();
+	}
 }
 
 template <typename StoreType>
 template <typename DataType>
 bool IndexText<StoreType>::setVdocId(IdType rowId, const DataType& data) {
-	if (rowId2Vdoc_.size() <= static_cast<size_t>(rowId.ToNumber())) {
-		rowId2Vdoc_.resize(static_cast<size_t>(rowId.ToNumber()) + 1, kEmptyVDocId);
+	ensure_capacity_for_one_more(unindexedVdocs_);
+
+	if (rowId2VdocId_.size() <= static_cast<size_t>(rowId.ToNumber())) {
+		rowId2VdocId_.resize(static_cast<size_t>(rowId.ToNumber()) + 1, kEmptyVDocId);
 	}
 
-	assertrx_dbg(rowId2Vdoc_[rowId.ToNumber()] == kEmptyVDocId);
+	assertrx_dbg(rowId2VdocId_[rowId.ToNumber()] == kEmptyVDocId);
 
-	vdocs_.emplace_back();
-	vdocs_.back().AddRow(rowId, data);
-	auto res = vdocSet_.insert(vdocs_.size() - 1);
+	uint32_t probeId;
+	if (!freeVdocIds_.empty()) {
+		const uint32_t idx = tools::RandomGenerator::getu32(0, uint32_t(freeVdocIds_.size() - 1));
+		std::swap(freeVdocIds_[idx], freeVdocIds_.back());
+		probeId = freeVdocIds_.back();
+		freeVdocIds_.pop_back();
+	} else {
+		probeId = appendVdocSlot();
+	}
+	vdocs_[probeId].AddRow(rowId, data);
+	auto res = vdocSet_.insert(probeId);
 	const bool inserted = res.second;
 
 	if (inserted) {
-		rowId2Vdoc_[rowId.ToNumber()] = vdocs_.size() - 1;
-		vdocsHeapSize_ += vdocs_.back().heap_size();
-		stringsHeapSize_ += vdocs_.back().strings_heap_size();
+		if (vdocMergeInfo_[probeId].version_ == kEmptyVDocVersion) {
+			vdocMergeInfo_[probeId].version_ = 1;
+		}
+		unindexedVdocs_.push_back(VDocPosting{.vdocId = probeId, .version = vdocMergeInfo_[probeId].version_});
+		rowId2VdocId_[rowId.ToNumber()] = probeId;
+		vdocsHeapSize_ += vdocs_[probeId].heap_size();
+		stringsHeapSize_ += vdocs_[probeId].strings_heap_size();
 		return true;
-	} else {
-		// same vdoc already exists
-		vdocs_.pop_back();
-		uint32_t vdocId = *res.first;
-		rowId2Vdoc_[rowId.ToNumber()] = vdocId;
-		vdocs_[vdocId].AddRow(rowId, data);
-		return false;
 	}
+
+	clearVdocSlot(probeId);
+	freeVdocIds_.push_back(probeId);
+	const uint32_t vdocId = *res.first;
+	rowId2VdocId_[rowId.ToNumber()] = vdocId;
+	vdocsHeapSize_ -= vdocs_[vdocId].heap_size();
+	vdocs_[vdocId].AddRow(rowId, data);
+	vdocsHeapSize_ += vdocs_[vdocId].heap_size();
+	return false;
 }
 
 template <typename StoreType>
@@ -301,8 +402,8 @@ Variant IndexText<StoreType>::Upsert(const Variant& key, IdType id, bool& clearC
 
 template <>
 void IndexText<key_string>::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
-	if (rowId2Vdoc_.size() <= static_cast<size_t>(id.ToNumber())) {
-		rowId2Vdoc_.resize(static_cast<size_t>(id.ToNumber()) + 1, kEmptyVDocId);
+	if (rowId2VdocId_.size() <= static_cast<size_t>(id.ToNumber())) {
+		rowId2VdocId_.resize(static_cast<size_t>(id.ToNumber()) + 1, kEmptyVDocId);
 	}
 
 	const bool hasNonNulls = std::ranges::any_of(keys, [](const auto& key) noexcept { return !key.IsNullValue(); });
@@ -325,7 +426,9 @@ void IndexText<key_string>::Upsert(VariantArray& result, const VariantArray& key
 	}
 
 	std::ignore = setVdocId(id, data);
-	auto& vdocData = vdocs_[rowId2Vdoc_[id.ToNumber()]].DataRef();
+	const uint32_t vdocId = rowId2VdocId_[id.ToNumber()];
+	assertrx_dbg(vdocId != kEmptyVDocId);
+	auto& vdocData = vdocs_[vdocId].DataRef();
 
 	result.reserve(keys.size());
 	for (auto& key : keys) {
@@ -341,8 +444,8 @@ template <>
 void IndexText<PayloadValue>::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
 	assertrx_dbg(keys.size() == 1 && !keys[0].Type().Is<KeyValueType::Null>());
 
-	if (rowId2Vdoc_.size() <= static_cast<size_t>(id.ToNumber())) {
-		rowId2Vdoc_.resize(static_cast<size_t>(id.ToNumber()) + 1, kEmptyVDocId);
+	if (rowId2VdocId_.size() <= static_cast<size_t>(id.ToNumber())) {
+		rowId2VdocId_.resize(static_cast<size_t>(id.ToNumber()) + 1, kEmptyVDocId);
 	}
 
 	PayloadValue data;
@@ -352,7 +455,7 @@ void IndexText<PayloadValue>::Upsert(VariantArray& result, const VariantArray& k
 	isBuilt_ = false;
 	cache_ft_.Clear();
 
-	assertrx_dbg(rowId2Vdoc_[id.ToNumber()] == kEmptyVDocId);
+	assertrx_dbg(rowId2VdocId_[id.ToNumber()] == kEmptyVDocId);
 	const PayloadValue& pv = static_cast<const PayloadValue&>(keys[0]);
 	std::ignore = setVdocId(id, pv);
 
@@ -367,8 +470,10 @@ bool IndexText<key_string>::RefreshCompositeKey(const Variant& /*key*/, IdType /
 
 template <>
 bool IndexText<PayloadValue>::RefreshCompositeKey(const Variant& key, IdType id) noexcept {
-	assertrx_dbg(static_cast<size_t>(id.ToNumber()) < rowId2Vdoc_.size() && rowId2Vdoc_[id.ToNumber()] != kEmptyVDocId);
-	vdocs_[rowId2Vdoc_[id.ToNumber()]].UpdateRowData(id, static_cast<const PayloadValue&>(key));
+	assertrx_dbg(static_cast<size_t>(id.ToNumber()) < rowId2VdocId_.size() && rowId2VdocId_[id.ToNumber()] != kEmptyVDocId);
+	const uint32_t vdocId = rowId2VdocId_[id.ToNumber()];
+	assertrx_dbg(vdocId != kEmptyVDocId);
+	vdocs_[vdocId].UpdateRowData(id, static_cast<const PayloadValue&>(key));
 	cache_ft_.Clear();
 	return true;
 }
@@ -383,7 +488,7 @@ void IndexText<StoreType>::Delete(const Variant& key, IdType id, MustExist mustE
 template <>
 void IndexText<key_string>::Delete(const VariantArray& keys, IdType id, MustExist /*mustExist*/, StringsHolder& strHolder,
 								   bool& clearCache) {
-	assertrx_dbg(static_cast<size_t>(id.ToNumber()) < rowId2Vdoc_.size());
+	assertrx_dbg(static_cast<size_t>(id.ToNumber()) < rowId2VdocId_.size());
 
 	size_t numNotNulls = 0;
 	for (auto& key : keys) {
@@ -395,7 +500,8 @@ void IndexText<key_string>::Delete(const VariantArray& keys, IdType id, MustExis
 		return;
 	}
 
-	uint32_t vdocId = rowId2Vdoc_[id.ToNumber()];
+	const uint32_t vdocId = rowId2VdocId_[id.ToNumber()];
+	assertrx_dbg(vdocId != kEmptyVDocId);
 	bool anythingDeletedFromTheRow = false;
 	equal_key_string eq;
 
@@ -444,6 +550,10 @@ void IndexText<key_string>::Delete(const VariantArray& keys, IdType id, MustExis
 	this->isBuilt_ = false;
 	this->cache_ft_.Clear();
 	clearCache = true;
+	if (remainingElements.empty()) {
+		// Full row delete: do not recreate an empty vdoc (would coalesce into one shared empty slot).
+		return;
+	}
 	bool newVdocCreated = setVdocId(id, remainingElements);
 	if (vdocRemoved && !newVdocCreated) {
 		for (key_string& st : remainingElements) {
@@ -457,7 +567,7 @@ void IndexText<key_string>::Delete(const VariantArray& keys, IdType id, MustExis
 template <>
 void IndexText<PayloadValue>::Delete([[maybe_unused]] const VariantArray& keys, IdType id, MustExist /*mustExist*/,
 									 StringsHolder& /*strHolder*/, bool& clearCache) {
-	assertrx_dbg(static_cast<size_t>(id.ToNumber()) < rowId2Vdoc_.size() && keys.size() == 1 && !keys[0].IsNullValue());
+	assertrx_dbg(static_cast<size_t>(id.ToNumber()) < rowId2VdocId_.size() && keys.size() == 1 && !keys[0].IsNullValue());
 
 	PayloadValue data;
 	excludeFromVdoc(id, data);
@@ -470,6 +580,7 @@ template <typename StoreType>
 void IndexText<StoreType>::build(const RdxContext& rdxCtx) {
 	smart_lock lckNonUnique(mtx_, rdxCtx, NonUnique);
 	if (!this->isBuilt_) {
+		CounterGuardAIR32 cancelClean(cancelCleanCnt_);
 		// non atomic upgrade mutex to unique
 		lckNonUnique.unlock();
 		smart_lock lckUnique(mtx_, rdxCtx, Unique);
@@ -627,18 +738,18 @@ IdSetPlain::Ptr IndexText<StoreType>::applyCtxTypeAndSelect(DataHolder<VectorTyp
 
 	switch (ftCtx.Type()) {
 		case FtCtxType::kFtCtx: {
-			ft::MergeData mergeData = selector.template Process<ft::MergeData>(vdocsIndexed_, std::move(dsl), inTransaction, rankSortType,
+			ft::MergeData mergeData = selector.template Process<ft::MergeData>(vdocs_.size(), std::move(dsl), inTransaction, rankSortType,
 																			   std::move(statuses.docsExcluded), rdxCtx, *this);
 			return afterSelect(ftCtx, std::move(mergeData), rankSortType, std::move(statuses), useExternSt);
 		}
 		case FtCtxType::kFtArea: {
 			ft::MergeDataAreas<Area> mergeData = selector.template Process<ft::MergeDataAreas<Area>>(
-				vdocsIndexed_, std::move(dsl), inTransaction, rankSortType, std::move(statuses.docsExcluded), rdxCtx, *this);
+				vdocs_.size(), std::move(dsl), inTransaction, rankSortType, std::move(statuses.docsExcluded), rdxCtx, *this);
 			return afterSelect(ftCtx, std::move(mergeData), rankSortType, std::move(statuses), useExternSt);
 		}
 		case FtCtxType::kFtAreaDebug: {
 			ft::MergeDataAreas<AreaDebug> mergeData = selector.template Process<ft::MergeDataAreas<AreaDebug>>(
-				vdocsIndexed_, std::move(dsl), inTransaction, rankSortType, std::move(statuses.docsExcluded), rdxCtx, *this);
+				vdocs_.size(), std::move(dsl), inTransaction, rankSortType, std::move(statuses.docsExcluded), rdxCtx, *this);
 			return afterSelect(ftCtx, std::move(mergeData), rankSortType, std::move(statuses), useExternSt);
 		}
 		case FtCtxType::kNotSet:
@@ -753,7 +864,7 @@ SelectKeyResults IndexText<StoreType>::SelectKey(const VariantArray& keys, CondT
 	const std::string_view key = keys[0].As<p_string>();
 	dsl.Parse(keys[0].As<p_string>());
 
-	auto mergeStatuses = this->GetFtMergeStatuses(rdxCtx);
+	this->build(rdxCtx);
 	bool needPutCache = false;
 	const auto rankSortType = RankSortType(selectCtx.opts.rankSortType);
 	IdSetCacheKey ckey{keys, condition, rankSortType};
@@ -770,7 +881,7 @@ SelectKeyResults IndexText<StoreType>::SelectKey(const VariantArray& keys, CondT
 		}
 	}
 
-	return doSelectKey(key, std::move(dsl), needPutCache ? std::optional{std::move(ckey)} : std::nullopt, std::move(mergeStatuses),
+	return doSelectKey(key, std::move(dsl), needPutCache ? std::optional{std::move(ckey)} : std::nullopt, FtMergeStatuses{},
 					   FtUseExternStatuses::No, selectCtx.opts.inTransaction, rankSortType, *ftCtx, rdxCtx);
 }
 
@@ -792,100 +903,60 @@ SelectKeyResults IndexText<StoreType>::SelectKey(const VariantArray& keys, CondT
 }
 
 template <typename StoreType>
-void IndexText<StoreType>::cleanRemovedVdocs() {
-	std::vector<uint32_t> newVdocsIds_(vdocs_.size(), 0);
-	size_t nextId = 1;
-	for (size_t vdocId = 1; vdocId < vdocs_.size(); ++vdocId) {
-		if (vdocs_[vdocId].Removed()) {
-			continue;
-		}
-
-		newVdocsIds_[vdocId] = nextId;
-		if (vdocId != nextId) {
-			vdocs_[nextId] = std::move(vdocs_[vdocId]);
-		}
-
-		++nextId;
-	}
-
-	vdocs_.resize(nextId);
-
-	for (uint32_t& vdocId : rowId2Vdoc_) {
-		vdocId = newVdocsIds_[vdocId];
-	}
-
-	for (uint32_t& vdocId : vdocSet_) {
-		vdocId = newVdocsIds_[vdocId];
-	}
-	removedVdocs_ = 0;
-	vdocs_.shrink_to_fit();
-}
-
-template <typename StoreType>
 void IndexText<StoreType>::commitFulltextImpl() {
 	try {
 		auto tm0 = system_clock_w::now();
 		FieldsGetter gt(this->Fields(), this->payloadType_, this->KeyType());
 
-		const size_t totalVdocs = vdocs_.size() - 1;  // exclude empty sentinel
-		const bool needCompaction = removedVdocs_ > 0 && removedVdocs_ * 2 > totalVdocs;
-		if (needCompaction) {
-			logFmt(LogInfo, "FulltextIndex '{}': {} of {} vdocs removed, compacting and rebuilding", name_, removedVdocs_, totalVdocs);
-			holder_->Clear();
-		}
-
-		if (holder_->needRebuild_) {
-			vdocsIndexed_ = 0;
-			cleanRemovedVdocs();
-		}
-
 		std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
-		std::vector<uint32_t> vdocsIds;
-		vdocsTexts.reserve(vdocs_.size() - vdocsIndexed_);
-		vdocsIds.reserve(vdocs_.size() - vdocsIndexed_);
+		std::vector<VDocPosting> vdocsToIndex;
 		std::vector<std::unique_ptr<std::string>> bufStrs;
 
-		for (uint32_t vdocId = vdocsIndexed_; vdocId < vdocs_.size(); ++vdocId) {
-			if (vdocs_[vdocId].NumRows() == 0) {
-				continue;
-			}
-			vdocsIds.emplace_back(vdocId);
+		const auto appendVdoc = [&](uint32_t vdocId) {
+			vdocsToIndex.push_back(VDocPosting{.vdocId = vdocId, .version = vdocMergeInfo_[vdocId].version_});
 			vdocsTexts.emplace_back(gt.getDocFields(vdocs_[vdocId].DataRef(), bufStrs));
+		};
+
+		if (holder_->needRebuild_) {
+			vdocsTexts.reserve(vdocSet_.size());
+			vdocsToIndex.reserve(vdocSet_.size());
+			for (uint32_t vdocId = 1; vdocId < vdocs_.size(); ++vdocId) {
+				if (vdocs_[vdocId].Removed()) {
+					continue;
+				}
+				appendVdoc(vdocId);
+			}
+		} else {
+			vdocsTexts.reserve(unindexedVdocs_.size());
+			vdocsToIndex.reserve(unindexedVdocs_.size());
+			for (const VDocPosting& pending : unindexedVdocs_) {
+				if (pending.vdocId >= vdocs_.size()) {
+					continue;
+				}
+				auto& vdoc = vdocs_[pending.vdocId];
+				if (vdoc.Removed() || vdocMergeInfo_[pending.vdocId].version_ != pending.version) {
+					continue;
+				}
+				appendVdoc(pending.vdocId);
+			}
 		}
 
 		auto tm1 = system_clock_w::now();
 
-		std::vector<h_vector<float, 3>> vdocsWordsCountsByFields;
-		holder_->Process(vdocsTexts, vdocsIds, vdocs_.size(), Fields().size(), vdocsWordsCountsByFields, !*this->opts_.IsDense());
-		size_t idx = 0;
-		for (uint32_t vdocId = vdocsIndexed_; vdocId < vdocs_.size(); ++vdocId) {
-			if (vdocs_[vdocId].NumRows() == 0) {
-				continue;
-			}
-			vdocs_[vdocId].wordCounts_ = vdocsWordsCountsByFields[idx++];
+		std::vector<VDocWordCounts> vdocsWordsCountsByFields;
+		holder_->Process(vdocsTexts, vdocsToIndex, vdocs_.size(), Fields().size(), vdocsWordsCountsByFields, !*this->opts_.IsDense());
+		for (size_t idx = 0; idx < vdocsToIndex.size(); ++idx) {
+			const uint32_t vdocId = vdocsToIndex[idx].vdocId;
+			assertrx_dbg(vdocId != kEmptyVDocId);
+			assertrx_dbg(vdocMergeInfo_[vdocId].version_ == vdocsToIndex[idx].version);
+			auto& wordCounts = vdocMergeInfo_[vdocId].wordCounts_;
+			subFromWordCountSum(wordCounts);
+			wordCounts = vdocsWordsCountsByFields[idx];
+			addToWordCountSum(wordCounts);
 		}
+		unindexedVdocs_.clear();
 
-		// Calculate average words count per document for bm25 calculation
-		avgWordsCount_.resize(Fields().size(), 0);
-		for (unsigned i = 0; i < Fields().size(); i++) {
-			avgWordsCount_[i] = 0;
-			size_t nonEmptyCnt = 0;
-			for (auto& vdoc : vdocs_) {
-				if (vdoc.NumRows() > 0 && vdoc.wordCounts_.size() > 0) {
-					avgWordsCount_[i] += vdoc.wordCounts_[i];
-					++nonEmptyCnt;
-				}
-			}
-			if (nonEmptyCnt > 0) {
-				avgWordsCount_[i] /= nonEmptyCnt;
-			}
-		}
-
-		vdocsIndexed_ = vdocs_.size();
 		holder_->needRebuild_ = false;
-		if (needCompaction) {
-			++vdocsCompactions_;
-		}
 
 		if (cfg_->logLevel >= LogInfo) [[unlikely]] {
 			auto tm2 = system_clock_w::now();
@@ -895,15 +966,15 @@ void IndexText<StoreType>::commitFulltextImpl() {
 		}
 	} catch (Error& e) {
 		logFmt(LogError, "IndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());
-		holder_->Clear();
+		clearInvertedIndex();
 		throw;
 	} catch (std::exception& e) {
 		logFmt(LogError, "IndexText::Commit exception: '{}'. Index will be rebuilt on the next query", e.what());
-		holder_->Clear();
+		clearInvertedIndex();
 		throw;
 	} catch (...) {
 		logFmt(LogError, "IndexText::Commit exception: <unknown error>. Index will be rebuilt on the next query");
-		holder_->Clear();
+		clearInvertedIndex();
 		throw;
 	}
 }

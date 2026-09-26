@@ -1,6 +1,7 @@
 
 #include "sqlsuggester.h"
 #include "core/definitions/namespacedef.h"
+#include "core/namespace/indexes/index_names.h"
 #include "core/query/query.h"
 #include "core/system_ns_names.h"
 #include "sql_suggestions.h"
@@ -14,7 +15,7 @@ static bool checkIfTokenStartsWith(std::string_view src, std::string_view patter
 
 SQLSuggestions SQLSuggester::GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchema) {
 	Query query;
-	SQLSuggester suggester{query};
+	SQLSuggester suggester{Impl(query)};
 	suggester.ctx_.suggestionsPos = pos;
 	suggester.ctx_.autocompleteMode = true;
 	suggester.enumNamespaces_ = std::move(enumNamespaces);
@@ -67,7 +68,7 @@ void SQLSuggester::getMatchingFieldsNames(const std::string& token, std::unorder
 			continue;
 		}
 		for (auto& idx : ns.indexes) {
-			if (idx.Name() == "#pk" || idx.Name() == "-tuple") {
+			if (idx.Name() == ns_indexes::kPKIndexName || idx.Name() == ns_indexes::kTupleName) {
 				continue;
 			}
 			if (isBlank(token) || (dotPos != std::string::npos ? checkIfStartsWith<CaseSensitive::Yes>(token, idx.Name())

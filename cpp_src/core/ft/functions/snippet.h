@@ -14,7 +14,7 @@ class key_string;
 
 class [[nodiscard]] Snippet : private AreasSorter {
 public:
-	bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder);
+	bool Process(ItemRef&, const PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder);
 
 private:
 	void init(const FtFuncStruct& func);

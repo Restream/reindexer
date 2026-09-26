@@ -26,6 +26,8 @@
 
 namespace faiss {
 
+inline constexpr char kSavingCanceledMsg[] = "saving was canceled";
+
 struct Index;
 struct IndexBinary;
 struct VectorTransform;

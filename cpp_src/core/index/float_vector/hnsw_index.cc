@@ -434,7 +434,9 @@ FloatVectorIndex::StorageCacheWriteResult HnswIndexBase<Map>::WriteIndexCache(Wr
 		assertrx_dbg(false);  // Don't expect this error in test scenarios
 		res.err = std::move(err);
 	} catch (const std::exception& err) {
-		assertrx_dbg(false);  // Don't expect this error in test scenarios
+		if (std::string_view(err.what()).find(hnswlib::kSavingCanceledMsg) == std::string_view::npos) {
+			assertrx_dbg(false);  // Don't expect this error in test scenarios
+		}
 		res.err = Error{errLogic, err.what()};
 	} catch (...) {
 		assertrx_dbg(false);  // Don't expect this error in test scenarios
@@ -553,9 +555,9 @@ void HnswIndexBase<Map>::SwitchMapOnQuantized() {
 template <typename Map>
 size_t HnswIndexBase<Map>::newSize(size_t currentSize) noexcept {
 	if (currentSize > 500'000) {
-		return currentSize * 1.3;
+		return currentSize + currentSize / 10 * 3;
 	} else if (currentSize > 200'000) {
-		return currentSize * 1.5;
+		return currentSize + currentSize / 2;
 	} else if (currentSize > 50'000) {
 		return currentSize * 2;
 	} else {

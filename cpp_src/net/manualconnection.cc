@@ -49,10 +49,11 @@ void manual_connection::close_conn(int err) {
 	const bool hadWData = !w_data_.empty();
 	if (hadRData) {
 		std::ignore = read_from_buf(r_data_.buf, r_data_.transfer, false);
-		buffered_data_.clear();
+	}
+	buffered_data_.clear();
+	shrink_read_buf_if_needed();
+	if (hadRData) {
 		on_async_op_done(r_data_, err);
-	} else {
-		buffered_data_.clear();
 	}
 
 	if (hadWData) {
@@ -152,6 +153,7 @@ ssize_t manual_connection::read(std::span<char> rd_buf, transfer_data& transfer,
 	err_ref = 0;
 	auto remain_to_transfer = transfer.expected_size() - transfer.transfered_size();
 	if (read_from_buf(rd_buf, transfer, true)) {
+		shrink_read_buf_if_needed();
 		on_async_op_done(r_data_, 0);
 		return remain_to_transfer;
 	}
@@ -180,6 +182,7 @@ ssize_t manual_connection::read(std::span<char> rd_buf, transfer_data& transfer,
 				stats_->update_read_stats(nread);
 			}
 			if (read_from_buf(rd_buf, transfer, true)) {
+				shrink_read_buf_if_needed();
 				on_async_op_done(r_data_, 0);
 				return remain_to_transfer;
 			}
@@ -188,6 +191,7 @@ ssize_t manual_connection::read(std::span<char> rd_buf, transfer_data& transfer,
 			return nread;
 		}
 	}
+	shrink_read_buf_if_needed();
 	on_async_op_done(r_data_, 0);
 	return read_this_time;
 }

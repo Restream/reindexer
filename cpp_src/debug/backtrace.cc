@@ -34,6 +34,9 @@ static void print_assertion_message(std::ostream& sout) {
 #ifndef _WIN32
 #include <signal.h>
 #include <unistd.h>
+#if RX_WITH_SLOW_RUNTIME && defined(__linux__)
+#include <sys/prctl.h>
+#endif
 #include <atomic>
 #include <cerrno>
 #include <limits>
@@ -581,28 +584,43 @@ void print_crash_query(std::ostream& sout) {
 	}
 }
 
-static void sighandler(int sig, siginfo_t*, void* ctx) {
-	const auto writer = backtrace_get_writer();
-	std::ostringstream sout;
-	sout << "*** Backtrace on signal: " << sig << " ***" << std::endl;
-	writer(sout.str());
-	sout.str(std::string());
-	sout.clear();
-	print_crash_query(sout);
-	writer(sout.str());
-	sout.str(std::string());
-	sout.clear();
-	print_assertion_message(sout);
-	writer(sout.str());
-	sout.str(std::string());
-	sout.clear();
-	print_backtrace(sout, ctx, sig);
-	writer(sout.str());
+namespace {
 
-	exit(-1);
+class [[nodiscard]] WriterFlushBuf : public std::stringbuf {
+public:
+	explicit WriterFlushBuf(backtrace_writer_t writer) : writer_(std::move(writer)) {}
+
+	int sync() override {
+		if (const auto chunk = str(); !chunk.empty()) {
+			writer_(chunk);
+			str({});
+		}
+		return 0;
+	}
+
+private:
+	backtrace_writer_t writer_;
+};
+
+}  // namespace
+
+static void sighandler(int sig, siginfo_t*, void* ctx) {
+	WriterFlushBuf buf(backtrace_get_writer());
+	std::ostream out(&buf);
+	out << "*** Backtrace on signal: " << sig << " ***" << std::endl;
+	print_crash_query(out);
+	print_assertion_message(out);
+	print_backtrace(out, ctx, sig);
+	out.flush();
+
+	// exit() runs atexit/destructors while other threads are still running.
+	_exit(128 + sig);
 }
 
 void backtrace_init() noexcept {
+#if RX_WITH_SLOW_RUNTIME && defined(__linux__) && defined(PR_SET_PTRACER)
+	prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+#endif
 	struct sigaction sa;
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_sigaction = sighandler;

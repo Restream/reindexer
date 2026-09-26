@@ -5,12 +5,13 @@
 
 namespace reindexer {
 
+class ConstQueryImpl;
+
 namespace sharding {
 struct ShardingControlRequestData;
 struct SaveConfigCommand;
 struct ResetConfigCommand;
 struct ApplyConfigCommand;
-class LocatorServiceAdapter;
 class LocatorService;
 }  // namespace sharding
 
@@ -34,14 +35,14 @@ public:
 	Error Insert(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx);
 	Error Update(std::string_view nsName, Item& item, const RdxContext& ctx);
 	Error Update(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx);
-	Error Update(const Query& query, QueryResults& result, const RdxContext& ctx);
+	Error Update(ConstQueryImpl query, QueryResults& result, const RdxContext& ctx);
 	Error Upsert(std::string_view nsName, Item& item, const RdxContext& ctx);
 	Error Upsert(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx);
 	Error Delete(std::string_view nsName, Item& item, const RdxContext& ctx);
 	Error Delete(std::string_view nsName, Item& item, QueryResults& result, const RdxContext& ctx);
-	Error Delete(const Query& query, QueryResults& result, const RdxContext& ctx);
+	Error Delete(ConstQueryImpl query, QueryResults& result, const RdxContext& ctx);
 	Error ExecSQL(std::string_view sql, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx);
-	Error Select(const Query& query, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx);
+	Error Select(ConstQueryImpl query, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx);
 	Item NewItem(std::string_view nsName, const RdxContext& ctx);
 
 	Transaction NewTransaction(std::string_view nsName, const RdxContext& ctx);
@@ -115,13 +116,13 @@ private:
 		return ser;
 	}
 
-	auto isWithSharding(const Query& q, const RdxContext& ctx, int& actualShardId, int64_t& cfgSourceId) const;
+	auto isWithSharding(ConstQueryImpl q, const RdxContext& ctx, int& actualShardId, int64_t& cfgSourceId) const;
 	auto isWithSharding(std::string_view nsName, const RdxContext& ctx) const;
 
 	bool isWithSharding(const RdxContext& ctx) const noexcept;
 
 	template <typename ShardingRouterLock>
-	bool isSharderQuery(const Query& q, const ShardingRouterLock& shLockShardingRouter) const;
+	bool isSharderQuery(ConstQueryImpl q, const ShardingRouterLock& shLockShardingRouter) const;
 
 	template <typename ShardingRouterLock>
 	bool isSharded(std::string_view nsName, const ShardingRouterLock& shLockShardingRouter) const noexcept;
@@ -142,10 +143,10 @@ private:
 	Error modifyItemOnShard(LockedRouter&, const RdxContext& ctx, std::string_view nsName, Item& item, QueryResults& result,
 							const LocalFT& localFn);
 	template <typename LockedRouter, typename LocalFT>
-	Error executeQueryOnShard(LockedRouter&, const Query& query, QueryResults& result, unsigned proxyFetchLimit, const RdxContext&,
+	Error executeQueryOnShard(LockedRouter&, ConstQueryImpl query, QueryResults& result, unsigned proxyFetchLimit, const RdxContext&,
 							  LocalFT&&) noexcept;
 	template <typename CalucalteFT>
-	Error executeQueryOnClient(client::Reindexer& connection, const Query& q, client::QueryResults& qrClient,
+	Error executeQueryOnClient(client::Reindexer& connection, ConstQueryImpl q, client::QueryResults& qrClient,
 							   const CalucalteFT& limitOffsetCalc);
 
 	Error handleNewShardingConfig(const gason::JsonNode& config, const RdxContext& ctx) noexcept;

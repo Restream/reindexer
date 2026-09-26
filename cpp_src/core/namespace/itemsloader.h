@@ -23,7 +23,7 @@ public:
 
 	ItemsLoader(unsigned indexInsertionThreads, NamespaceImpl& ns)
 		: ns_(ns),
-		  items_(kBufferSize, ns_.payloadType_, ns_.tagsMatcher_),
+		  items_(kBufferSize, ns_.payloadType(), ns_.tagsMatcher()),
 		  slices_(kBufferSize),
 		  indexInsertionThreads_(indexInsertionThreads) {
 		assertrx(indexInsertionThreads_);
@@ -81,7 +81,7 @@ private:
 	};
 
 	struct [[nodiscard]] SliceStorage {
-		unsigned len = 0;
+		size_t len = 0;
 		std::unique_ptr<char[]> data;
 	};
 	struct [[nodiscard]] ItemData {
@@ -103,7 +103,7 @@ private:
 	void loadCachedANNIndexesFallback(const std::vector<unsigned>& indexes);
 	void clearIndexCache();
 	template <typename MutexT>
-	static void doInsertField(NamespaceImpl::IndexesStorage& indexes, unsigned field, IdType id, Payload& pl, Payload& plNew,
+	static void doInsertField(const NamespaceImpl::IndexesStorage& indexes, unsigned field, IdType id, Payload& pl, Payload& plNew,
 							  VariantArray& krefs, VariantArray& skrefs, MutexT& mtx, const ann_storage_cache::Reader* annCache);
 
 	friend class IndexInserters;
@@ -125,7 +125,7 @@ private:
 
 class [[nodiscard]] IndexInserters {
 public:
-	IndexInserters(NamespaceImpl::IndexesStorage& indexes, PayloadType pt, const ann_storage_cache::Reader* annCache);
+	IndexInserters(const NamespaceImpl::IndexesStorage& indexes, PayloadType pt, const ann_storage_cache::Reader* annCache);
 	~IndexInserters() { Stop(); }
 
 	void Run(unsigned threadsCnt);
@@ -162,7 +162,7 @@ private:
 	condition_variable cvReady_;
 	condition_variable cvDone_;
 	unsigned iteration_{0};
-	NamespaceImpl::IndexesStorage& indexes_;
+	const NamespaceImpl::IndexesStorage& indexes_;
 	const PayloadType pt_;
 	SharedData shared_;
 	unsigned readyThreads_ = {0};

@@ -7,6 +7,7 @@ namespace reindexer {
 
 class FieldsNamesFilter;
 class NamespaceImpl;
+class PayloadType;
 
 class [[nodiscard]] FieldsFilter {
 public:
@@ -45,6 +46,7 @@ public:
 	const FieldsSet* TryVectorFields() const& noexcept { return allVectorFields_ ? nullptr : &vectorFields_; }
 
 	static FieldsFilter AllFields() noexcept { return FieldsFilter{true, true}; }
+	static FieldsFilter FromFieldsSet(const FieldsSet&, const PayloadType&, const NamespaceImpl&);
 
 	template <typename P>
 	static FieldsFilter FromPath(P&& path) {

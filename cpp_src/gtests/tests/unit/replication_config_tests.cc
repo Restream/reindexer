@@ -3,11 +3,10 @@
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
-#include "core/keyvalue/variant.h"
 #include "core/namespace/namespacestat.h"
+#include "core/query/query.h"
 #include "core/reindexer.h"
 #include "core/system_ns_names.h"
-#include "core/type_consts.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "tools/serilize/wrserializer.h"
@@ -631,7 +630,7 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 			SetReplicationConfigNS(rt, correctReplConf);
 			CheckReplicationConfigNS(rt, correctReplConf);
 			std::this_thread::sleep_for(kReplicationConfLoadDelay);
-			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 			CheckNamespacesReplicationConfig(rt, correctReplConf);
 		}
 		{
@@ -640,7 +639,7 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 			SetReplicationConfigNS<kExpectErrorOnUpsert>(rt, invalidReplConf);
 			CheckReplicationConfigNS(rt, invalidReplConf);
 			std::this_thread::sleep_for(kReplicationConfLoadDelay);
-			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 			CheckNamespacesReplicationConfig(rt, correctReplConf);
 		}
 	}
@@ -650,7 +649,7 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 		Reindexer rt;
 		{
 			GTEST_TRACE_SCOPE("Reloading with invalid replication.server_id = " + std::to_string(invalidReplConf.serverID) + " to #config");
-			ASSERT_TRUE(fs::Stat(kReplFilePath) == fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_TRUE(fs::Stat(kReplFilePath) == fs::StatNotFound) << "replication.conf shall not exist when present.";
 
 			Error err = rt.Connect(kBuiltin);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -663,7 +662,7 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 			SetReplicationConfigNS<kExpectErrorOnUpsert>(rt, invalidReplConf1000);
 			std::this_thread::sleep_for(kReplicationConfLoadDelay);
 			CheckReplicationConfigNS(rt, invalidReplConf1000);
-			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 			CheckNamespacesReplicationConfig(rt, fallbackReplConf);
 		}
 	}
@@ -674,12 +673,12 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 		{
 			GTEST_TRACE_SCOPE("Reloading with invalid replication.server_id = " + std::to_string(invalidReplConf1000.serverID) +
 							  " in #config");
-			ASSERT_TRUE(fs::Stat(kReplFilePath) == fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_TRUE(fs::Stat(kReplFilePath) == fs::StatNotFound) << "replication.conf shall not exist when present.";
 
 			Error err = rt.Connect(kBuiltin);
 			ASSERT_TRUE(err.ok()) << err.what();
 			CheckReplicationConfigNS(rt, invalidReplConf1000);
-			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 			CheckNamespacesReplicationConfig(rt, fallbackReplConf);
 		}
 
@@ -687,7 +686,7 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 			GTEST_TRACE_SCOPE("Setting correct replication.server_id = " + std::to_string(correctReplConf.serverID) + " to #config");
 			SetReplicationConfigNS(rt, correctReplConf);
 			CheckReplicationConfigNS(rt, correctReplConf);
-			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 			CheckNamespacesReplicationConfig(rt, correctReplConf);
 		}
 	}
@@ -695,13 +694,13 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 	// 4. Start with correct sever_id, verify
 	{
 		GTEST_TRACE_SCOPE("Reloading with correct replication.server_id = " + std::to_string(correctReplConf.serverID) + " in #config");
-		ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+		ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 
 		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 		CheckReplicationConfigNS(rt, correctReplConf);
-		ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+		ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 		CheckNamespacesReplicationConfig(rt, correctReplConf);
 	}
 }

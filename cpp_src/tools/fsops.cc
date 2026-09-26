@@ -37,43 +37,65 @@ int MkDirAll(const std::string& path) noexcept {
 	}
 }
 
+#ifdef _WIN32
+static int failWithWin32Error(DWORD err) noexcept {
+	switch (err) {
+		case ERROR_FILE_NOT_FOUND:
+		case ERROR_PATH_NOT_FOUND:
+			errno = ENOENT;
+			break;
+		case ERROR_ACCESS_DENIED:
+		case ERROR_SHARING_VIOLATION:
+		case ERROR_LOCK_VIOLATION:
+		case ERROR_CURRENT_DIRECTORY:
+			errno = EACCES;
+			break;
+		default:
+			errno = EIO;
+			break;
+	}
+	return -1;
+}
+#endif	// _WIN32
+
 int RmDirAll(const std::string& path) noexcept {
 #ifndef _WIN32
 	return nftw(
 		path.c_str(), [](const char* fpath, const struct stat*, int, struct FTW*) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
-#else
+#else	// _WIN32
 	WIN32_FIND_DATA entry;
-	if (HANDLE hFind = FindFirstFile((path + "/*.*").c_str(), &entry); hFind != INVALID_HANDLE_VALUE) {
-		std::string dirPath;
-		do {
-			if (strncmp(entry.cFileName, ".", 2) == 0 || strncmp(entry.cFileName, "..", 3) == 0) {
-				continue;
-			}
-			const bool isDir = entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
-			dirPath.clear();
-			dirPath.append(path).append("/").append(entry.cFileName);
-			if (isDir) {
-				if (int ret = RmDirAll(dirPath); ret < 0) {
-					FindClose(hFind);
-					return ret;
-				}
-			} else {
-				if (!DeleteFile(dirPath.c_str())) {
-					FindClose(hFind);
-					fprintf(stderr, "reindexer error: unable to remove file '%s'\n", dirPath.c_str());
-					return -1;
-				}
-			}
-		} while (FindNextFile(hFind, &entry));
-		FindClose(hFind);
-		if (!RemoveDirectory(path.c_str())) {
-			fprintf(stderr, "reindexer error: unable to remove directory '%s'\n", path.c_str());
-			return -1;
-		}
+	HANDLE hFind = FindFirstFile((path + "/*.*").c_str(), &entry);
+	if (hFind == INVALID_HANDLE_VALUE) {
+		return failWithWin32Error(GetLastError());
 	}
-
+	std::string dirPath;
+	do {
+		if (strncmp(entry.cFileName, ".", 2) == 0 || strncmp(entry.cFileName, "..", 3) == 0) {
+			continue;
+		}
+		const bool isDir = entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+		dirPath.clear();
+		dirPath.append(path).append("/").append(entry.cFileName);
+		if (isDir) {
+			if (int ret = RmDirAll(dirPath); ret < 0) {
+				FindClose(hFind);
+				return ret;
+			}
+		} else if (!DeleteFile(dirPath.c_str())) {
+			const DWORD err = GetLastError();
+			FindClose(hFind);
+			fprintf(stderr, "reindexer error: unable to remove file '%s'\n", dirPath.c_str());
+			return failWithWin32Error(err);
+		}
+	} while (FindNextFile(hFind, &entry));
+	FindClose(hFind);
+	if (!RemoveDirectory(path.c_str())) {
+		const DWORD err = GetLastError();
+		fprintf(stderr, "reindexer error: unable to remove directory '%s'\n", path.c_str());
+		return failWithWin32Error(err);
+	}
 	return 0;
-#endif
+#endif	// _WIN32
 }
 
 int ReadFile(const std::string& path, std::string& content) noexcept {
@@ -222,13 +244,13 @@ FileStatus Stat(const std::string& path) {
 #ifdef _WIN32
 	struct _stat state;
 	if (_stat(path.c_str(), &state) < 0) {
-		return StatError;
+		return (errno == ENOENT) ? StatNotFound : StatError;
 	}
 	return (state.st_mode & _S_IFDIR) ? StatDir : StatFile;
 #else
 	struct stat state;
 	if (stat(path.c_str(), &state) < 0) {
-		return StatError;
+		return (errno == ENOENT) ? StatNotFound : StatError;
 	}
 	return S_ISDIR(state.st_mode) ? StatDir : StatFile;
 #endif

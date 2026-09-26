@@ -173,7 +173,7 @@ void FTApi::AddInBothFields(std::string_view ns, std::string_view w1, std::strin
 }
 
 reindexer::QueryResults FTApi::SimpleSelect(std::string_view ns, std::string_view index, std::string_view dsl, bool withHighlight) {
-	auto q{reindexer::Query(ns).Where(index, CondEq, std::string(dsl)).WithRank()};
+	auto q{reindexer::Query(ns).Where(index, CondEq, dsl).WithRank()};
 	if (withHighlight) {
 		q.AddFunction(fmt::format("{} = highlight(!,!)", index));
 	}

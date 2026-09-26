@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/query/query_impl.h"
 #include "reindexertestapi.h"
 
 namespace reindexer_tests {
@@ -30,7 +31,8 @@ protected:
 
 	void SetUp() override;
 	reindexer::Item newItem(int id);
-	void check(const reindexer::Query&) const;
+	void check(reindexer::ConstQueryImpl) const;
+	void check(const reindexer::Query& q) const { check(Impl(q)); }
 	std::string checkFailed(const reindexer::Query&) const;
 	void checkFailed(const reindexer::Query&, std::string_view expectErr) const;
 	void checkFailedRegex(const reindexer::Query&, std::string_view expectErrRegex) const;

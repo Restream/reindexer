@@ -1,15 +1,9 @@
 #pragma once
 
+#include <gtest/gtest.h>
 #include "reindexertestapi.h"
 
 namespace reindexer_tests {
-
-using reindexer::Error;
-using reindexer::Variant;
-using reindexer::VariantArray;
-using reindexer::Query;
-using reindexer::QueryEntry;
-using reindexer::LocalQueryResults;
 
 class [[nodiscard]] ReindexerApi : public virtual ::testing::Test {
 public:

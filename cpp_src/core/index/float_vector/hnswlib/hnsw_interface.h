@@ -11,6 +11,8 @@
 
 namespace hnswlib {
 
+inline constexpr char kSavingCanceledMsg[] = "saving was canceled";
+
 using SearchResultQueue = PriorityQueue<std::pair<float, labeltype>>;
 
 enum class [[nodiscard]] Synchronization { None, OnInsertions };

@@ -1,12 +1,8 @@
 #pragma once
 
 #include <optional>
-#include "estl/concepts.h"
-
+#include "core/query/query.h"
 namespace reindexer {
-
-class Query;
-class JoinedQuery;
 
 namespace functions {
 class PrecomputedValues;

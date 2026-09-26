@@ -2,6 +2,7 @@
 
 #include "aggregation.h"
 #include "api_encdec.h"
+#include "api_tv_arithmetic.h"
 #include "api_tv_composite.h"
 #include "api_tv_simple.h"
 #include "api_tv_simple_comparators.h"
@@ -36,6 +37,7 @@ int BenchMain(int argc, char** argv) {
 	JoinItems joinItems(DB.get(), 50'000);
 	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple"sv, kItemsInBenchDataset);
 	ApiTvSimpleComparators apiTvSimpleComparators(DB.get(), "ApiTvSimpleComparators"sv, kItemsInComparatorsBenchDataset);
+	ApiTvArithmetic apiTvArithmetic(DB.get(), "ApiTvArithmetic"sv, kItemsInComparatorsBenchDataset);
 	ApiTvSimpleSparse apiTvSimpleSparse(DB.get(), "ApiTvSimpleSparse"sv, kItemsInBenchDataset);
 	ApiTvComposite apiTvComposite(DB.get(), "ApiTvComposite"sv, kItemsInBenchDataset);
 	Geometry geometry(DB.get(), "Geometry"sv, kItemsInBenchDataset);
@@ -50,6 +52,11 @@ int BenchMain(int argc, char** argv) {
 	}
 
 	err = apiTvSimpleComparators.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	err = apiTvArithmetic.Initialize();
 	if (!err.ok()) {
 		return err.code();
 	}
@@ -102,6 +109,7 @@ int BenchMain(int argc, char** argv) {
 	joinItems.RegisterAllCases();
 	apiTvSimple.RegisterAllCases();
 	apiTvSimpleComparators.RegisterAllCases();
+	apiTvArithmetic.RegisterAllCases();
 	apiTvSimpleSparse.RegisterAllCases();
 	apiTvComposite.RegisterAllCases();
 	geometry.RegisterAllCases();

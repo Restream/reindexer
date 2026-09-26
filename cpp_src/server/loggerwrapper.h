@@ -11,6 +11,7 @@ public:
 	LoggerWrapper(const char* name) : logger_(spdlog::get(name)) {}
 
 	operator bool() const noexcept { return logger_ != nullptr; }
+	bool should_log(spdlog::level::level_enum level) const noexcept { return logger_ && logger_->should_log(level); }
 
 	template <typename... Args>
 	void error(spdlog::format_string_t<Args...> fmt, Args&&... args) const {

@@ -1,8 +1,7 @@
 #include "embedderscache.h"
 
 #include <optional>
-#include "core/cjson/jsonbuilder.h"
-#include "core/enums.h"
+#include "core/embedding/protocol/iembed_protocol.h"
 #include "core/system_ns_names.h"
 #include "core/type_consts.h"
 #include "embedders_lru_cache.h"
@@ -17,17 +16,14 @@
 
 namespace {
 
-constexpr std::string_view kDataFieldName{"data"};
-constexpr std::string_view kResultDataName{"products"};
 constexpr std::string_view kWildcard{"*"};
-constexpr size_t kProductDimension{1024};
 
-};	// namespace
+}  // namespace
 
 namespace reindexer {
 namespace embedding {
 
-Error Adapter::VectorsFromJSON(const StrorageKeyT& json, ValueT& result) noexcept {
+Error Adapter::VectorsFromJSON(const StrorageKeyT& json, EmbedderConfig::Protocol protocol, ValueT& result) noexcept {
 	try {
 		assertrx_dbg(!json.empty());
 
@@ -35,7 +31,7 @@ Error Adapter::VectorsFromJSON(const StrorageKeyT& json, ValueT& result) noexcep
 
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
-		vectorsFromJSON(root, result);
+		GetEmbedProtocol(protocol).ParseResponse(root, result);
 	} catch (const std::exception& e) {
 		return {errParseJson, "Embed source adapter can't parse vector '{}': {}", json, e.what()};
 	} catch (...) {
@@ -44,61 +40,17 @@ Error Adapter::VectorsFromJSON(const StrorageKeyT& json, ValueT& result) noexcep
 	return {};
 }
 
-Adapter::Adapter(const BaseKeyT& source) {
-	WrSerializer ser;
-	{  // [text0]
-		JsonBuilder json{ser, ObjType::TypePlain};
-		json.Put(TagName::Empty(), source);
-	}
-	view_ = std::string{ser.Slice()};
+Adapter::Adapter(const BaseKeyT& source, EmbedderConfig::Protocol protocol, std::string_view model) : protocol_{protocol} {
+	GetEmbedProtocol(protocol_).PrepareQuery(source, model, request_);
 }
 
-Adapter::Adapter(std::span<const std::vector<std::pair<std::string, VariantArray>>> sources) {
-	WrSerializer ser;
-	{  // {'fld0':text,'fld1':[Val0,Val1,...],...}
-		JsonBuilder json{ser, ObjType::TypePlain};
-		for (const auto& docSource : sources) {
-			auto arrNodeItem = json.Object(TagName::Empty());
-			for (const auto& itemSource : docSource) {
-				if (!itemSource.second.IsArrayValue() && itemSource.second.size() == 1) {
-					arrNodeItem.Put(itemSource.first, itemSource.second.front());
-				} else {
-					auto arrNode = arrNodeItem.Array(itemSource.first);
-					for (const auto& item : itemSource.second) {
-						arrNode.Put(TagName::Empty(), item);
-					}
-				}
-			}
-			arrNodeItem.End();
-		}
-	}
-	view_ = std::string{ser.Slice()};
+Adapter::Adapter(std::span<const DocSource> sources, EmbedderConfig::Protocol protocol, EmbedderConfig::FieldsFormat fieldsFormat,
+				 std::string_view model)
+	: protocol_{protocol} {
+	GetEmbedProtocol(protocol_).PrepareUpsert(sources, fieldsFormat, model, request_);
 }
 
-chunk Adapter::Content() const {
-	WrSerializer ser;
-	{  // {'data':[*view_*]}
-		JsonBuilder json{ser};
-		auto arrNodeDoc = json.Array(kDataFieldName);
-		arrNodeDoc.Raw(view_);
-	}
-	return ser.DetachChunk();
-}
-
-void Adapter::vectorsFromJSON(const gason::JsonNode& root, ValueT& result) {
-	using namespace std::string_view_literals;
-	static thread_local std::vector<float> values(kProductDimension);
-	for (auto products : root[kResultDataName]) {
-		for (auto product : products) {
-			values.resize(0);
-			// auto chunk = product["chunk"sv].As<std::string>();
-			for (auto val : product["embedding"sv]) {
-				values.emplace_back(val.As<double>());
-			}
-			result.emplace_back(values);
-		}
-	}
-}
+chunk Adapter::Content() const { return GetEmbedProtocol(protocol_).BuildRequest(request_); }
 
 }  // namespace embedding
 

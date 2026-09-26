@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdlib>
+#include <utility>
 #include <vector>
 #include "estl/dummy_mutex.h"
 #include "estl/lock.h"
@@ -20,7 +21,7 @@ public:
 	template <class T>
 	T Get() noexcept {
 		lock_guard lck(mtx_);
-		lap();
+		std::ignore = lap();
 		return T{.totalHitCount = totalHitCount_,
 				 .totalAvgTimeUs = size_t(totalTime_.count() / (totalHitCount_ ? totalHitCount_ : 1)),
 				 .totalAvgLockTimeUs = size_t(totalLockTime_.count() / (totalHitCount_ ? totalHitCount_ : 1)),
@@ -33,7 +34,8 @@ public:
 	}
 
 private:
-	void lap() noexcept;
+	// Returns true after idle >= 2s (last_sec_* is 0). Hit() keeps the current sample and its LockHit in the new bucket.
+	bool lap() noexcept;
 
 	size_t totalHitCount_ = 0;
 	std::chrono::microseconds totalTime_ = std::chrono::microseconds(0);
@@ -44,6 +46,8 @@ private:
 	size_t calcHitCount_ = 0;
 	std::chrono::microseconds calcTime_ = std::chrono::microseconds(0);
 	std::chrono::microseconds calcLockTime_ = std::chrono::microseconds(0);
+	// LockHit does not lap; Hit() always follows and consumes this.
+	std::chrono::microseconds pendingLockTime_ = std::chrono::microseconds(0);
 	system_clock_w::time_point calcStartTime_ = system_clock_w::now_coarse();
 	double stddev_ = 0.0;
 	std::chrono::microseconds minTime_ = std::chrono::microseconds::max();
@@ -64,12 +68,12 @@ public:
 	void Reset() noexcept;
 	float Get() noexcept {
 		lock_guard lck(mtx_);
-		lap();
+		std::ignore = lap();
 		return lastSecondAvgValue;
 	}
 
 private:
-	void lap() noexcept;
+	bool lap() noexcept;
 
 	size_t hitCount_ = 0;
 	size_t valueCount = 0;

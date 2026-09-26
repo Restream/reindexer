@@ -3,7 +3,7 @@
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/uuid.h"
-#include "core/keyvalue/variant.h"
+#include "core/query/query.h"
 #include "core/reindexer.h"
 #include "gmock/gmock.h"
 #include "gtests/tools.h"

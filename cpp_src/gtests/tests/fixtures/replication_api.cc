@@ -81,7 +81,7 @@ void ReplicationApi::WaitSync(std::string_view ns, reindexer::lsn_t expectedLsn)
 							<< "name: " << ns << ", actual lsn: " << int64_t(state.lsn) << " expected lsn: " << int64_t(expectedLsn)
 							<< " i = " << i << " masterId_ = " << masterId_;
 					}
-					ASSERT_EQ(state.dataHash, xstate.dataHash) << "name: " << ns << ", lsns: " << int64_t(state.lsn) << " "
+					ASSERT_EQ(state.checksum, xstate.checksum) << "name: " << ns << ", lsns: " << int64_t(state.lsn) << " "
 															   << int64_t(xstate.lsn) << " i = " << i << " masterId_ = " << masterId_;
 					ASSERT_EQ(state.dataCount, xstate.dataCount);
 				}

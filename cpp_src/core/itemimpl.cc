@@ -1,5 +1,6 @@
 #include "core/itemimpl.h"
 
+#include <algorithm>
 #include <memory>
 #include <span>
 #include "core/cjson/baseencoder.h"
@@ -141,6 +142,7 @@ void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray& keys, 
 
 void ItemImpl::ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& keys, FieldModifyMode mode) {
 	validateModifyArray(keys);
+	cjson_ = {};
 	payloadValue_.Clone();
 	Payload pl = GetPayload();
 
@@ -282,6 +284,7 @@ void ItemImpl::Clear() {
 void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) {
 	payloadValue_.Clone();
 	std::string_view data = createSafeDataCopy(slice);
+	cjson_ = {};
 
 	// check tags matcher update
 	if (Serializer rdser(data); rdser.GetCTag() == kCTagEnd) {
@@ -292,7 +295,10 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 		tagsMatcher_.setUpdated();
 		data = data.substr(1 + sizeof(uint32_t), tmOffset - 5);
 	}
-	cjson_ = data;
+	const bool pkOnlyDecode = pkOnly && !pkFields_.empty();
+	if (!pkOnlyDecode && !recoder && !fieldsFilter_) {
+		cjson_ = data;
+	}
 	Serializer rdser(data);
 
 	Payload pl = GetPayload();
@@ -307,7 +313,7 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	if (pkOnly && !pkFields_.empty()) {
+	if (pkOnlyDecode) {
 		if (recoder) [[unlikely]] {
 			throw Error(errParams, "ItemImpl::FromCJSON: pkOnly mode is not compatible with non-null recoder");
 		}
@@ -464,6 +470,7 @@ void ItemImpl::validateModifyArray(const VariantArray& values) {
 
 void ItemImpl::BuildTupleIfEmpty() {
 	if (!tupleData_) {
+		cjson_ = {};
 		WrSerializer ser;
 		ser.PutUInt32(0);  // Empty lstring header
 		auto pl = GetPayload();
@@ -478,6 +485,7 @@ void ItemImpl::CopyIndexedVectorsValuesFrom(FloatVectorsGetter&& floatVectorsGet
 		return;
 	}
 
+	cjson_ = {};
 	payloadValue_.Clone();
 	floatVectorsHolder_.resize(0);
 	Payload pl(payloadType_, payloadValue_);
@@ -488,7 +496,7 @@ void ItemImpl::CopyIndexedVectorsValuesFrom(FloatVectorsGetter&& floatVectorsGet
 			buf.clear<false>();
 			buf.reserve(fvVariants.size());
 			for (auto& fvVar : fvVariants) {
-				if (fvVar.DoHold()) {
+				if (fvVar.OwnsHeap()) {
 					if (floatVectorsHolder_.Add(FloatVector{std::move(fvVar)})) {
 						buf.emplace_back(floatVectorsHolder_.Back());
 					} else {
@@ -621,6 +629,9 @@ void ItemImpl::Embed(const RdxContext& ctx) {
 			for (auto& p : products) {
 				krs.emplace_back(std::move(p));
 			}
+			if (payloadType_.Field(fieldId).IsArray()) {
+				std::ignore = krs.MarkArray();
+			}
 			products.clear<false>();
 
 			SetField(fieldId, std::move(krs), NeedCreate_False);
@@ -645,13 +656,14 @@ void ItemImpl::initTupleFrom(Payload&& pl, WrSerializer& ser, Shrink shrink) {
 }
 
 std::string_view ItemImpl::createSafeDataCopy(std::string_view slice) {
-	std::string_view data = slice;
-	if (!unsafe_) {
-		sourceData_.reset(new char[data.size()]);
-		std::copy(data.begin(), data.end(), sourceData_.get());
-		data = std::string_view(sourceData_.get(), data.size());
+	if (unsafe_) {
+		return slice;
 	}
-	return data;
+	// The previous buffer must stay alive until the new one is ready: cjson_ may still refer to it
+	auto copy = std::make_unique_for_overwrite<char[]>(slice.size());
+	std::copy(slice.begin(), slice.end(), copy.get());
+	sourceData_ = std::move(copy);
+	return std::string_view(sourceData_.get(), slice.size());
 }
 
 }  // namespace reindexer

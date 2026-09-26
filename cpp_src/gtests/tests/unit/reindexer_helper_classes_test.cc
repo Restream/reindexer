@@ -119,6 +119,7 @@ struct [[nodiscard]] TokenExpect {
 	reindexer::TokenType type;
 	const char* text;
 	bool expectVariantThrow = false;
+	bool quoted = false;
 };
 
 struct [[nodiscard]] TokenizerCase {
@@ -140,6 +141,7 @@ static void ExpectTokenization(const TokenizerCase& testCase) {
 		const auto token = tokenizer.NextToken(testCase.flags);
 		EXPECT_EQ(token.Type(), expected.type) << "text='" << token.Text() << "'";
 		EXPECT_EQ(token.Text(), expected.text);
+		EXPECT_EQ(token.Quoted(), expected.quoted) << "text='" << token.Text() << "'";
 		if (expected.type == TokenNumber) {
 			if (expected.expectVariantThrow) {
 				EXPECT_THROW(std::ignore = GetVariantFromToken(token), reindexer::Error);
@@ -161,7 +163,7 @@ TEST(TokenizerBasicTokenization, DeclarativeCases) {
 		{"9d", Tokenizer::Flags::NoFlags, {{TokenName, "9d"}}},
 		{"d9", Tokenizer::Flags::NoFlags, {{TokenName, "d9"}}},
 		{"12345", Tokenizer::Flags::NoFlags, {{TokenNumber, "12345"}}},
-		{"\"12345\"", Tokenizer::Flags::NoFlags, {{TokenName, "12345"}}},
+		{"\"12345\"", Tokenizer::Flags::NoFlags, {{TokenName, "12345", false, true}}},
 		{"1ee5", Tokenizer::Flags::NoFlags, {{TokenName, "1ee5"}}},
 		{"1e5", Tokenizer::Flags::NoFlags, {{TokenNumber, "1e5"}}},
 		{"1E5", Tokenizer::Flags::NoFlags, {{TokenNumber, "1E5"}}},
@@ -201,6 +203,15 @@ TEST(TokenizerBasicTokenization, DeclarativeCases) {
 		{"\t123", Tokenizer::Flags::NoFlags, {{TokenNumber, "123"}}},
 		{"\t-.e23", Tokenizer::Flags::NoFlags, {{TokenSign, "-"}, {TokenSymbol, "."}, {TokenName, "e23"}}},
 		{"'abc'", Tokenizer::Flags::NoFlags, {{TokenString, "abc"}}},
+		{"true", Tokenizer::Flags::NoFlags, {{TokenName, "true"}}},
+		{"\"true\"", Tokenizer::Flags::NoFlags, {{TokenName, "true", false, true}}},
+		{"'true'", Tokenizer::Flags::NoFlags, {{TokenString, "true"}}},
+		{"false", Tokenizer::Flags::NoFlags, {{TokenName, "false"}}},
+		{"\"false\"", Tokenizer::Flags::NoFlags, {{TokenName, "false", false, true}}},
+		{"'false'", Tokenizer::Flags::NoFlags, {{TokenString, "false"}}},
+		{"null", Tokenizer::Flags::NoFlags, {{TokenName, "null"}}},
+		{"\"null\"", Tokenizer::Flags::NoFlags, {{TokenName, "null", false, true}}},
+		{"'null'", Tokenizer::Flags::NoFlags, {{TokenString, "null"}}},
 		// Special case: number too large for int64_t, but tokenizer treats it as a number. Not sure if it's a good idea, but that's how it
 		// works for a long time.
 		{"9999999999999999999", Tokenizer::Flags::NoFlags, {{TokenNumber, "9999999999999999999", true}}},

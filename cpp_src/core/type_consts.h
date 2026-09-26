@@ -131,6 +131,7 @@ typedef enum REINDEX_CPP_NODISCARD ExpressionType {
 	ExpressionTypeValues = 1,
 	ExpressionTypeExpression = 2,
 	ExpressionTypeSubQuery = 3,
+	ExpressionTypeArithmetic = 4,
 } ExpressionType;
 
 enum REINDEX_CPP_NODISCARD ErrorCode {
@@ -152,7 +153,7 @@ enum REINDEX_CPP_NODISCARD ErrorCode {
 	errBadTransaction = 15,
 	errOutdatedWAL = 16,
 	errNoWAL = 17,
-	errDataHashMismatch = 18,
+	errChecksumMismatch = 18,
 	errTimeout = 19,
 	errCanceled = 20,
 	errTagsMissmatch = 21,

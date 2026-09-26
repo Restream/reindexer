@@ -1,9 +1,9 @@
 #include "query_joins_table.h"
-#include "core/query/query.h"
+#include "core/query/query_impl.h"
 
 namespace reindexer::joins {
 
-QueryJoinsTable::QueryJoinsTable(const Query& q) { buildJoinsOffsetTable(q); }
+QueryJoinsTable::QueryJoinsTable(ConstQueryImpl q) { buildJoinsOffsetTable(q); }
 
 /**
  * @brief Builds a lookup table mapping (parentNsId, joinIndex) → child join's namespace ID.
@@ -68,16 +68,16 @@ QueryJoinsTable::QueryJoinsTable(const Query& q) { buildJoinsOffsetTable(q); }
  * space (as shown above: main's JOIN #0 is NSID 3, its nested child
  * is NSID 4).
  */
-void QueryJoinsTable::buildJoinsOffsetTable(const Query& q) {
+void QueryJoinsTable::buildJoinsOffsetTable(ConstQueryImpl q) {
 	joinQueriesNsids_.clear();
 	joinedQueriesTotal_ = 0;
 
-	uint16_t nextNsId = 1 + static_cast<int>(q.GetMergeQueries().size());
+	uint16_t nextNsId = 1 + static_cast<int>(q.MergeQueries().size());
 	processQuery(q, 0, nextNsId);
 
 	uint16_t mergedNsId = 1;
-	for (const auto& mergedQuery : q.GetMergeQueries()) {
-		processQuery(mergedQuery, mergedNsId++, nextNsId);
+	for (const auto& mergedQuery : q.MergeQueries()) {
+		processQuery(Impl(mergedQuery), mergedNsId++, nextNsId);
 	}
 }
 
@@ -95,16 +95,16 @@ void QueryJoinsTable::setJoinNsId(uint16_t parentNsId, size_t joinIndex, uint16_
 	}
 }
 
-void QueryJoinsTable::processQuery(const Query& query, uint16_t parentNsId, uint16_t& nextNsId) {
-	for (size_t i = 0; i < query.GetJoinQueries().size(); ++i) {
+void QueryJoinsTable::processQuery(ConstQueryImpl query, uint16_t parentNsId, uint16_t& nextNsId) {
+	for (size_t i = 0; i < query.JoinQueries().size(); ++i) {
 		++joinedQueriesTotal_;
 
-		const Query& joinQuery{query.GetJoinQueries()[i]};
+		const Query& joinQuery{query.JoinQueries()[i]};
 		const uint16_t childNsId{nextNsId++};
 		setJoinNsId(parentNsId, i, childNsId);
 
-		if (!joinQuery.GetJoinQueries().empty()) {
-			processQuery(joinQuery, childNsId, nextNsId);
+		if (!Impl(joinQuery).JoinQueries().empty()) {
+			processQuery(Impl(joinQuery), childNsId, nextNsId);
 		}
 	}
 }

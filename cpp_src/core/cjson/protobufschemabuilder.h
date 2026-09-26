@@ -20,7 +20,7 @@ class [[nodiscard]] ProtobufSchemaBuilder {
 public:
 	ProtobufSchemaBuilder();
 	ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsTypes* fieldsTypes, ObjType type, std::string_view name = std::string_view(),
-						  PayloadType* pt = nullptr, TagsMatcher* tm = nullptr);
+						  const PayloadType* pt = nullptr, TagsMatcher* tm = nullptr);
 	ProtobufSchemaBuilder(ProtobufSchemaBuilder&&) noexcept;
 	ProtobufSchemaBuilder(const ProtobufSchemaBuilder&) = delete;
 	ProtobufSchemaBuilder& operator=(ProtobufSchemaBuilder&&) = delete;
@@ -38,7 +38,7 @@ private:
 
 	WrSerializer* ser_{nullptr};
 	SchemaFieldsTypes* fieldsTypes_{nullptr};
-	PayloadType* pt_{nullptr};
+	const PayloadType* pt_{nullptr};
 	TagsMatcher* tm_{nullptr};
 	ObjType type_{ObjType::TypeObject};
 };

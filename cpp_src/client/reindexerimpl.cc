@@ -1,6 +1,7 @@
 #include "client/reindexerimpl.h"
 #include "client/connectionspool.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
+#include "core/query/query_impl.h"
 #include "estl/dummy_mutex.h"
 #include "tools/catch_and_return.h"
 #include "tools/dsn.h"
@@ -736,8 +737,9 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 					assertrx_dbg(conn.rx.GetConnPtr() == txConn);
 					WrSerializer ser;
 					auto caps = txConn->GetBindingCapabilities();
-					std::get<1>(cd->arguments).Serialize(ser, Normal, caps.GetQueryFormat());
-					switch (std::get<1>(cd->arguments).type_) {
+					ConstQueryImpl queryImpl = Impl(std::get<1>(cd->arguments));
+					queryImpl.Serialize(ser, Normal, caps.GetQueryFormat());
+					switch (queryImpl.Type()) {
 						case QueryUpdate:
 							err = txConn
 									  ->Call({cproto::kCmdUpdateQueryTx, tr.i_.requestTimeout_, tr.i_.execTimeout_, cmd->ctx.lsn(),
@@ -754,7 +756,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand>& conn, Connectio
 							break;
 						case QuerySelect:
 						case QueryTruncate:
-							err = Error(errParams, "Incorrect query type in transaction modify {}", int(std::get<1>(cd->arguments).type_));
+							err = Error(errParams, "Incorrect query type in transaction modify {}", int(queryImpl.Type()));
 					}
 				}
 				if (cd->ctx.cmpl()) {

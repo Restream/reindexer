@@ -203,7 +203,7 @@ public:
 	auto getPayloadType(int nsid) && noexcept = delete;
 	std::shared_ptr<const Schema> getSchema(int nsid) const noexcept;
 	int getNsNumber(int nsid) const noexcept;
-	int getMergedNSCount() const noexcept;
+	size_t getNamespacesCount() const noexcept;
 	ItemRefVector& Items() & noexcept { return items_; }
 	const ItemRefVector& Items() const& noexcept { return items_; }
 	auto Items() const&& noexcept = delete;

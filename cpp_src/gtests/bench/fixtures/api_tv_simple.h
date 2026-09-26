@@ -4,6 +4,7 @@
 #include <unordered_map>
 
 #include "api_tv_simple_base.h"
+#include "core/query/query.h"
 #include "core/system_ns_names.h"
 
 using namespace std::string_view_literals;

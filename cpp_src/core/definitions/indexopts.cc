@@ -1,15 +1,8 @@
 #include "indexopts.h"
 #include <ostream>
-#if defined(__GNUC__) && ((__GNUC__ == 12) || (__GNUC__ == 13)) && defined(REINDEX_WITH_ASAN)
-// regex header is broken in GCC 12.0-13.3 with ASAN
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#include <regex>
-#pragma GCC diagnostic pop
-#else  // REINDEX_WITH_ASAN
-#include <regex>
-#endif	// REINDEX_WITH_ASAN
 #include "core/cjson/jsonbuilder.h"
+#include "core/embedding/embeddingconfig.h"
+#include "core/embedding/protocol/iembed_protocol.h"
 #include "core/enums.h"
 #include "core/id_type.h"
 #include "tools/errors.h"
@@ -43,6 +36,14 @@ constexpr std::string_view kEmbedderStrategy{"embedding_strategy"};
 constexpr std::string_view kEmbedderStrategyAlways{"always"};
 constexpr std::string_view kEmbedderStrategyEmpty{"empty_only"};
 constexpr std::string_view kEmbedderStrategyStrict{"strict"};
+constexpr std::string_view kEmbedderProtocol{"protocol"};
+constexpr std::string_view kEmbedderProtocolType{"type"};
+constexpr std::string_view kEmbedderProtocolRx{"rx"};
+constexpr std::string_view kEmbedderProtocolOpenAI{"openai"};
+constexpr std::string_view kEmbedderModel{"model"};
+constexpr std::string_view kEmbedderFieldsFormat{"fields_format"};
+constexpr std::string_view kEmbedderFieldsFormatJoin{"join"};
+constexpr std::string_view kEmbedderFieldsFormatStringify{"stringify"};
 constexpr std::string_view kConnectorPool{"pool"};
 constexpr std::string_view kConnectorPoolConnections{"connections"};
 constexpr std::string_view kConnectorPoolConnectTO{"connect_timeout_ms"};
@@ -103,6 +104,65 @@ FloatVectorIndexOpts::CircuitBreakerOpts parseCircuitBreakerConfig(const gason::
 	return opts;
 }
 
+FloatVectorIndexOpts::EmbedderOpts::Protocol parseProtocol(std::string_view protocol, std::string_view name) {
+	if (protocol == kEmbedderProtocolRx) {
+		return FloatVectorIndexOpts::EmbedderOpts::Protocol::Rx;
+	}
+	if (protocol == kEmbedderProtocolOpenAI) {
+		return FloatVectorIndexOpts::EmbedderOpts::Protocol::OpenAI;
+	}
+	throw reindexer::Error{errParams,
+						   "Configuration '{}:{}:{}' unexpected field value '{}'. Set '{}', but expected '{}' or '{}'",
+						   kEmbedding,
+						   name,
+						   kEmbedderProtocol,
+						   kEmbedderProtocolType,
+						   protocol,
+						   kEmbedderProtocolRx,
+						   kEmbedderProtocolOpenAI};
+}
+
+std::string_view protocolToStr(FloatVectorIndexOpts::EmbedderOpts::Protocol protocol) {
+	switch (protocol) {
+		case FloatVectorIndexOpts::EmbedderOpts::Protocol::Rx:
+			return kEmbedderProtocolRx;
+		case FloatVectorIndexOpts::EmbedderOpts::Protocol::OpenAI:
+			return kEmbedderProtocolOpenAI;
+		default:
+			throw reindexer::Error{errParams, "Configuration '{}' unexpected field value '{}'. Value '{}'", kEmbedding, kEmbedderProtocol,
+								   int(protocol)};
+	}
+}
+
+FloatVectorIndexOpts::EmbedderOpts::FieldsFormat parseFieldsFormat(std::string_view format, std::string_view name) {
+	if (format == kEmbedderFieldsFormatJoin) {
+		return FloatVectorIndexOpts::EmbedderOpts::FieldsFormat::Join;
+	}
+	if (format == kEmbedderFieldsFormatStringify) {
+		return FloatVectorIndexOpts::EmbedderOpts::FieldsFormat::Stringify;
+	}
+	throw reindexer::Error{errParams,
+						   "Configuration '{}:{}' unexpected field value '{}'. Set '{}', but expected '{}' or '{}'",
+						   kEmbedding,
+						   name,
+						   kEmbedderFieldsFormat,
+						   format,
+						   kEmbedderFieldsFormatJoin,
+						   kEmbedderFieldsFormatStringify};
+}
+
+std::string_view fieldsFormatToStr(FloatVectorIndexOpts::EmbedderOpts::FieldsFormat format) {
+	switch (format) {
+		case FloatVectorIndexOpts::EmbedderOpts::FieldsFormat::Join:
+			return kEmbedderFieldsFormatJoin;
+		case FloatVectorIndexOpts::EmbedderOpts::FieldsFormat::Stringify:
+			return kEmbedderFieldsFormatStringify;
+		default:
+			throw reindexer::Error{errParams, "Configuration '{}' unexpected field value '{}'. Value '{}'", kEmbedding,
+								   kEmbedderFieldsFormat, int(format)};
+	}
+}
+
 FloatVectorIndexOpts::PoolOpts parsePoolConfig(const gason::JsonNode& node) {
 	FloatVectorIndexOpts::PoolOpts opts;
 	if (!node[kConnectorPoolConnections].isEmpty()) {
@@ -131,6 +191,47 @@ FloatVectorIndexOpts::EmbedderOpts parseEmbedderConfig(const gason::JsonNode& no
 	}
 	if (!node[kEmbedderCacheTag].isEmpty()) {
 		opts.cacheTag = reindexer::ToLower(node[kEmbedderCacheTag].As<std::string>());
+	}
+	if (!node[kEmbedderModel].isEmpty()) {
+		throw reindexer::Error{
+			errParams, "Configuration '{}:{}' field '{}' must be set inside '{}'", kEmbedding, name, kEmbedderModel, kEmbedderProtocol};
+	}
+	if (!node[kEmbedderFieldsFormat].isEmpty()) {
+		throw reindexer::Error{
+			errParams,		  "Configuration '{}:{}' field '{}' must be set inside '{}'", kEmbedding, name, kEmbedderFieldsFormat,
+			kEmbedderProtocol};
+	}
+	if (!node[kEmbedderProtocol].isEmpty()) {
+		const auto& protocolNode = node[kEmbedderProtocol];
+		if (!protocolNode.isObject()) {
+			throw reindexer::Error{errParams,		  "Configuration '{}:{}' field '{}' must be an object with field '{}'",
+								   kEmbedding,		  name,
+								   kEmbedderProtocol, kEmbedderProtocolType};
+		}
+		if (protocolNode[kEmbedderProtocolType].isEmpty()) {
+			throw reindexer::Error{
+				errParams, "Configuration '{}:{}:{}' must contain field '{}'", kEmbedding, name, kEmbedderProtocol, kEmbedderProtocolType};
+		}
+		opts.protocol = parseProtocol(protocolNode[kEmbedderProtocolType].As<std::string_view>(), name);
+		if (!protocolNode[kEmbedderModel].isEmpty()) {
+			opts.model = protocolNode[kEmbedderModel].As<std::string>();
+		}
+		if (!protocolNode[kEmbedderFieldsFormat].isEmpty()) {
+			if (name != kUpsertEmbedder) {
+				throw reindexer::Error{
+					errParams,		"Configuration '{}:{}' field '{}' is only supported for '{}'", kEmbedding, name, kEmbedderFieldsFormat,
+					kUpsertEmbedder};
+			}
+			if (opts.protocol != FloatVectorIndexOpts::EmbedderOpts::Protocol::OpenAI) {
+				throw reindexer::Error{errParams,
+									   "Configuration '{}:{}' field '{}' is only supported with protocol '{}'",
+									   kEmbedding,
+									   name,
+									   kEmbedderFieldsFormat,
+									   kEmbedderProtocolOpenAI};
+			}
+			opts.fieldsFormat = parseFieldsFormat(protocolNode[kEmbedderFieldsFormat].As<std::string_view>(), name);
+		}
 	}
 	if (name == kUpsertEmbedder) {
 		std::string field;
@@ -189,18 +290,38 @@ void validateEmbedderPollTMOpt(size_t tm, size_t limit, std::string_view embedde
 	}
 }
 
+EmbedderConfig::Protocol toRuntimeProtocol(FloatVectorIndexOpts::EmbedderOpts::Protocol protocol) noexcept {
+	switch (protocol) {
+		case FloatVectorIndexOpts::EmbedderOpts::Protocol::Rx:
+			return EmbedderConfig::Protocol::Rx;
+		case FloatVectorIndexOpts::EmbedderOpts::Protocol::OpenAI:
+			return EmbedderConfig::Protocol::OpenAI;
+	}
+	return EmbedderConfig::Protocol::Rx;
+}
+
+EmbedderConfig::FieldsFormat toRuntimeFieldsFormat(FloatVectorIndexOpts::EmbedderOpts::FieldsFormat format) noexcept {
+	switch (format) {
+		case FloatVectorIndexOpts::EmbedderOpts::FieldsFormat::Join:
+			return EmbedderConfig::FieldsFormat::Join;
+		case FloatVectorIndexOpts::EmbedderOpts::FieldsFormat::Stringify:
+			return EmbedderConfig::FieldsFormat::Stringify;
+	}
+	return EmbedderConfig::FieldsFormat::Stringify;
+}
+
 void validateEmbedderOpts(const FloatVectorIndexOpts::EmbedderOpts& opts, std::string_view name) {
 	if (opts.endpointUrl.empty() || ((name == kUpsertEmbedder) && opts.fields.empty())) {
 		throw reindexer::Error{errParams,	   "Configuration '{}:{}' must contain field '{}' and '{}'", kEmbedding, name, kEmbedderURL,
 							   kEmbedderFields};
 	}
 
-	const static std::regex re(R"(^(http[s]?)://[0-9a-z\.-]+(:[1-9][0-9]*)?(/[^\s]*)*$)");
-	if (!std::regex_match(opts.endpointUrl, re)) {
-		throw reindexer::Error{errParams,	 "Configuration '{}:{}' contain field '{}' with unexpected value: '{}'",
-							   kEmbedding,	 name,
-							   kEmbedderURL, opts.endpointUrl};
-	}
+	embedding::GetEmbedProtocol(toRuntimeProtocol(opts.protocol))
+		.Validate(embedding::ProtocolConfigView{.endpointUrl = opts.endpointUrl,
+												.model = opts.model,
+												.fieldsFormat = toRuntimeFieldsFormat(opts.fieldsFormat),
+												.isUpsert = (name == kUpsertEmbedder)},
+				  name);
 
 	if (opts.pool.connections < 1) {
 		throw reindexer::Error{errParams,	   "Configuration '{}:{}:{}:{}' should not be less than 1",
@@ -236,6 +357,19 @@ void getJsonEmbedderConfig(const FloatVectorIndexOpts::EmbedderOpts& opts, reind
 	}
 
 	json.Put(kEmbedderStrategy, strategyToStr(opts.strategy));
+
+	if (opts.protocol != FloatVectorIndexOpts::EmbedderOpts::Protocol::Rx || !opts.model.empty() ||
+		opts.fieldsFormat != FloatVectorIndexOpts::EmbedderOpts::FieldsFormat::Stringify) {
+		auto protocolNode = json.Object(kEmbedderProtocol);
+		protocolNode.Put(kEmbedderProtocolType, protocolToStr(opts.protocol));
+		if (opts.protocol == FloatVectorIndexOpts::EmbedderOpts::Protocol::OpenAI) {
+			protocolNode.Put(kEmbedderModel, opts.model);
+		}
+		if (opts.protocol == FloatVectorIndexOpts::EmbedderOpts::Protocol::OpenAI &&
+			opts.fieldsFormat != FloatVectorIndexOpts::EmbedderOpts::FieldsFormat::Stringify) {
+			protocolNode.Put(kEmbedderFieldsFormat, fieldsFormatToStr(opts.fieldsFormat));
+		}
+	}
 
 	if (!opts.name.empty()) {
 		json.Put(kEmbedderName, opts.name);

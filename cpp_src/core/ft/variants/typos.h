@@ -111,7 +111,7 @@ public:
 						const auto& wordTypoOccurences = ctx.holder.GetWordOccurences(wordTypo.word);
 						if (logLevel_ >= LogTrace) [[unlikely]] {
 							logFmt(LogInfo, fmt::runtime(" matched typo '{}' of word '{}', {} ids, {}%"), utf16_to_utf8(typo),
-								   utf16_to_utf8(word), wordTypoOccurences.size(), proc);
+								   utf16_to_utf8(word), wordTypoOccurences->size(), proc);
 						}
 						++ctx.matched;
 					} else {

@@ -30,7 +30,7 @@ void DataSamplerBaseTestBody() {
 		map->AddPointNoLock(points[i].data(), i);
 	}
 
-	const int partialSampleSize = 0.25 * points.size();
+	const size_t partialSampleSize = points.size() / 4;
 
 	auto partialIndexes = hnswlib::HNSWView<std::nullptr_t>::GetSampleIndexes(partialSampleSize, map->cur_element_count);
 	auto samples = hnswlib::HNSWView(*map, partialIndexes);
@@ -254,7 +254,7 @@ void SaveLoadTestBody(auto& api) {
 			.quantile = kQuantile, .sampleSize = kHNSWInitSize / 2, .quantizationThreshold = kHNSWInitSize - kInitEmptyItemsNum});
 
 	auto checkFloatVectorValues = [&api, &emptyIds] {
-		auto qr = api.Select(reindexer::Query(kNsName).Sort("id", false).SelectAllFields());
+		auto qr = api.Select(reindexer::Query(kNsName).Sort("id", SortOrder::Asc).SelectAllFields());
 		ASSERT_EQ(qr.Count(), kHNSWInitSize);
 
 		for (auto it = qr.begin(); it != qr.end(); ++it) {
@@ -314,7 +314,7 @@ void IndexQuantizingDropIndexTestBody(auto& api) {
 	api.DropIndex(kNsName, kHnswIndexNameQ);
 
 	// Check that all float vector values have been copied back to items
-	auto qr = api.Select(reindexer::Query(kNsName).Sort("id", false).SelectAllFields());
+	auto qr = api.Select(reindexer::Query(kNsName).Sort("id", SortOrder::Asc).SelectAllFields());
 	ASSERT_EQ(qr.Count(), kHNSWInitSize);
 
 	for (auto it = qr.begin(); it != qr.end(); ++it) {
@@ -612,7 +612,7 @@ void SearchWithRadiusTestBody(auto& api) {
 #if RX_WITH_STDLIB_DEBUG
 TEST_F(QuantizationApi, SearchWithRadiusTest_RND) {
 	auto metric = reindexer_tests_tools::randMetric();
-	TestCout() << fmt::format("Running test for '{}'-metric", VectorMetricToStr(metric)) << std::endl;
+	TestCout() << fmt::format("Running test for '{}'-metric", reindexer::VectorMetricToStr(metric)) << std::endl;
 	switch (metric) {
 		case reindexer::VectorMetric::Cosine:
 			SearchWithRadiusTestBody<reindexer::VectorMetric::Cosine>(api);

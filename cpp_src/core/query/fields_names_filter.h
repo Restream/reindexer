@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "estl/concepts.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -29,7 +30,7 @@ public:
 		}
 	}
 
-	template <typename Str, typename QueryType, std::enable_if_t<std::is_constructible_v<std::string, Str>>* = nullptr>
+	template <concepts::ConvertibleToString Str, typename QueryType>
 	void Add(Str&& field, QueryType& q) {
 		using namespace std::string_view_literals;
 		if (field == kAllRegularFieldsName) {

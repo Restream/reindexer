@@ -7,6 +7,7 @@
 
 #include "allocs_tracker.h"
 #include "core/definitions/namespacedef.h"
+#include "core/query/query.h"
 #include "core/reindexer.h"
 #include "sequence.h"
 
@@ -170,7 +171,7 @@ protected:
 		static void Apply(reindexer::Query&, std::string_view) noexcept {}
 	};
 	struct [[nodiscard]] AscSort {
-		static void Apply(reindexer::Query& q, std::string_view field) { q.Sort(field, false); }
+		static void Apply(reindexer::Query& q, std::string_view field) { q.Sort(field, SortOrder::Asc); }
 	};
 
 	std::string RandString();

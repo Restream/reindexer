@@ -48,6 +48,8 @@
   * [Delete documents from namespace (transactions)](#delete-documents-from-namespace-transactions)
   * [Suggest for autocompletion of SQL query](#suggest-for-autocompletion-of-sql-query)
   * [Query documents from namespace](#query-documents-from-namespace-2)
+  * [Get logger configuration](#get-logger-configuration)
+  * [Update logger configuration](#update-logger-configuration)
   * [Get system information](#get-system-information)
   * [Try to release free memory back to the operating system for reuse by other applications.](#try-to-release-free-memory-back-to-the-operating-system-for-reuse-by-other-applications)
   * [Get memory usage information](#get-memory-usage-information)
@@ -62,6 +64,8 @@
   * [Update system config](#update-system-config)
   * [Get default system configs](#get-default-system-configs)
 - [References](#references)
+  * [LoggerConfig](#loggerconfig)
+  * [LoggerLevelConfig](#loggerlevelconfig)
   * [SysInfo](#sysinfo)
   * [ActivityStats](#activitystats)
   * [ClientsStats](#clientsstats)
@@ -157,7 +161,7 @@
 
 <!-- tocstop -->
 
-> Version 5.16.0
+> Version 5.17.0
 
 ## Overview
 
@@ -214,6 +218,8 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | DELETE | [/db/{database}/transactions/{tx_id}/query](#deletedbdatabasetransactionstx_idquery) | Delete documents from namespace (transactions) |
 | GET | [/db/{database}/suggest](#getdbdatabasesuggest) | Suggest for autocompletion of SQL query |
 | POST | [/db/{database}/sqlquery](#postdbdatabasesqlquery) | Query documents from namespace |
+| GET | [/logging/{component}/config](#getloggingcomponentconfig) | Get logger configuration |
+| PUT | [/logging/{component}/config](#putloggingcomponentconfig) | Update logger configuration |
 | GET | [/check](#getcheck) | Get system information |
 | POST | [/allocator/drop_cache](#postallocatordrop_cache) | Try to release free memory back to the operating system for reuse by other applications. |
 | GET | [/allocator/info](#getallocatorinfo) | Get memory usage information |
@@ -232,6 +238,8 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 
 | Name | Path | Description |
 | --- | --- | --- |
+| LoggerConfig | [LoggerConfig](#loggerconfig) |  |
+| LoggerLevelConfig | [LoggerLevelConfig](#loggerlevelconfig) |  |
 | SysInfo | [SysInfo](#sysinfo) |  |
 | ActivityStats | [ActivityStats](#activitystats) |  |
 | ClientsStats | [ClientsStats](#clientsstats) |  |
@@ -6120,6 +6128,191 @@ format?: enum[json, msgpack, protobuf, csv-file]
 
 ***
 
+### Get logger configuration
+
+```
+[GET]/logging/{component}/config
+```
+
+
+This operation will return logging configuration for the selected component.  
+The response contains logger configuration in the following format:  
+`{"level":"info","path":"stdout"}`.  
+
+
+#### Responses
+
+- 200 successful operation
+
+`application/json`
+
+```ts
+{
+  // Logger level
+  level: enum[none, error, warning, info, trace]
+  // Logger output path. `none` and empty string disable logging, `stdout` enables logging to stdout, other values enable logging to the specified file.
+  path: string
+}
+```
+
+- 400 Invalid arguments supplied
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 403 Forbidden
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 404 Entry not found
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 500 Unexpected internal error
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+***
+
+### Update logger configuration
+
+```
+[PUT]/logging/{component}/config
+```
+
+
+This operation will update the logging level for the selected component.  
+The request body contains logger configuration in the following format: `{"level":"info"}`.  
+The log output target cannot be changed through the REST API. It is configured at startup through CLI options,  
+`server.yml`, or the configuration object.  
+Logging configuration is kept until server restart. After restart loggers are initialized from CLI options,  
+`server.yml`, or the configuration object.  
+
+
+#### RequestBody
+
+- application/json
+
+```ts
+{
+  // Logger level
+  level: enum[none, error, warning, info, trace]
+}
+```
+
+#### Responses
+
+- 200 Successful operation
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 400 Invalid arguments supplied
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 403 Forbidden
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 404 Entry not found
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+- 500 Unexpected internal error
+
+`application/json`
+
+```ts
+{
+  success?: boolean
+  // Duplicates HTTP response code
+  response_code?: integer
+  // Text description of error details
+  description?: string
+}
+```
+
+***
+
 ### Get system information
 
 ```
@@ -6159,6 +6352,8 @@ This operation will return system information about server version, uptime, and 
   storage_path?: string
   // RPC server log path
   rpc_log?: string
+  // GRPC server log path
+  grpc_log?: string
   // HTTP server log path
   http_log?: string
   // Reindexer core log path
@@ -6167,6 +6362,16 @@ This operation will return system information about server version, uptime, and 
   server_log?: string
   // Log level, should be one of these: trace, debug, info, warning, error, critical
   log_level?: string
+  // Reindexer core log level
+  core_log_level?: string
+  // Reindexer server log level
+  server_log_level?: string
+  // RPC server log level
+  rpc_log_level?: string
+  // GRPC server log level
+  grpc_log_level?: string
+  // HTTP server log level
+  http_log_level?: string
 }
 ```
 
@@ -6907,12 +7112,12 @@ This operation will return detailed information about database memory consumptio
       // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
       is_built?: boolean
       text_index_stats: {
-        // Total number of virtual documents currently stored in the fulltext index
+        // Number of live virtual documents in the fulltext index
         total_vdocs?: integer
-        // Number of removed virtual documents that are still kept until the next compaction
+        // Number of removed virtual-document slots waiting for reuse
         removed_vdocs?: integer
-        // How many times the fulltext virtual documents storage has been compacted
-        vdocs_compactions?: integer
+        // Number of permanently retired virtual-document slots that cannot be reused
+        dead_vdocs?: integer
       }
       // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
       is_quantized?: boolean
@@ -7111,6 +7316,26 @@ This operation will return detailed information about database performance timin
       name?: string
       updates:UpdatePerfStats
       selects:SelectPerfStats
+      cleans: {
+        // Total count of queries to this object
+        total_queries_count?: integer
+        // Average latency (execution time) for queries to this object
+        total_avg_latency_us?: integer
+        // Average waiting time for acquiring lock to this object
+        total_avg_lock_time_us?: integer
+        // Count of queries to this object, requested at last second
+        last_sec_qps?: integer
+        // Average latency (execution time) for queries to this object at last second
+        last_sec_avg_latency_us?: integer
+        // Average waiting time for acquiring lock to this object at last second
+        last_sec_avg_lock_time_us?: integer
+        // Standard deviation of latency values
+        latency_stddev?: number
+        // Minimal latency value
+        min_latency_us?: integer
+        // Maximum latency value
+        max_latency_us?: integer
+      }
       cache:LRUCachePerfStats
       upsert_embedder: {
         // Total number of calls to a specific embedder
@@ -7423,6 +7648,8 @@ This operation will return system configs
       optimization_timeout_ms?: integer //default: 800
       // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
       optimization_sort_workers?: integer //default: 4
+      // Timeout before background fulltext postings cleanup start after last update. Independent from optimization_timeout_ms / optimization_sort_workers. 0 - disable cleanup
+      ft_cleanup_timeout_ms?: integer //default: 50
       // Maximum WAL size for this namespace (maximum count of WAL records)
       wal_size?: integer //default: 4000000
       // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
@@ -7672,6 +7899,8 @@ This operation will update system configuration:
     optimization_timeout_ms?: integer //default: 800
     // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
     optimization_sort_workers?: integer //default: 4
+    // Timeout before background fulltext postings cleanup start after last update. Independent from optimization_timeout_ms / optimization_sort_workers. 0 - disable cleanup
+    ft_cleanup_timeout_ms?: integer //default: 50
     // Maximum WAL size for this namespace (maximum count of WAL records)
     wal_size?: integer //default: 4000000
     // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
@@ -7938,6 +8167,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     optimization_timeout_ms?: integer //default: 800
     // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
     optimization_sort_workers?: integer //default: 4
+    // Timeout before background fulltext postings cleanup start after last update. Independent from optimization_timeout_ms / optimization_sort_workers. 0 - disable cleanup
+    ft_cleanup_timeout_ms?: integer //default: 50
     // Maximum WAL size for this namespace (maximum count of WAL records)
     wal_size?: integer //default: 4000000
     // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
@@ -8101,6 +8332,26 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
 
 ## References
 
+### LoggerConfig
+
+```ts
+{
+  // Logger level
+  level: enum[none, error, warning, info, trace]
+  // Logger output path. `none` and empty string disable logging, `stdout` enables logging to stdout, other values enable logging to the specified file.
+  path: string
+}
+```
+
+### LoggerLevelConfig
+
+```ts
+{
+  // Logger level
+  level: enum[none, error, warning, info, trace]
+}
+```
+
 ### SysInfo
 
 ```ts
@@ -8127,6 +8378,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   storage_path?: string
   // RPC server log path
   rpc_log?: string
+  // GRPC server log path
+  grpc_log?: string
   // HTTP server log path
   http_log?: string
   // Reindexer core log path
@@ -8135,6 +8388,16 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   server_log?: string
   // Log level, should be one of these: trace, debug, info, warning, error, critical
   log_level?: string
+  // Reindexer core log level
+  core_log_level?: string
+  // Reindexer server log level
+  server_log_level?: string
+  // RPC server log level
+  rpc_log_level?: string
+  // GRPC server log level
+  grpc_log_level?: string
+  // HTTP server log level
+  http_log_level?: string
 }
 ```
 
@@ -9142,10 +9405,21 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   embedding: {
     // Upsert embedding configuration
     upsert_embedder: {
-      // Embedder name. Optional
+      // Embedder name. Optional. Used in RX protocol URL path; ignored for openai
       name?: string
-      // Embed service URL
+      // Embed service URL. For protocol "rx": base URL of the service. For protocol "openai": full embeddings endpoint URL (e.g. http://127.0.0.1:8080/v1/embeddings)
+      // 
       URL: string
+      // Embedder HTTP protocol options. Omit to use RX defaults
+      protocol: {
+        // Protocol type
+        type: enum[rx, openai] //default: rx
+        // Model name for OpenAI-compatible requests. Required when type is openai
+        model?: string
+        // How upsert fields are turned into OpenAI input. OpenAI upsert embedder only. "stringify" — serialize fields as a JSON object string; "join" — concatenate field values with newline
+        // 
+        fields_format?: enum[join, stringify] //default: stringify
+      }
       // tag is used to cache results of insertion
       cache_tag?: string
       fields?: string[]
@@ -9174,8 +9448,18 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     }
     // Query embedding configuration
     query_embedder: {
-      // Embed service URL
+      // Embedder name. Optional. Used in RX protocol URL path; ignored for openai
+      name?: string
+      // Embed service URL. For protocol "rx": base URL of the service. For protocol "openai": full embeddings endpoint URL (e.g. http://127.0.0.1:8080/v1/embeddings)
+      // 
       URL: string
+      // Embedder HTTP protocol options. Omit to use RX defaults
+      protocol: {
+        // Protocol type
+        type: enum[rx, openai] //default: rx
+        // Model name for OpenAI-compatible requests. Required when type is openai
+        model?: string
+      }
       // tag is used to cache results of insertion
       cache_tag?: string
       // Connection pool configuration
@@ -9290,6 +9574,8 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
   sum_ranks_by_fields_ratio?: number
   // Optimize the index by memory or by cpu
   optimization?: enum[Memory, CPU] //default: Memory
+  // Ratio of deleted documents to live documents that triggers cleanup of stale postings in the full text index when exceeded
+  deleted_docs_optimization_threshold?: number //default: 0.2
   // Enable to execute others queries before the ft query
   enable_preselect_before_ft?: boolean
   // Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited
@@ -10091,12 +10377,12 @@ string[]
       // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
       is_built?: boolean
       text_index_stats: {
-        // Total number of virtual documents currently stored in the fulltext index
+        // Number of live virtual documents in the fulltext index
         total_vdocs?: integer
-        // Number of removed virtual documents that are still kept until the next compaction
+        // Number of removed virtual-document slots waiting for reuse
         removed_vdocs?: integer
-        // How many times the fulltext virtual documents storage has been compacted
-        vdocs_compactions?: integer
+        // Number of permanently retired virtual-document slots that cannot be reused
+        dead_vdocs?: integer
       }
       // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
       is_quantized?: boolean
@@ -10267,12 +10553,12 @@ string[]
     // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
     is_built?: boolean
     text_index_stats: {
-      // Total number of virtual documents currently stored in the fulltext index
+      // Number of live virtual documents in the fulltext index
       total_vdocs?: integer
-      // Number of removed virtual documents that are still kept until the next compaction
+      // Number of removed virtual-document slots waiting for reuse
       removed_vdocs?: integer
-      // How many times the fulltext virtual documents storage has been compacted
-      vdocs_compactions?: integer
+      // Number of permanently retired virtual-document slots that cannot be reused
+      dead_vdocs?: integer
     }
     // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
     is_quantized?: boolean
@@ -10359,12 +10645,12 @@ string[]
   // Shows whether KNN/fulltext indexing structure is fully built. If this field is missing, index does not require any specific build steps
   is_built?: boolean
   text_index_stats: {
-    // Total number of virtual documents currently stored in the fulltext index
+    // Number of live virtual documents in the fulltext index
     total_vdocs?: integer
-    // Number of removed virtual documents that are still kept until the next compaction
+    // Number of removed virtual-document slots waiting for reuse
     removed_vdocs?: integer
-    // How many times the fulltext virtual documents storage has been compacted
-    vdocs_compactions?: integer
+    // Number of permanently retired virtual-document slots that cannot be reused
+    dead_vdocs?: integer
   }
   // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
   is_quantized?: boolean
@@ -10386,12 +10672,12 @@ string[]
 
 ```ts
 {
-  // Total number of virtual documents currently stored in the fulltext index
+  // Number of live virtual documents in the fulltext index
   total_vdocs?: integer
-  // Number of removed virtual documents that are still kept until the next compaction
+  // Number of removed virtual-document slots waiting for reuse
   removed_vdocs?: integer
-  // How many times the fulltext virtual documents storage has been compacted
-  vdocs_compactions?: integer
+  // Number of permanently retired virtual-document slots that cannot be reused
+  dead_vdocs?: integer
 }
 ```
 
@@ -10608,6 +10894,26 @@ string[]
       name?: string
       updates:UpdatePerfStats
       selects:SelectPerfStats
+      cleans: {
+        // Total count of queries to this object
+        total_queries_count?: integer
+        // Average latency (execution time) for queries to this object
+        total_avg_latency_us?: integer
+        // Average waiting time for acquiring lock to this object
+        total_avg_lock_time_us?: integer
+        // Count of queries to this object, requested at last second
+        last_sec_qps?: integer
+        // Average latency (execution time) for queries to this object at last second
+        last_sec_avg_latency_us?: integer
+        // Average waiting time for acquiring lock to this object at last second
+        last_sec_avg_lock_time_us?: integer
+        // Standard deviation of latency values
+        latency_stddev?: number
+        // Minimal latency value
+        min_latency_us?: integer
+        // Maximum latency value
+        max_latency_us?: integer
+      }
       cache:LRUCachePerfStats
       upsert_embedder: {
         // Total number of calls to a specific embedder
@@ -10732,6 +11038,26 @@ string[]
     name?: string
     updates:UpdatePerfStats
     selects:SelectPerfStats
+    cleans: {
+      // Total count of queries to this object
+      total_queries_count?: integer
+      // Average latency (execution time) for queries to this object
+      total_avg_latency_us?: integer
+      // Average waiting time for acquiring lock to this object
+      total_avg_lock_time_us?: integer
+      // Count of queries to this object, requested at last second
+      last_sec_qps?: integer
+      // Average latency (execution time) for queries to this object at last second
+      last_sec_avg_latency_us?: integer
+      // Average waiting time for acquiring lock to this object at last second
+      last_sec_avg_lock_time_us?: integer
+      // Standard deviation of latency values
+      latency_stddev?: number
+      // Minimal latency value
+      min_latency_us?: integer
+      // Maximum latency value
+      max_latency_us?: integer
+    }
     cache:LRUCachePerfStats
     upsert_embedder: {
       // Total number of calls to a specific embedder
@@ -11082,6 +11408,8 @@ string[]
       optimization_timeout_ms?: integer //default: 800
       // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
       optimization_sort_workers?: integer //default: 4
+      // Timeout before background fulltext postings cleanup start after last update. Independent from optimization_timeout_ms / optimization_sort_workers. 0 - disable cleanup
+      ft_cleanup_timeout_ms?: integer //default: 50
       // Maximum WAL size for this namespace (maximum count of WAL records)
       wal_size?: integer //default: 4000000
       // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
@@ -11245,6 +11573,8 @@ string[]
     optimization_timeout_ms?: integer //default: 800
     // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
     optimization_sort_workers?: integer //default: 4
+    // Timeout before background fulltext postings cleanup start after last update. Independent from optimization_timeout_ms / optimization_sort_workers. 0 - disable cleanup
+    ft_cleanup_timeout_ms?: integer //default: 50
     // Maximum WAL size for this namespace (maximum count of WAL records)
     wal_size?: integer //default: 4000000
     // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied
@@ -11469,6 +11799,8 @@ string[]
   optimization_timeout_ms?: integer //default: 800
   // Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
   optimization_sort_workers?: integer //default: 4
+  // Timeout before background fulltext postings cleanup start after last update. Independent from optimization_timeout_ms / optimization_sort_workers. 0 - disable cleanup
+  ft_cleanup_timeout_ms?: integer //default: 50
   // Maximum WAL size for this namespace (maximum count of WAL records)
   wal_size?: integer //default: 4000000
   // Maximum preselect size for optimization of inner join by insertion of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied

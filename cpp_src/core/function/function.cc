@@ -102,16 +102,16 @@ void Function::Serialize(WrSerializer& ser) const {
 }
 
 FunctionVariant Function::Deserialize(Serializer& ser) {
-	auto numFields{ser.GetVarUInt()};
+	const auto numFields = ser.GetVarUIntCount();
 	h_vector<std::string, 1> fields;
-	fields.reserve(numFields);
-	while (numFields--) {
+	fields.reserve(static_cast<size_t>(numFields));
+	for (auto left = numFields; left > 0; --left) {
 		fields.emplace_back(ser.GetVString());
 	}
 	VariantArray args;
-	auto numValues{ser.GetVarUInt()};
-	args.reserve(numValues);
-	while (numValues--) {
+	const auto numValues = ser.GetVarUIntCount();
+	args.reserve(static_cast<size_t>(numValues));
+	for (auto left = numValues; left > 0; --left) {
 		args.emplace_back(ser.GetVariant().EnsureHold());
 	}
 	const FunctionType type{FunctionType(ser.GetVarUInt())};
@@ -258,7 +258,7 @@ int64_t Serial::Evaluate(NamespaceImpl& ns, UpdatesContainer& replUpdates, const
 	int indexField{0};
 	std::string_view fieldName{comparisonField_};
 	if (ns.tryGetIndexByNameOrJsonPath(comparisonField_, indexField)) {
-		fieldName = ns.indexes_[indexField]->Name();
+		fieldName = ns.indexes()[indexField]->Name();
 	}
 	return ns.GetSerial(fieldName, replUpdates, ctx);
 }

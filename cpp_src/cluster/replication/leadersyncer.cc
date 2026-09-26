@@ -2,7 +2,6 @@
 #include "client/snapshot.h"
 #include "cluster/logger.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
-#include "core/formatters/checksum_fmt.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 #include "estl/gift_str.h"
 #include "vendor/gason/gason.h"
@@ -164,7 +163,7 @@ void LeaderSyncThread::sync() {
 				client_.Stop();
 			}
 			const auto& node = entry.data[idx];
-			const auto expectedDataHash = node.hash;
+			const auto expectedChecksum = node.checksum;
 			const uint64_t expectedDataCount = node.count;
 			logInfo("{}: Trying to sync ns '{}' from {} (TID: {})", cfg_.serverId, entry.nsName, nodeId,
 					static_cast<size_t>(std::hash<std::thread::id>()(std::this_thread::get_id())));
@@ -194,7 +193,7 @@ void LeaderSyncThread::sync() {
 						throw err;
 					}
 					const auto localLsn = ExtendedLsn(state.nsVersion, state.lastLsn);
-					if (state.dataHash.IsEqualByAnyVersionTo(expectedDataHash) && expectedDataCount == state.dataCount) {
+					if (state.checksum == expectedChecksum && expectedDataCount == state.dataCount) {
 						if (!tmpNsName.empty()) {
 							err = thisNode_.renameNamespace(tmpNsName, std::string(entry.nsName), true, true);
 							if (!err.ok()) {
@@ -207,16 +206,15 @@ void LeaderSyncThread::sync() {
 					}
 
 					if (fullResync) {
-						throw Error(
-							errDataHashMismatch,
-							"{}: Datahash or datacount missmatch after full resync for local namespace '{}'. Expected: {{ datahash: "
-							"{}, datacount: {} }}; actual: {{ datahash: {}, datacount: {} }}",
-							cfg_.serverId, entry.nsName, expectedDataHash, expectedDataCount, state.dataHash, state.dataCount);
+						throw Error(errChecksumMismatch,
+									"{}: Checksum or datacount mismatch after full resync for local namespace '{}'. Expected: {{ checksum: "
+									"{}, datacount: {} }}; actual: {{ checksum: {}, datacount: {} }}",
+									cfg_.serverId, entry.nsName, expectedChecksum, expectedDataCount, state.checksum, state.dataCount);
 					}
 					logWarn(
-						"{}: Datahash missmatch after local namespace '{}' sync. Expected: {{ datahash: {}, datacount: {} }}; actual: {{ "
-						"datahash: {}, datacount: {} }}. Forcing full resync...",
-						cfg_.serverId, entry.nsName, expectedDataHash, expectedDataCount, state.dataHash, state.dataCount);
+						"{}: Checksum mismatch after local namespace '{}' sync. Expected: {{ checksum: {}, datacount: {} }}; actual: {{ "
+						"checksum: {}, datacount: {} }}. Forcing full resync...",
+						cfg_.serverId, entry.nsName, expectedChecksum, expectedDataCount, state.checksum, state.dataCount);
 					tryDropTmpNamespace();
 				}
 				sharedSyncState_.MarkSynchronized(entry.nsName);

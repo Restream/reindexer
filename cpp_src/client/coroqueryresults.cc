@@ -2,9 +2,11 @@
 #include "client/itemimpl.h"
 #include "client/namespace.h"
 #include "core/cjson/csvbuilder.h"
+#include "core/cjson/encoderdatasources.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/p_string.h"
 #include "core/nsselecter/joins/query_joins_table.h"
-#include "core/queryresults/additionaldatasource.h"
+#include "core/query/query_impl.h"
 #include "core/queryresults/fields_filter.h"
 #include "net/cproto/coroclientconnection.h"
 #include "tools/catch_and_return.h"
@@ -65,8 +67,8 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query*
 	i_.queryID_ = id;
 	i_.isBound_ = true;
 
-	if (q && q->HasJoinQueries()) {
-		i_.joinsTable_ = std::make_unique<joins::QueryJoinsTable>(*q);
+	if (q && reindexer::Impl(*q).HasJoinQueries()) {
+		i_.joinsTable_ = std::make_unique<joins::QueryJoinsTable>(reindexer::Impl(*q));
 	} else {
 		i_.joinsTable_.reset();
 	}
@@ -193,7 +195,7 @@ const std::string& CoroQueryResults::GetNsName(int nsid) const noexcept {
 }
 
 template <typename Builder>
-class [[nodiscard]] EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins<Builder> {
+class [[nodiscard]] EncoderDatasourceWithJoins final : public IJoinsDatasource<Builder> {
 public:
 	EncoderDatasourceWithJoins(int nsid, const ResultSerializer::JoinedData& joinedData, const CoroQueryResults& qr)
 		: nsid_(nsid), joinedData_(joinedData), qr_(qr), tm_(TagsMatcher::unsafe_empty_t()) {
@@ -201,27 +203,28 @@ public:
 	}
 	~EncoderDatasourceWithJoins() override = default;
 
-	h_vector<IAdditionalDatasource<Builder>*, 2> BuildJoinedFieldDatasources(size_t joinedField, size_t itemIdx) override {
-		h_vector<IAdditionalDatasource<Builder>*, 2> datasources;
+	EncoderContext<Builder> BuildFieldJoinsDatasourceContext(size_t joinedField, size_t itemIdx) override {
 		if (hasJoinedDataForField(joinedField)) {
 			const auto& fieldData{joinedData_[joinedField]};
 			if (itemIdx < fieldData.size() && !fieldData[itemIdx].joined.empty()) {
 				const auto& itemData{fieldData[itemIdx]};
 				datasourcesWithJoins_.emplace_front(itemData.nsid, itemData.joined, qr_);
-				additionalDatasources_.emplace_front(qr_.NeedOutputRank()
-														 ? AdditionalDatasource<Builder>(itemData.rank, &datasourcesWithJoins_.front())
-														 : AdditionalDatasource<Builder>(&datasourcesWithJoins_.front()));
-				datasources.emplace_back(&additionalDatasources_.front());
+				EncoderContext<Builder> ctx;
+				ctx.joins = &datasourcesWithJoins_.front();
+				if (qr_.NeedOutputRank()) {
+					ctx.fields.rank = itemData.rank;
+				}
+				return ctx;
 			}
 		}
-		return datasources;
+		return {};
 	}
-	size_t GetJoinedFieldsCount() const noexcept override { return joinedData_.size(); }
-	size_t GetJoinedRowItemsCount(size_t rowId) const override {
+	size_t GetFieldsCount() const noexcept override { return joinedData_.size(); }
+	size_t GetRowItemsCount(size_t rowId) const override {
 		const auto& fieldIt = joinedData_.at(rowId);
 		return fieldIt.size();
 	}
-	ConstPayload GetJoinedItemPayload(size_t joinedField, size_t itemIdx) override {
+	ConstPayload GetItemPayload(size_t joinedField, size_t itemIdx) override {
 		auto& fieldIt = joinedData_.at(joinedField);
 		auto& dataIt = fieldIt.at(itemIdx);
 		const auto joinedNsId = getJoinedNsID(nsid_, joinedField);
@@ -231,7 +234,7 @@ public:
 		itemimpl_.FromCJSON(dataIt.data);
 		return itemimpl_.GetConstPayload();
 	}
-	const TagsMatcher& GetJoinedItemTagsMatcher(size_t joinedField) & noexcept override {
+	const TagsMatcher& GetItemTagsMatcher(size_t joinedField) & noexcept override {
 		if (!hasJoinedDataForField(joinedField)) {
 			static const TagsMatcher kEmptyTm;
 			return kEmptyTm;
@@ -239,11 +242,11 @@ public:
 		tm_ = qr_.GetTagsMatcher(getJoinedNsID(nsid_, joinedField));
 		return tm_;
 	}
-	const FieldsFilter& GetJoinedItemFieldsFilter(size_t /*joinedField*/) & noexcept override {
+	const FieldsFilter& GetItemFieldsFilter(size_t /*joinedField*/) & noexcept override {
 		static const FieldsFilter empty;
 		return empty;
 	}
-	const std::string& GetJoinedItemNamespace(size_t joinedField) & noexcept override {
+	const std::string& GetItemNamespace(size_t joinedField) & noexcept override {
 		if (!hasJoinedDataForField(joinedField)) {
 			static const std::string empty;
 			return empty;
@@ -279,40 +282,37 @@ private:
 	uint32_t cachedJoinedNsId_ = 0;
 	TagsMatcher tm_;
 	std::forward_list<EncoderDatasourceWithJoins<Builder>> datasourcesWithJoins_;
-	std::forward_list<AdditionalDatasource<Builder>> additionalDatasources_;
 };
 
 void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen) const {
 	auto tm = qr_->GetTagsMatcher(itemParams_.nsid);
 	JsonEncoder enc(&tm, nullptr);
 	JsonBuilder builder(wrser, ObjType::TypePlain);
-	h_vector<IAdditionalDatasource<JsonBuilder>*, 2> dss;
+	EncoderContext<JsonBuilder> ctx;
 	int shardId = (const_cast<Iterator*>(this))->GetShardID();
-	AdditionalDatasourceShardId<JsonBuilder> dsShardId(shardId);
 	if (qr_->NeedOutputShardId() && shardId >= 0) {
-		dss.push_back(&dsShardId);
+		ctx.fields.shardId = shardId;
 	}
 	if (qr_->HaveJoined() && itemParams_.joined.size()) {
 		EncoderDatasourceWithJoins<JsonBuilder> joinsDs(itemParams_.nsid, itemParams_.joined, *qr_);
-		AdditionalDatasource<JsonBuilder> ds = qr_->NeedOutputRank() ? AdditionalDatasource<JsonBuilder>(itemParams_.rank, &joinsDs)
-																	 : AdditionalDatasource<JsonBuilder>(&joinsDs);
-		dss.push_back(&ds);
+		ctx.joins = &joinsDs;
+		if (qr_->NeedOutputRank()) {
+			ctx.fields.rank = itemParams_.rank;
+		}
 		if (withHdrLen) {
 			auto slicePosSaver = wrser.StartSlice();
 		}
-		enc.Encode(cjson, builder, dss);
+		enc.Encode(cjson, builder, ctx);
 		return;
 	}
 
-	AdditionalDatasource<JsonBuilder> ds(itemParams_.rank, nullptr);
-	AdditionalDatasource<JsonBuilder>* dspPtr = qr_->NeedOutputRank() ? &ds : nullptr;
-	if (dspPtr) {
-		dss.push_back(dspPtr);
+	if (qr_->NeedOutputRank()) {
+		ctx.fields.rank = itemParams_.rank;
 	}
 	if (withHdrLen) {
 		auto slicePosSaver = wrser.StartSlice();
 	}
-	enc.Encode(cjson, builder, dss);
+	enc.Encode(cjson, builder, ctx);
 }
 
 void CoroQueryResults::Iterator::checkIdx() const {
@@ -355,9 +355,9 @@ void CoroQueryResults::Iterator::getCSVFromCJSON(std::string_view cjson, WrSeria
 
 	if (qr_->HaveJoined() && itemParams_.joined.size()) {
 		EncoderDatasourceWithJoins<CsvBuilder> joinsDs(itemParams_.nsid, itemParams_.joined, *qr_);
-		h_vector<IAdditionalDatasource<CsvBuilder>*, 2> dss;
-		AdditionalDatasourceCSV ds(&joinsDs);
-		encoder.Encode(cjson, builder, dss);
+		EncoderContext<CsvBuilder> ctx;
+		ctx.joins = &joinsDs;
+		encoder.Encode(cjson, builder, ctx);
 		return;
 	}
 

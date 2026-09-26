@@ -10,7 +10,7 @@ namespace client {
 class Reindexer;
 }
 
-class Query;
+class ConstQueryImpl;
 class Item;
 
 namespace sharding {
@@ -29,7 +29,7 @@ public:
 	int ActualShardId() const noexcept;
 	int64_t SourceId() const noexcept;
 	std::pair<int, Variant> GetShardIdKeyPair(std::string_view ns, const Item& item) const;
-	std::pair<ShardIDsContainer, Variant> GetShardIdKeyPair(const Query& q) const;
+	std::pair<ShardIDsContainer, Variant> GetShardIdKeyPair(ConstQueryImpl q) const;
 
 	inline operator bool() const noexcept { return locator_.operator bool(); }
 	inline void reset() noexcept { locator_.reset(); }

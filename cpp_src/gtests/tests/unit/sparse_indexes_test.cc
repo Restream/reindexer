@@ -4,6 +4,8 @@
 namespace reindexer_tests {
 
 using reindexer::IndexOpts;
+using reindexer::Query;
+using reindexer::Variant;
 
 TEST_F(SparseIndexesApi, SparseIndexSelectAll) { CheckSelectAll(); }
 TEST_F(SparseIndexesApi, SelectByTreeSparseIndex) { CheckSelectByTreeIndex(); }
@@ -56,15 +58,12 @@ TEST_F(SparseIndexesApi, RejectObjectOnInsert) {
 TEST_F(SparseIndexesApi, RejectObjectOnUpdate) {
 	QueryResults qr;
 	auto err = rt.reindexer->Update(
-		Query(default_namespace).Where(kFieldId, CondEq, Variant("key1")).SetObject(kFieldName, Variant{std::string{R"json({"x":1})json"}}),
-		qr);
+		Query(default_namespace).Where(kFieldId, CondEq, Variant("key1")).SetObject(kFieldName, Variant{R"json({"x":1})json"}), qr);
 	ASSERT_FALSE(err.ok());
 	ASSERT_TRUE(err.code() == errLogic || err.code() == errParams) << err.what();
 
-	err = rt.reindexer->Update(Query(default_namespace)
-								   .Where(kFieldId, CondEq, Variant("key2"))
-								   .SetObject(kFieldSerialNumber, Variant{std::string{R"json({"x":2})json"}}),
-							   qr);
+	err = rt.reindexer->Update(
+		Query(default_namespace).Where(kFieldId, CondEq, Variant("key2")).SetObject(kFieldSerialNumber, Variant{R"json({"x":2})json"}), qr);
 	ASSERT_FALSE(err.ok());
 	ASSERT_TRUE(err.code() == errLogic || err.code() == errParams) << err.what();
 }

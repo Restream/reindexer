@@ -64,6 +64,9 @@ private:
 
 	void Fast1SuffixMatch(State& state);
 	void Fast2SuffixMatch(State& state);
+	template <reindexer::FTConfig::Optimization>
+	void InitForSuffixUpdatesAndCleanup(State&);
+	void Fast2SuffixMatchWithUpdatesAndCleanup(State& state);
 	void ShortSuffixPreselect(State& state, unsigned terms, ShortSuffixPreselectProfile profile);
 
 	void Fast1TypoWordMatch(State& state);
@@ -165,7 +168,7 @@ private:
 			double averageTime = 0;
 			for (auto v : timeOfTest_) {
 				averageTime += v;
-				int indx = double(v - tMin) / dt;
+				int indx = static_cast<int>(double(v - tMin) / dt);
 				if (indx >= columnCount) {
 					indx = columnCount - 1;
 				}
@@ -208,8 +211,10 @@ private:
 	void ApplyShortSuffixPreselectFilter(reindexer::Query& q, ShortSuffixPreselectProfile profile) const;
 	reindexer::Error readDictFile(const std::string& fileName, std::vector<std::string>& words);
 	void setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, const reindexer::FTConfig& cfg);
+	void setNamespaceOptimizationConfig(std::string_view nsName, int optimizationTimeoutMs, int optimizationSortWorkers, benchmark::State&);
 	void dropNamespace(std::string_view name, benchmark::State&);
 	const std::string alternatingNs_ = "FtAlternatingUpdatesAndSelects";
+	const std::string suffixCleanupNs_ = "FtSuffixUpdatesAndCleanup";
 	const std::string kIndexTextName_ = "search";
 	const std::string kIndexTextPreselectName_ = "search_preselect";
 	const std::string kLowDiversityIndexName_ = "search_ld";
@@ -218,6 +223,7 @@ private:
 
 	NamespaceDef lowWordsDiversityNsDef_;
 	NamespaceDef shortSuffixPreselectNsDef_;
+	NamespaceDef suffixCleanupNsDef_;
 };
 
 }  // namespace reindexer_benchmarks

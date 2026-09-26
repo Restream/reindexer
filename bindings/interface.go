@@ -3,6 +3,8 @@ package bindings
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
+	"fmt"
 	"net/url"
 	"time"
 
@@ -78,11 +80,91 @@ func DefaultEmbedderConnectionPoolConfig() *EmbedderConnectionPoolConfig {
 	}
 }
 
+const (
+	EmbeddingProtocolRX     = "rx"
+	EmbeddingProtocolOpenAI = "openai"
+)
+
+// IEmbeddingProtocolOptions is implemented by protocol-specific embedder options.
+type IEmbeddingProtocolOptions interface {
+	Type() string
+}
+
+// EmbeddingProtocolOptionsRX configures the default Reindexer produce API.
+type EmbeddingProtocolOptionsRX struct {
+	// Protocol type. Must be "rx".
+	ProtocolType string `json:"type"`
+}
+
+func (o *EmbeddingProtocolOptionsRX) Type() string {
+	if o == nil || o.ProtocolType == "" {
+		return EmbeddingProtocolRX
+	}
+	return o.ProtocolType
+}
+
+func (o EmbeddingProtocolOptionsRX) MarshalJSON() ([]byte, error) {
+	if o.ProtocolType == "" {
+		o.ProtocolType = EmbeddingProtocolRX
+	}
+	if o.ProtocolType != EmbeddingProtocolRX {
+		return nil, fmt.Errorf("unexpected embedding protocol type %q for RX options", o.ProtocolType)
+	}
+	type dto EmbeddingProtocolOptionsRX
+	return json.Marshal(dto(o))
+}
+
+func NewEmbeddingProtocolOptionsRX() *EmbeddingProtocolOptionsRX {
+	return &EmbeddingProtocolOptionsRX{ProtocolType: EmbeddingProtocolRX}
+}
+
+// EmbeddingProtocolOptionsOpenAI configures an OpenAI-compatible embeddings endpoint.
+type EmbeddingProtocolOptionsOpenAI struct {
+	// Protocol type. Must be "openai".
+	ProtocolType string `json:"type"`
+	// Model name for OpenAI-compatible requests. Required.
+	Model string `json:"model"`
+	// How upsert fields are converted to OpenAI input text. Optional, upsert embedder only.
+	// "stringify" (default): document fields serialized as a JSON object string
+	// "join": field values joined with newline (array values within a field joined with space)
+	FieldsFormat string `json:"fields_format,omitempty"`
+}
+
+func (o *EmbeddingProtocolOptionsOpenAI) Type() string {
+	if o == nil || o.ProtocolType == "" {
+		return EmbeddingProtocolOpenAI
+	}
+	return o.ProtocolType
+}
+
+func (o EmbeddingProtocolOptionsOpenAI) MarshalJSON() ([]byte, error) {
+	if o.ProtocolType == "" {
+		o.ProtocolType = EmbeddingProtocolOpenAI
+	}
+	if o.ProtocolType != EmbeddingProtocolOpenAI {
+		return nil, fmt.Errorf("unexpected embedding protocol type %q for OpenAI options", o.ProtocolType)
+	}
+	if o.Model == "" {
+		return nil, fmt.Errorf("embedding protocol %q requires model", EmbeddingProtocolOpenAI)
+	}
+	type dto EmbeddingProtocolOptionsOpenAI
+	return json.Marshal(dto(o))
+}
+
+func NewEmbeddingProtocolOptionsOpenAI(model string) *EmbeddingProtocolOptionsOpenAI {
+	return &EmbeddingProtocolOptionsOpenAI{ProtocolType: EmbeddingProtocolOpenAI, Model: model}
+}
+
 type EmbedderConfig struct {
-	// Embedder name. Optional
+	// Embedder name. Optional. Used in RX protocol URL path; ignored for OpenAI protocol
 	Name string `json:"name,omitempty"`
-	// Embed service URL. The address of the service where embedding requests will be sent. Required
+	// Embed service URL. Required.
+	// For protocol "rx": base URL of the service (path /api/v1/embedder/{name}/produce is appended).
+	// For protocol "openai": full embeddings endpoint URL (e.g. http://127.0.0.1:8080/v1/embeddings).
 	URL string `json:"URL"`
+	// Protocol options. Optional, defaults to RX produce API when omitted.
+	// Use *EmbeddingProtocolOptionsRX or *EmbeddingProtocolOptionsOpenAI.
+	ProtocolOptions IEmbeddingProtocolOptions `json:"protocol,omitempty"`
 	// List of index fields to calculate embedding. Required for UpsertEmbedder and optional for QueryEmbedder
 	Fields []string `json:"fields,omitempty"`
 	// Name, used to access the cache. Optional, if not specified, caching is not used
@@ -94,6 +176,66 @@ type EmbedderConfig struct {
 	EmbeddingStrategy string `json:"embedding_strategy,omitempty"`
 	// Connection pool configuration
 	ConnectionPoolConfig *EmbedderConnectionPoolConfig `json:"pool,omitempty"`
+}
+
+func (c *EmbedderConfig) UnmarshalJSON(data []byte) error {
+	type dto EmbedderConfig
+	aux := &struct {
+		*dto
+		ProtocolOptions json.RawMessage `json:"protocol,omitempty"`
+	}{dto: (*dto)(c)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(aux.ProtocolOptions) == 0 {
+		c.ProtocolOptions = nil
+		return nil
+	}
+	var raw any
+	if err := json.Unmarshal(aux.ProtocolOptions, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		c.ProtocolOptions = nil
+		return nil
+	}
+	var typeProbe struct {
+		Type         string `json:"type"`
+		Model        string `json:"model"`
+		FieldsFormat string `json:"fields_format"`
+	}
+	if err := json.Unmarshal(aux.ProtocolOptions, &typeProbe); err != nil {
+		return err
+	}
+	if typeProbe.Type == "" {
+		return fmt.Errorf("embedding protocol type is required")
+	}
+	switch typeProbe.Type {
+	case EmbeddingProtocolOpenAI:
+		var opts EmbeddingProtocolOptionsOpenAI
+		if err := json.Unmarshal(aux.ProtocolOptions, &opts); err != nil {
+			return err
+		}
+		if opts.Model == "" {
+			return fmt.Errorf("embedding protocol %q requires model", EmbeddingProtocolOpenAI)
+		}
+		c.ProtocolOptions = &opts
+	case EmbeddingProtocolRX:
+		if typeProbe.Model != "" || typeProbe.FieldsFormat != "" {
+			return fmt.Errorf("embedding protocol %q does not support model or fields_format", EmbeddingProtocolRX)
+		}
+		var opts EmbeddingProtocolOptionsRX
+		if err := json.Unmarshal(aux.ProtocolOptions, &opts); err != nil {
+			return err
+		}
+		if opts.ProtocolType == "" {
+			opts.ProtocolType = EmbeddingProtocolRX
+		}
+		c.ProtocolOptions = &opts
+	default:
+		return fmt.Errorf("unknown embedding protocol type %q", typeProbe.Type)
+	}
+	return nil
 }
 
 func DefaultUpsertEmbedderConfig(url string, fields []string) *EmbedderConfig {

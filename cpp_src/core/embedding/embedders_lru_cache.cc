@@ -91,7 +91,7 @@ std::optional<embedding::ValueT> EmbeddersLRUCache::Get(const embedding::Adapter
 
 	{
 		lock_guard lck(cacheMtx_);
-		const auto it = map_.find(srcAdapter.View());
+		const auto it = map_.find(srcAdapter.CacheKey());
 		if (it == map_.end()) {
 			addCounterIfEnable(misses_);
 			return std::nullopt;
@@ -107,7 +107,7 @@ std::optional<embedding::ValueT> EmbeddersLRUCache::Get(const embedding::Adapter
 	{
 		static constexpr StorageOpts opts;
 		shared_lock lck(storageMtx_);
-		const auto err = storage_->Read(opts, srcAdapter.View(), value);
+		const auto err = storage_->Read(opts, srcAdapter.CacheKey(), value);
 		if (!err.ok()) {
 			addCounterIfEnable(misses_);
 			return std::nullopt;
@@ -136,7 +136,7 @@ void EmbeddersLRUCache::Put(const embedding::Adapter& srcAdapter, const embeddin
 
 	{
 		lock_guard lck(cacheMtx_);
-		const auto& key = srcAdapter.View();
+		const auto& key = srcAdapter.CacheKey();
 		const auto it = map_.find(key);
 		if (it != map_.end()) {
 			++it->second->second;
@@ -176,12 +176,12 @@ void EmbeddersLRUCache::Put(const embedding::Adapter& srcAdapter, const embeddin
 		auto val = wrser.Slice();
 
 		shared_lock lck(storageMtx_);
-		const auto err = storage_->Write(opts, srcAdapter.View(), val);
+		const auto err = storage_->Write(opts, srcAdapter.CacheKey(), val);
 		lck.unlock();
 		if (!err.ok()) {
-			logFmt(LogWarning, "Can't write value to embedder cache storage ('{}:{}'): {}", srcAdapter.View(), val, err.what());
+			logFmt(LogWarning, "Can't write value to embedder cache storage ('{}:{}'): {}", srcAdapter.CacheKey(), val, err.what());
 		}
-		totalStorageSize_.fetch_add(calculateStorageItemSize(srcAdapter.View(), val), std::memory_order_relaxed);
+		totalStorageSize_.fetch_add(calculateStorageItemSize(srcAdapter.CacheKey(), val), std::memory_order_relaxed);
 	}
 }
 

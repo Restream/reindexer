@@ -215,6 +215,7 @@ public:
 	// Put raw data
 	RX_ALWAYS_INLINE void PutUInt8(uint8_t v) {
 		grow(sizeof(v));
+		// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound)
 		memcpy(&buf_[len_], &v, sizeof(v));
 		len_ += sizeof(v);
 	}

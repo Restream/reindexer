@@ -208,7 +208,7 @@ void PrefixTree::PrefixTreeNode::GetPaths(std::string&& basePath, std::vector<st
 	}
 }
 
-Error PrefixTree::BuildProtobufSchema(WrSerializer& schema, TagsMatcher& tm, PayloadType& pt) noexcept {
+Error PrefixTree::BuildProtobufSchema(WrSerializer& schema, TagsMatcher& tm, const PayloadType& pt) noexcept {
 	if (root_.children.empty()) {
 		return Error(errLogic, "Schema is not initialized either just empty");
 	}
@@ -290,7 +290,7 @@ KeyValueType Schema::GetFieldType(const TagsPath& fieldPath, bool& isArray) cons
 	return paths_.fieldsTypes_.GetField(fieldPath, isArray);
 }
 
-Error Schema::BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt) {
+Error Schema::BuildProtobufSchema(TagsMatcher& tm, const PayloadType& pt) {
 	WrSerializer ser;
 	protobufSchemaStatus_ = paths_.BuildProtobufSchema(ser, tm, pt);
 	protobufSchema_ = std::string(ser.Slice());

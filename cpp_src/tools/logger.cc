@@ -63,4 +63,6 @@ void logInstallWriter(LogWriter writer, LoggerPolicy policy, int globalLogLevel)
 	}
 }
 
+void logSetLevel(int globalLogLevel) noexcept { logger_details::g_LogLevel.store(globalLogLevel, std::memory_order_relaxed); }
+
 }  // namespace reindexer

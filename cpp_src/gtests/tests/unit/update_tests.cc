@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
+#include "core/query/query_impl.h"
 #include "reindexer_api.h"
 
 namespace reindexer_tests {
 
 using reindexer::IndexOpts;
+using reindexer::Variant;
 
 class [[nodiscard]] CompositeUpdate : public ReindexerApi {
 public:
@@ -31,19 +33,19 @@ public:
 	static constexpr char kFieldV3_V4[] = "v3_4";
 	static constexpr char kFieldArray[] = "array";
 
-	void ExecuteAndCheckResult(const Query& q, const std::string& item) {
+	void ExecuteAndCheckResult(const Query& q, const std::string& item) { ExecuteAndCheckResult(Impl(q), item); }
+	void ExecuteAndCheckResult(reindexer::ConstQueryImpl q, const std::string& item) {
 		SCOPED_TRACE(q.GetSQL());
 		reindexer::QueryResults res;
-		Error err;
-		switch (q.type_) {
+		switch (q.Type()) {
 			case QuerySelect:
-				res = rt.Select(q);
+				res = rt.Select(*q);
 				break;
 			case QueryUpdate:
-				rt.Update(q, res);
+				rt.Update(*q, res);
 				break;
 			case QueryDelete:
-				rt.Delete(q, res);
+				rt.Delete(*q, res);
 				break;
 			case QueryTruncate:
 				assertrx(false);
@@ -66,13 +68,11 @@ private:
 TEST_F(CompositeUpdate, CompositeAndArray) {
 	{
 		auto q = Query(default_namespace).Set(kFieldV1, 10).Set(kFieldArray, {10, 11}).Where(kFieldId, CondEq, 1);
-		q.type_ = QueryUpdate;
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[10,11],"v1":10,"v2":200,"v3":1000,"v4":"v4"})");
 	}
 	{
 		auto q =
 			Query(default_namespace).Set(kFieldV1, 20).Set(kFieldV4, "str").Set(kFieldArray, {10, 11, 20, 30}).Where(kFieldId, CondEq, 1);
-		q.type_ = QueryUpdate;
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[10,11,20,30],"v1":20,"v2":200,"v3":1000,"v4":"str"})");
 	}
 	{
@@ -85,12 +85,10 @@ TEST_F(CompositeUpdate, CompositeAndArray) {
 	}
 	{
 		auto q = Query(default_namespace).Set(kFieldArray, {11, 11}).Set(kFieldV1, 11).Where(kFieldId, CondEq, 1);
-		q.type_ = QueryUpdate;
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[11,11],"v1":11,"v2":200,"v3":1000,"v4":"str"})");
 	}
 	{
 		auto q = Query(default_namespace).Set(kFieldV1, 12).Set(kFieldArray, {12, 12}).Set(kFieldV4, "a").Where(kFieldId, CondEq, 1);
-		q.type_ = QueryUpdate;
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[12,12],"v1":12,"v2":200,"v3":1000,"v4":"a"})");
 	}
 	{
@@ -102,7 +100,6 @@ TEST_F(CompositeUpdate, CompositeAndArray) {
 					 .Set(kFieldArray, {23, 23})
 					 .Set(kFieldV1, 23)
 					 .Where(kFieldId, CondEq, 1);
-		q.type_ = QueryUpdate;
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[23,23],"v1":23,"v2":22,"v3":1000,"v4":"b"})");
 	}
 }

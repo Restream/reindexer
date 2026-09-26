@@ -1,6 +1,7 @@
 #include "gtests/tests/fixtures/hybrid.h"
 #include <gmock/gmock.h>
 #include "core/cjson/jsonbuilder.h"
+#include "core/query/query_impl.h"
 #include "core/tag_name_index.h"
 #include "gtests/tools.h"
 #include "tools/fsops.h"
@@ -116,7 +117,7 @@ void HybridTest::TestQueries() {
 		auto result = rt.Select(reindexer::Query{kNsName}
 									.Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString())
 									.WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params)
-									.Sort(fmt::format("5 * rank({}) + 4 * rank({}) + 15", kFieldNameFt, knnFieldName), false)
+									.Sort(fmt::format("5 * rank({}) + 4 * rank({}) + 15", kFieldNameFt, knnFieldName), SortOrder::Asc)
 									.WithRank());
 
 		rndFloatVector(buf);
@@ -125,14 +126,15 @@ void HybridTest::TestQueries() {
 				.Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString())
 				.Or()
 				.WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params)
-				.Sort(fmt::format("34 * 8 - 500 * rank({}, 0) - 29 + 1.0e+3 * rank({}, 1.0e+17) + 15", knnFieldName, kFieldNameFt), false)
+				.Sort(fmt::format("34 * 8 - 500 * rank({}, 0) - 29 + 1.0e+3 * rank({}, 1.0e+17) + 15", knnFieldName, kFieldNameFt),
+					  SortOrder::Asc)
 				.WithRank());
 
 		rndFloatVector(buf);
 		result = rt.Select(reindexer::Query{kNsName}
 							   .Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString())
 							   .WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params)
-							   .Sort("RRF()", false)
+							   .Sort("RRF()", SortOrder::Asc)
 							   .WithRank());
 
 		rndFloatVector(buf);
@@ -140,7 +142,7 @@ void HybridTest::TestQueries() {
 							   .Where(kFieldNameFt, CondEq, "trampampam " + rt.RandString())
 							   .Or()
 							   .WhereKNN(knnFieldName, reindexer::ConstFloatVectorView{buf}, knnField.params)
-							   .Sort("RRF(rank_const = 3)", false)
+							   .Sort("RRF(rank_const = 3)", SortOrder::Asc)
 							   .WithRank());
 	}
 }
@@ -148,8 +150,8 @@ void HybridTest::TestQueries() {
 TEST_F(HybridTest, QueriesArray) { TestQueries<Array>(); }
 TEST_F(HybridTest, QueriesScalar) { TestQueries<Scalar>(); }
 
-void HybridTest::check(const reindexer::Query& q) const {
-	const auto qRes = rt.Select(q);
+void HybridTest::check(reindexer::ConstQueryImpl q) const {
+	const auto qRes = rt.Select(*q);
 	const auto& sorting = q.GetSortingEntries();
 	auto it = qRes.begin();
 	const auto end = qRes.end();
@@ -248,41 +250,52 @@ void HybridTest::TestMerge() {
 	check(makeHybridQuery<isArray>().Limit(10).Merge(makeHybridQuery<isArray>()));
 	check(makeHybridQuery<isArray>().Offset(10).Merge(makeHybridQuery<isArray>()));
 	check(makeHybridQuery<isArray>().Offset(10).Limit(10).Merge(makeHybridQuery<isArray>()));
-	check(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Merge(makeHybridQuery<isArray>()));
-	check(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true)));
+	check(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), SortOrder::Desc).Merge(makeHybridQuery<isArray>()));
+	check(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), SortOrder::Desc)));
 	check(makeHybridQuery<isArray>()
-			  .Sort(rndReranker<isArray>(), false)
-			  .Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), false)));
-	check(
-		makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true)));
+			  .Sort(rndReranker<isArray>(), SortOrder::Asc)
+			  .Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), SortOrder::Asc)));
+	check(makeHybridQuery<isArray>()
+			  .Sort(rndReranker<isArray>(), SortOrder::Desc)
+			  .Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), SortOrder::Desc)));
 
 	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Offset(10)),
 				"Limit and offset in inner merge query is not allowed");
 	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Limit(10)),
 				"Limit and offset in inner merge query is not allowed");
 
-	checkFailed(makeHybridQuery<isArray>().Sort(kFieldNameId, true).Merge(makeHybridQuery<isArray>()),
+	checkFailed(makeHybridQuery<isArray>().Sort(kFieldNameId, SortOrder::Desc).Merge(makeHybridQuery<isArray>()),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
-	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(kFieldNameId, true)),
+	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(kFieldNameId, SortOrder::Desc)),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
-	checkFailed(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Sort(kFieldNameId, true).Merge(makeHybridQuery<isArray>()),
+	checkFailed(makeHybridQuery<isArray>()
+					.Sort(rndReranker<isArray>(), SortOrder::Desc)
+					.Sort(kFieldNameId, SortOrder::Desc)
+					.Merge(makeHybridQuery<isArray>()),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
-	checkFailed(makeHybridQuery<isArray>().Sort(kFieldNameId, true).Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true)),
+	checkFailed(makeHybridQuery<isArray>()
+					.Sort(kFieldNameId, SortOrder::Desc)
+					.Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), SortOrder::Desc)),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
-	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Sort(kFieldNameId, true)),
+	checkFailed(makeHybridQuery<isArray>().Merge(
+					makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), SortOrder::Desc).Sort(kFieldNameId, SortOrder::Desc)),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
-	checkFailed(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Merge(makeHybridQuery<isArray>().Sort(kFieldNameId, true)),
+	checkFailed(makeHybridQuery<isArray>()
+					.Sort(rndReranker<isArray>(), SortOrder::Desc)
+					.Merge(makeHybridQuery<isArray>().Sort(kFieldNameId, SortOrder::Desc)),
 				"In hybrid query ordering expression should be 'RRF()' or in form 'a * rank(index1) + b * rank(index2) + c'");
 
-	checkFailed(
-		makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), false).Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true)),
-		"All merging queries should have the same ordering (ASC or DESC)");
-	checkFailed(
-		makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), true).Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), false)),
-		"All merging queries should have the same ordering (ASC or DESC)");
-	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), false)),
+	checkFailed(makeHybridQuery<isArray>()
+					.Sort(rndReranker<isArray>(), SortOrder::Asc)
+					.Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), SortOrder::Desc)),
 				"All merging queries should have the same ordering (ASC or DESC)");
-	checkFailed(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), false).Merge(makeHybridQuery<isArray>()),
+	checkFailed(makeHybridQuery<isArray>()
+					.Sort(rndReranker<isArray>(), SortOrder::Desc)
+					.Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), SortOrder::Asc)),
+				"All merging queries should have the same ordering (ASC or DESC)");
+	checkFailed(makeHybridQuery<isArray>().Merge(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), SortOrder::Asc)),
+				"All merging queries should have the same ordering (ASC or DESC)");
+	checkFailed(makeHybridQuery<isArray>().Sort(rndReranker<isArray>(), SortOrder::Asc).Merge(makeHybridQuery<isArray>()),
 				"All merging queries should have the same ordering (ASC or DESC)");
 
 	checkFailed(makeHybridQuery<isArray>().Merge(makeFtQuery()),

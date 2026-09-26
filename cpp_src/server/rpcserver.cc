@@ -1,5 +1,4 @@
 #include "rpcserver.h"
-#include <sys/stat.h>
 #include "cluster/clustercontrolrequest.h"
 #include "cluster/config.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
@@ -8,6 +7,8 @@
 #include "core/id_type.h"
 #include "core/namespace/namespacestat.h"
 #include "core/namespace/snapshot/snapshot.h"
+#include "core/query/query_impl.h"
+#include "core/query/sql/sql_helpers.h"
 #include "core/query/sql/sql_suggestions.h"
 #include "debug/crashqueryreporter.h"
 #include "events/subscriber_config.h"
@@ -229,8 +230,10 @@ void RPCServer::OnResponse(cproto::Context& ctx) {
 
 Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults& res, int fetchLimit, cproto::Context& ctx) noexcept {
 	try {
-		const auto q = Query::FromSQL(sqlQuery);
-		switch (q.Type()) {
+		auto q = Query::FromSQL(sqlQuery);
+		ApplySqlModifyDefaults(q);
+		QueryImpl queryImpl = Impl(q);
+		switch (queryImpl.Type()) {
 			case QuerySelect:
 				return getDB(ctx, kRoleDataRead).Select(q, res, unsigned(fetchLimit));
 			case QueryDelete:
@@ -238,13 +241,18 @@ Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults& res
 			case QueryUpdate:
 				return getDB(ctx, kRoleDataWrite).Update(q, res);
 			case QueryTruncate:
-				return getDB(ctx, kRoleDBAdmin).TruncateNamespace(q.NsName());
+				return getDB(ctx, kRoleDBAdmin).TruncateNamespace(queryImpl.NsName());
 		}
-		return Error(errParams, "unknown query type {}", int(q.Type()));
+		return Error(errParams, "unknown query type {}", int(queryImpl.Type()));
 	} CATCH_AND_RETURN;
 }
 
 void RPCServer::Logger(cproto::Context& ctx, const Error& err, const cproto::Args& ret) {
+	const auto level{err.ok() ? spdlog::level::info : spdlog::level::err};
+	if (!logger_.should_log(level)) {
+		return;
+	}
+
 	const auto clientData = getClientDataUnsafe(ctx);
 	uint8_t buf[0x500];
 	WrSerializer ser(buf);
@@ -275,7 +283,11 @@ void RPCServer::Logger(cproto::Context& ctx, const Error& err, const cproto::Arg
 		ser << " |  allocs: "sv << statDiff.GetAllocsCnt() << ", allocated: " << statDiff.GetAllocsBytes() << " byte(s)";
 	}
 
-	logger_.info("{}", ser.Slice());
+	if (level == spdlog::level::info) {
+		logger_.info(ser.Slice());
+	} else {
+		logger_.error(ser.Slice());
+	}
 }
 
 Error RPCServer::OpenNamespace(cproto::Context& ctx, p_string nsDefJson, std::optional<p_string> v) {
@@ -469,8 +481,7 @@ Error RPCServer::DeleteQueryTx(cproto::Context& ctx, p_string queryBin, int64_t 
 	try {
 		Transaction& tr = getTx(ctx, txID);
 		Serializer ser(queryBin.data(), queryBin.size());
-		Query query = Query::Deserialize(ser, getClientDataSafe(ctx)->caps.GetQueryFormat());
-		query.type_ = QueryDelete;
+		auto query = QueryImpl::Deserialize(ser, getClientDataSafe(ctx)->caps.GetQueryFormat()).Delete();
 		return tr.Modify(std::move(query), ctx.call->lsn);
 	} CATCH_AND_RETURN;
 }
@@ -479,8 +490,7 @@ Error RPCServer::UpdateQueryTx(cproto::Context& ctx, p_string queryBin, int64_t 
 	try {
 		Transaction& tr = getTx(ctx, txID);
 		Serializer ser(queryBin.data(), queryBin.size());
-		Query query = Query::Deserialize(ser, getClientDataSafe(ctx)->caps.GetQueryFormat());
-		query.type_ = QueryUpdate;
+		auto query = QueryImpl::Deserialize(ser, getClientDataSafe(ctx)->caps.GetQueryFormat());
 		return tr.Modify(std::move(query), ctx.call->lsn);
 	} CATCH_AND_RETURN;
 }
@@ -691,9 +701,8 @@ Error RPCServer::DeleteQuery(cproto::Context& ctx, p_string queryBin, std::optio
 	try {
 		Serializer ser(queryBin.data(), queryBin.size());
 		const auto caps = getClientDataSafe(ctx)->caps;
-		Query query = Query::Deserialize(ser, caps.GetQueryFormat());
-		query.type_ = QueryDelete;
-		ActiveQueryScope scope(query, QueryDelete);
+		const auto query = QueryImpl::Deserialize(ser, caps.GetQueryFormat()).Delete();
+		ActiveQueryScope scope(Impl(query), QueryDelete);
 		const int flags = flagsOpts ? flagsOpts.value() : kResultsWithItemID;
 		QueryResults qres(flags);
 		auto err = getDB(ctx, kRoleDataWrite).Delete(query, qres);
@@ -714,9 +723,8 @@ Error RPCServer::UpdateQuery(cproto::Context& ctx, p_string queryBin, std::optio
 	try {
 		Serializer ser(queryBin.data(), queryBin.size());
 		const auto caps = getClientDataSafe(ctx)->caps;
-		Query query = Query::Deserialize(ser, caps.GetQueryFormat());
-		query.type_ = QueryUpdate;
-		ActiveQueryScope scope(query, QueryUpdate);
+		const auto query = QueryImpl::Deserialize(ser, caps.GetQueryFormat());
+		ActiveQueryScope scope(Impl(query), QueryUpdate);
 		const int flags = flagsOpts ? flagsOpts.value() : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 		QueryResults qres(flags);
 		auto err = getDB(ctx, kRoleDataWrite).Update(query, qres);
@@ -1007,17 +1015,14 @@ void RPCServer::freeSnapshot(cproto::Context& ctx, int id) {
 Error RPCServer::Select(cproto::Context& ctx, p_string queryBin, int flags, int limit, p_string tmVersionsPck) {
 	Query query;
 	Serializer ser{queryBin};
-	const auto* clientData{getClientDataSafe(ctx)};
-	const auto caps = clientData->caps;
+	const auto caps = getClientDataSafe(ctx)->caps;
 	try {
-		query = Query::Deserialize(ser, caps.GetQueryFormat());
+		query = QueryImpl::Deserialize(ser, caps.GetQueryFormat());
 	} catch (Error& err) {
 		return err;
 	}
-	ActiveQueryScope scope(query, QuerySelect);
-	if (query.IsWALQuery()) {
-		query.Where(std::string("#slave_version"sv), CondEq, clientData->rxVersion.StrippedString());
-	}
+	QueryImpl queryImpl = Impl(query);
+	ActiveQueryScope scope(queryImpl, QuerySelect);
 
 	RPCQrWatcher::Ref qres;
 	RPCQrId id{-1, caps.HasQrIdleTimeouts() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
@@ -1035,12 +1040,12 @@ Error RPCServer::Select(cproto::Context& ctx, p_string queryBin, int flags, int 
 		freeQueryResults(ctx, id);
 		return ret;
 	}
-	(*qres).SetQuery(&query);
+	(*qres).SetQuery(&*queryImpl);
 	auto tmVersions = pack2vec(tmVersionsPck);
 	ResultFetchOpts opts{
 		.flags = flags, .tmVersions = tmVersions, .fetchOffset = 0, .fetchLimit = unsigned(limit), .withAggregations = true};
 
-	const bool allowRawProxying = query.GetJoinQueries().empty();
+	const bool allowRawProxying = queryImpl.JoinQueries().empty();
 	return sendResults(ctx, *qres, id, opts, caps, allowRawProxying);
 }
 
@@ -1395,9 +1400,7 @@ void RPCServer::Start(const std::string& addr, ev::dynamic_loop& loop, RPCSocket
 	dispatcher_.OnClose(this, &RPCServer::OnClose);
 	dispatcher_.OnResponse(this, &RPCServer::OnResponse);
 
-	if (logger_) {
-		dispatcher_.Logger(this, &RPCServer::Logger);
-	}
+	dispatcher_.Logger(this, &RPCServer::Logger);
 
 	protocolName_ = (sockDomain == RPCSocketT::TCP) ? kTcpProtocolName : kUnixProtocolName;
 	auto factory = cproto::ServerConnection::NewFactory(dispatcher_, serverConfig_.EnableConnectionsStats);

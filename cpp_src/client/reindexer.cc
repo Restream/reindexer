@@ -50,7 +50,7 @@ Error Reindexer::Update(std::string_view nsName, Item& item) noexcept {
 Error Reindexer::Update(std::string_view nsName, Item& item, QueryResults& result) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->Update(nsName, item, result, ctx_));
 }
-Error Reindexer::Update(const Query& q, QueryResults& result) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Update(q, result, ctx_)); }
+Error Reindexer::Update(const Query& query, QueryResults& result) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Update(query, result, ctx_)); }
 Error Reindexer::Upsert(std::string_view nsName, Item& item) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->Upsert(nsName, item, RPCDataFormat::CJSON, ctx_));
 }
@@ -79,11 +79,11 @@ Error Reindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& key
 Error Reindexer::DeleteMeta(std::string_view nsName, const std::string& key) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->DeleteMeta(nsName, key, ctx_));
 }
-Error Reindexer::Delete(const Query& q, QueryResults& result) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Delete(q, result, ctx_)); }
+Error Reindexer::Delete(const Query& query, QueryResults& result) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Delete(query, result, ctx_)); }
 Error Reindexer::ExecSQL(std::string_view query, QueryResults& result) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->ExecSQL(query, result, ctx_));
 }
-Error Reindexer::Select(const Query& q, QueryResults& result) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Select(q, result, ctx_)); }
+Error Reindexer::Select(const Query& query, QueryResults& result) noexcept { RETURN_RESULT_NOEXCEPT(impl_->Select(query, result, ctx_)); }
 Error Reindexer::AddIndex(std::string_view nsName, const IndexDef& idx) noexcept {
 	RETURN_RESULT_NOEXCEPT(impl_->AddIndex(nsName, idx, ctx_));
 }

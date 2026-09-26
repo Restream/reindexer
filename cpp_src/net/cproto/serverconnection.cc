@@ -5,7 +5,7 @@
 
 namespace reindexer::net::cproto {
 
-const auto kCProtoTimeoutSec = 300.;
+constexpr int kCProtoTimeoutSec = 300;
 
 ServerConnection::ServerConnection(socket&& s, ev::dynamic_loop& loop, Dispatcher& dispatcher, bool enableStat, bool enableCustomBalancing)
 	: net::ConnectionST(std::move(s), loop, enableStat, kConnReadbufSize, kConnWriteBufSize, kCProtoTimeoutSec),
@@ -158,7 +158,6 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 			ctx.stat.sizeStat.reqSizeBytes = size_t(hdr.len) + sizeof(hdr);
 			ctx.call->cmd = CmdCode(hdr.cmd);
 			ctx.call->seq = hdr.seq;
-			ctx.call->version = hdr.version;
 			Serializer ser(it.data(), hdr.len);
 			if (hdr.compressed) {
 				if (!snappy::Uncompress(it.data(), hdr.len, &uncompressed)) [[unlikely]] {
@@ -233,6 +232,7 @@ ServerConnection::BaseConnT::ReadResT ServerConnection::onRead() {
 		}
 
 		std::ignore = BaseConnT::rdBuf_.erase(hdr.len);
+		shrinkRdBufIfNeeded();
 	}
 	return BaseConnT::ReadResT::Default;
 }
@@ -333,7 +333,7 @@ void ServerConnection::sendUpdates() {
 		return;
 	}
 
-	RPCCall callUpdate{kCmdUpdates, 0, kCprotoMinCompatVersion, {}, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, false};
+	RPCCall callUpdate{kCmdUpdates, 0, {}, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, false};
 	cproto::Context ctx{"", &callUpdate, this, {{}, {}}, false};
 
 	Args args;

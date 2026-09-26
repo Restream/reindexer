@@ -107,11 +107,11 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 
 	QueryResults deleteRes;
 	CHECK_SUCCESS(db_->Delete(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), deleteRes));
-	ASSERT_TRUE(!deleteRes.Count()) << "Result of deletion must be empty";
+	ASSERT_FALSE(deleteRes.Count()) << "Result of deletion must be empty";
 
-	const auto [err2, qres] = Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), false);
-	CHECK_SUCCESS(err2);
-	ASSERT_TRUE(!qres.Count()) << "Result of selection must be empty";
+	const auto qres = Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), false);
+	ASSERT_TRUE(qres.has_value()) << qres.error().whatStr();
+	ASSERT_FALSE(qres->Count()) << "Result of selection must be empty";
 }
 
 TEST_F(ExtractPK, ChangedTypeJSON) {

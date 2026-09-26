@@ -1,7 +1,6 @@
 #include "cluster_operation_api.h"
 
 #include "cluster/consts.h"
-#include "core/formatters/checksum_fmt.h"
 #include "core/formatters/lsn_fmt.h"
 #include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"
@@ -289,7 +288,7 @@ size_t ClusterOperationApi::Cluster::getSyncCnt(std::string_view ns, std::vector
 			const bool hasSameLSN = xstate.lsn == state.lsn && xstate.nsVersion == state.nsVersion;
 			if (hasSameLSN && hasSameTms && (expectedLsn.isEmpty() || state.lsn == expectedLsn) &&
 				(expectedNsVersion.isEmpty() || state.nsVersion == expectedNsVersion)) {
-				EXPECT_EQ(xstate.dataHash, state.dataHash);
+				EXPECT_EQ(xstate.checksum, state.checksum);
 				++syncedCnt;
 			}
 		} else {
@@ -312,8 +311,8 @@ void ClusterOperationApi::Cluster::PrintClusterInfo(std::string_view ns, std::ve
 			auto xstate = svc[id].Get()->GetState(std::string(ns));
 			const std::string tmStateToken = xstate.tmStatetoken.has_value() ? std::to_string(xstate.tmStatetoken.value()) : "<none>";
 			const std::string tmVersion = xstate.tmVersion.has_value() ? std::to_string(xstate.tmVersion.value()) : "<none>";
-			fmt::println(stderr, "{{ ns_version: {}, lsn: {}, data_hash: {}, tm_token: {}, tm_version: {} }}", xstate.nsVersion, xstate.lsn,
-						 xstate.dataHash, tmStateToken, tmVersion);
+			fmt::println(stderr, "{{ ns_version: {}, lsn: {}, checksum: {}, tm_token: {}, tm_version: {} }}", xstate.nsVersion, xstate.lsn,
+						 xstate.checksum, tmStateToken, tmVersion);
 		} else {
 			fmt::println(stderr, "down");
 		}
@@ -453,7 +452,7 @@ void ClusterOperationApi::Cluster::AwaitLeaderBecomeAvailable(size_t nodeId, std
 	const Query q = Query(kReplicationStatsNamespace).Where("type", CondEq, "cluster");
 	while (now < awaitTime) {
 		BaseApi::QueryResultsType qr;
-		auto err = GetNode(nodeId)->api.reindexer->WithTimeout(pause).Select(q, qr);
+		auto err = GetNode(nodeId)->api.SelectWithTimeout(q, qr, pause);
 		if (err.ok()) {
 			break;
 		}

@@ -14,6 +14,8 @@ using reindexer::cbuf;
 constexpr int k_sock_closed_err = -1;
 constexpr int k_connect_timeout_err = -2;
 constexpr int k_connect_ssl_err = -3;
+constexpr size_t k_read_buf_keep_cap = 64 * 1024;
+constexpr size_t k_read_buf_shrink_at = 1024 * 1024;
 
 class [[nodiscard]] manual_connection {
 public:
@@ -189,6 +191,7 @@ private:
 	void write_cb();
 	int read_cb();
 	bool read_from_buf(std::span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept;
+	void shrink_read_buf_if_needed() noexcept { std::ignore = buffered_data_.shrink_if_needed(k_read_buf_keep_cap, k_read_buf_shrink_at); }
 
 	ev::io io_;
 	socket sock_;

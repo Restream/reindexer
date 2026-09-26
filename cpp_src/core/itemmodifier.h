@@ -2,6 +2,7 @@
 
 #include <optional>
 #include "core/payload/payloadiface.h"
+#include "function/expression_ast.h"
 #include "function/precomputed_values.h"
 #include "keyvalue/float_vectors_holder.h"
 #include "updates/updaterecord.h"
@@ -40,6 +41,7 @@ private:
 		bool IsUpdateArrayPart() const noexcept { return isUpdateArrayPart_; }
 		bool IsForAllItems() const noexcept { return isForAllItems_; }
 		std::string_view Name() const noexcept;
+		const ExpressionAst& Expression();
 
 	private:
 		struct [[nodiscard]] PathData {
@@ -59,6 +61,7 @@ private:
 		void appendAffectedIndexes(const NamespaceImpl& ns, CompositeFlags& affectedComposites) const;
 
 		const UpdateEntry& entry_;
+		std::optional<ExpressionAst> expression_;
 		IndexedTagsPath tagsPath_;
 		std::optional<IndexedTagsPath> tagsPathWithLastIndex_;
 		int fieldIndex_{IndexValueType::SetByJsonPath};

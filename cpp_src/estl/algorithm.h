@@ -20,4 +20,12 @@ BidirectionalIt unstable_remove_if(BidirectionalIt begin, BidirectionalIt end,
 	return end;
 }
 
+// Room for one more element; doubles capacity when full (avoids reserve(size+1) pin).
+template <typename Cont>
+void ensure_capacity_for_one_more(Cont& cont) {
+	if (cont.capacity() == cont.size()) {
+		cont.reserve(cont.size() ? cont.size() * 2 : 1);
+	}
+}
+
 }  // namespace reindexer

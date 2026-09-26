@@ -81,7 +81,6 @@ public:
 	size_t GetNamespacesCount() const noexcept { return results_.GetNamespacesCount(); }
 	bool IsCacheEnabled() const noexcept { return results_.IsCacheEnabled(); }
 
-	int GetMergedNSCount() const noexcept { return results_.GetMergedNSCount(); }
 	TagsMatcher GetTagsMatcher(int nsid) const noexcept;
 	TagsMatcher GetTagsMatcher(std::string_view ns) const noexcept;
 	PayloadType GetPayloadType(int nsid) const noexcept { return results_.GetPayloadType(nsid); }

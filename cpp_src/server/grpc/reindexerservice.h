@@ -3,10 +3,11 @@
 #if defined(WITH_GRPC)
 #include "reindexer.grpc.pb.h"
 
-#include <unordered_map>
 #include "core/transaction/transaction.h"
 #include "estl/mutex.h"
 #include "net/ev/ev.h"
+#include "server/loggerwrapper.h"
+#include "tools/clock.h"
 
 namespace reindexer_server {
 class DBManager;
@@ -22,7 +23,8 @@ namespace grpc {
 class [[nodiscard]] ReindexerService : public Reindexer::Service {
 public:
 	using Base = Reindexer::Service;
-	ReindexerService(reindexer_server::DBManager& dbMgr, std::chrono::seconds txIdleTimeout, reindexer::net::ev::dynamic_loop& loop);
+	ReindexerService(reindexer_server::DBManager& dbMgr, std::chrono::seconds txIdleTimeout, reindexer::net::ev::dynamic_loop& loop,
+					 reindexer_server::LoggerWrapper logger);
 	ReindexerService(const ReindexerService&) = delete;
 	ReindexerService(ReindexerService&&) = delete;
 	ReindexerService& operator=(const ReindexerService&) = delete;
@@ -69,6 +71,15 @@ public:
 									   ErrorResponse* response) override;
 
 private:
+	struct [[nodiscard]] RequestResult {
+		RequestResult(const Error& err, ::grpc::Status grpcStatus = ::grpc::Status::OK) : err(err), grpcStatus(std::move(grpcStatus)) {}
+		RequestResult(Error&& err, ::grpc::Status grpcStatus = ::grpc::Status::OK)
+			: err(std::move(err)), grpcStatus(std::move(grpcStatus)) {}
+		RequestResult(::grpc::Status grpcStatus) : grpcStatus(std::move(grpcStatus)) {}
+		Error err;
+		::grpc::Status grpcStatus{::grpc::Status::OK};
+	};
+
 	struct [[nodiscard]] TxData {
 		std::shared_ptr<Transaction> tx;
 		steady_clock_w::time_point txDeadline;
@@ -94,7 +105,28 @@ private:
 	Error executeQuery(const std::string& dbName, const Query& q, QueryType type, reindexer::QueryResults& qr);
 	Error getTx(uint64_t id, TxData& txData);
 
+	::grpc::Status log(::grpc::ServerContext* context, std::string_view method, std::string_view dbName, const RequestResult& result) const;
+	::grpc::Status log(::grpc::ServerContext* context, std::string_view method, std::string_view dbName,
+					   const ::grpc::Status& grpcStatus) const;
+
+	template <typename Handler>
+	::grpc::Status handleRequest(::grpc::ServerContext* context, const std::string_view& dbName, std::string_view method,
+								 Handler&& handler) const {
+		try {
+			RequestResult result{handler()};
+			return log(context, method, dbName, result);
+		} catch (const Error& err) {
+			return log(context, method, dbName, RequestResult{err, ::grpc::Status{::grpc::StatusCode::INTERNAL, err.what()}});
+		} catch (const std::exception& err) {
+			return log(context, method, dbName, RequestResult{err, ::grpc::Status{::grpc::StatusCode::INTERNAL, err.what()}});
+		} catch (...) {
+			const Error err{errLogic, "Unknown exception"};
+			return log(context, method, dbName, RequestResult{err, ::grpc::Status{::grpc::StatusCode::INTERNAL, err.what()}});
+		}
+	}
+
 	reindexer_server::DBManager& dbMgr_;
+	reindexer_server::LoggerWrapper logger_;
 	mutex m_;
 	std::unordered_map<uint64_t, TxData> transactions_;
 	uint64_t txID_ = {0};

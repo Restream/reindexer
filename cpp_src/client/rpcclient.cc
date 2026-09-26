@@ -6,6 +6,7 @@
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "core/definitions/namespacedef.h"
 #include "core/namespace/namespacestat.h"
+#include "core/query/query_impl.h"
 #include "core/query/sql/sql_suggestions.h"
 #include "core/schema.h"
 #include "estl/dummy_mutex.h"
@@ -215,9 +216,12 @@ Error RPCClient::modifyItemCJSON(std::string_view nsName, Item& item, CoroQueryR
 			}
 			CoroQueryResults qr;
 			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr).WithShardId(ShardingKeyType::ProxyOff, false);
-			auto err = selectImpl(Query(std::string(nsName)).Limit(0), qr, netTimeout, ctxCompl);
-			if (err.code() == errTimeout) {
-				return Error(errTimeout, "Request timeout");
+			{
+				const auto q = Query(nsName).Limit(0);
+				auto err = selectImpl(Impl(q), qr, netTimeout, ctxCompl);
+				if (err.code() == errTimeout) {
+					return Error(errTimeout, "Request timeout");
+				}
 			}
 			if (withNetTimeout) {
 				netTimeout = std::chrono::duration_cast<std::chrono::milliseconds>(netDeadline - conn_.Now());
@@ -226,7 +230,7 @@ Error RPCClient::modifyItemCJSON(std::string_view nsName, Item& item, CoroQueryR
 			if (!newItem.Status().ok()) {
 				return newItem.Status();
 			}
-			err = newItem.FromJSON(item.impl_->GetJSON());
+			auto err = newItem.FromJSON(item.impl_->GetJSON());
 			if (!err.ok()) {
 				return err;
 			}
@@ -410,14 +414,15 @@ Error RPCClient::Delete(const Query& query, CoroQueryResults& result, const Inte
 		return caps.error();
 	}
 
+	const auto queryImpl = Impl(query);
 	WrSerializer ser;
 	try {
-		query.Serialize(ser, Normal, caps->GetQueryFormat());
+		queryImpl.Serialize(ser, Normal, caps->GetQueryFormat());
 	} catch (const Error& err) {
 		return err;
 	}
 
-	CoroQueryResults::NsArray nsArray{getNamespace(query.NsName())};
+	CoroQueryResults::NsArray nsArray{getNamespace(queryImpl.NsName())};
 	const auto vers = getTMVersionsVec(nsArray);
 	WrSerializer pser;
 	vec2pack(vers, pser);
@@ -442,14 +447,15 @@ Error RPCClient::Update(const Query& query, CoroQueryResults& result, const Inte
 		return caps.error();
 	}
 
+	const auto queryImpl = Impl(query);
 	WrSerializer ser;
 	try {
-		query.Serialize(ser, Normal, caps->GetQueryFormat());
+		queryImpl.Serialize(ser, Normal, caps->GetQueryFormat());
 	} catch (const Error& err) {
 		return err;
 	}
 
-	CoroQueryResults::NsArray nsArray{getNamespace(query.NsName())};
+	CoroQueryResults::NsArray nsArray{getNamespace(queryImpl.NsName())};
 	const auto vers = getTMVersionsVec(nsArray);
 	WrSerializer pser;
 	vec2pack(vers, pser);
@@ -471,7 +477,8 @@ Error RPCClient::Update(const Query& query, CoroQueryResults& result, const Inte
 Error RPCClient::ExecSQL(std::string_view querySQL, CoroQueryResults& result, const InternalRdxContext& ctx) {
 	try {
 		auto query = Query::FromSQL(querySQL);
-		switch (query.type_) {
+		ConstQueryImpl queryImpl = Impl(query);
+		switch (queryImpl.Type()) {
 			case QuerySelect:
 				return Select(query, result, ctx);
 			case QueryDelete:
@@ -479,7 +486,7 @@ Error RPCClient::ExecSQL(std::string_view querySQL, CoroQueryResults& result, co
 			case QueryUpdate:
 				return Update(query, result, ctx);
 			case QueryTruncate:
-				return TruncateNamespace(query.NsName(), ctx);
+				return TruncateNamespace(queryImpl.NsName(), ctx);
 			default:
 				return Error(errParams, "Incorrect qyery type");
 		}
@@ -488,7 +495,11 @@ Error RPCClient::ExecSQL(std::string_view querySQL, CoroQueryResults& result, co
 	}
 }
 
-Error RPCClient::selectImpl(const Query& query, CoroQueryResults& result, milliseconds netTimeout, const InternalRdxContext& ctx) {
+Error RPCClient::Select(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
+	return selectImpl(Impl(query), result, config_.NetTimeout, ctx);
+}
+
+Error RPCClient::selectImpl(ConstQueryImpl query, CoroQueryResults& result, milliseconds netTimeout, const InternalRdxContext& ctx) {
 	auto caps = getRemoteCaps(ctx);
 	if (!caps) {
 		return caps.error();
@@ -502,7 +513,7 @@ Error RPCClient::selectImpl(const Query& query, CoroQueryResults& result, millis
 	} catch (const Error& err) {
 		return err;
 	}
-	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](ConstQueryImpl q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	const auto vers = getTMVersionsVec(nsArray);
 	WrSerializer pser;
@@ -523,7 +534,7 @@ Error RPCClient::selectImpl(const Query& query, CoroQueryResults& result, millis
 					return Error(errLogic, "LoginTs must contain value.");
 				}
 			}
-			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, &query);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, &*query);
 		}
 	} catch (const Error& err) {
 		return err;

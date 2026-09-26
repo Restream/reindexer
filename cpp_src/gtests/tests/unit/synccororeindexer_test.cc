@@ -1,5 +1,6 @@
 #include "client/cororeindexer.h"
 #include "client/reindexer.h"
+#include "core/query/query.h"
 #include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
 #include "estl/condition_variable.h"
@@ -594,8 +595,7 @@ TEST(SyncCoroRx, TxInvalidation) {
 		ASSERT_TRUE(false) << err.what();
 	}
 	{
-		Query q = Query().Set("id", {10});
-		q.type_ = QueryType::QueryUpdate;
+		auto q = Query().Set("id", VariantArray::Create(10), HasExpression_False);
 		err = movedTx.Modify(std::move(q));
 		EXPECT_EQ(err.code(), errNetwork);
 		if (err.what() != kExpectedErrorText1 && err.what() != kExpectedErrorText2) {
@@ -603,8 +603,7 @@ TEST(SyncCoroRx, TxInvalidation) {
 		}
 	}
 	{
-		Query q;
-		q.type_ = QueryType::QueryUpdate;
+		auto q = Query();
 		err = movedTx.Modify(std::move(q));
 		EXPECT_EQ(err.code(), errNetwork);
 		if (err.what() != kExpectedErrorText1 && err.what() != kExpectedErrorText2) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string.h>
+#include <tuple>
 #include "connectinstatscollector.h"
 #include "estl/cbuf.h"
 #include "estl/chunk_buf.h"
@@ -13,6 +14,8 @@ namespace net {
 
 constexpr ssize_t kConnReadbufSize = 0x8000;
 constexpr ssize_t kConnWriteBufSize = 0x800;
+constexpr size_t kConnReadBufKeepCap = 64 * 1024;
+constexpr size_t kConnReadBufShrinkAt = 1024 * 1024;
 
 struct [[nodiscard]] ConnectionStat {
 	ConnectionStat() noexcept {
@@ -57,6 +60,7 @@ protected:
 	void attach(ev::dynamic_loop& loop);
 	void detach();
 	void restart(socket&& s);
+	void shrinkRdBufIfNeeded() noexcept { std::ignore = rdBuf_.shrink_if_needed(kConnReadBufKeepCap, kConnReadBufShrinkAt); }
 
 	socket sock_;
 	ev::io io_;

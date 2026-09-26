@@ -13,29 +13,12 @@ import (
 
 const syncRetries = 90
 
-const (
-	syncModeLegacy  = 0
-	syncModeDefault = 1
-)
-
 func WaitForSyncWithLeader(t *testing.T, leader *reindexer.Reindexer, follower *reindexer.Reindexer) {
-	waitForSyncWithLeaderImpl(t, leader, follower, syncModeDefault)
-}
-
-func WaitForSyncWithLeaderLegacy(t *testing.T, leader *reindexer.Reindexer, follower *reindexer.Reindexer) {
-	waitForSyncWithLeaderImpl(t, leader, follower, syncModeLegacy)
-}
-
-func waitForSyncWithLeaderImpl(t *testing.T, leader *reindexer.Reindexer, follower *reindexer.Reindexer, syncMode int) {
 	complete := true
 
 	var nameBad string
 	var masterBadLsn reindexer.LsnT
 	var slaveBadLsn reindexer.LsnT
-
-	if syncMode != syncModeDefault && syncMode != syncModeLegacy {
-		t.Fatalf("Unexpected sync mode value: %v", syncMode)
-	}
 
 	for range syncRetries {
 
@@ -117,18 +100,10 @@ func waitForSyncWithLeaderImpl(t *testing.T, leader *reindexer.Reindexer, follow
 			for nsName := range checkNsMap {
 				followerNsData, _ := slaveMemStatMap[nsName]
 				leaderNsData, _ := masterMemStatMap[nsName]
-				if syncMode != syncModeLegacy {
-					if followerNsData.Replication.Checksum != leaderNsData.Replication.Checksum {
-						t.Fatalf("Can't sync follower ns with leader (checksum missmatch): ns \"%s\". Follower LSN: %v:%v, leader LSN: %v:%v, follower checksum: %d , leader checksum %d",
-							nsName, followerNsData.Replication.NSVersion, followerNsData.Replication.LastLSN, leaderNsData.Replication.NSVersion, leaderNsData.Replication.LastLSN, followerNsData.Replication.Checksum,
-							leaderNsData.Replication.Checksum)
-					}
-				}
-				// Deprecated. TODO: Remove this and syncMode somewhere around v5.18.0. Issue #2417
-				if followerNsData.Replication.DataHash != leaderNsData.Replication.DataHash {
-					t.Fatalf("Can't sync follower ns with leader (datahash v1 missmatch): ns \"%s\". Follower LSN: %v:%v, leader LSN: %v:%v, follower dataHash: %d , leader dataHash %d",
-						nsName, followerNsData.Replication.NSVersion, followerNsData.Replication.LastLSN, leaderNsData.Replication.NSVersion, leaderNsData.Replication.LastLSN, followerNsData.Replication.DataHash,
-						leaderNsData.Replication.DataHash)
+				if followerNsData.Replication.Checksum != leaderNsData.Replication.Checksum {
+					t.Fatalf("Can't sync follower ns with leader (checksum missmatch): ns \"%s\". Follower LSN: %v:%v, leader LSN: %v:%v, follower checksum: %d , leader checksum %d",
+						nsName, followerNsData.Replication.NSVersion, followerNsData.Replication.LastLSN, leaderNsData.Replication.NSVersion, leaderNsData.Replication.LastLSN, followerNsData.Replication.Checksum,
+						leaderNsData.Replication.Checksum)
 				}
 			}
 			return

@@ -12,6 +12,7 @@
 namespace reindexer_tests {
 
 using reindexer::IndexOpts;
+using reindexer::Variant;
 using reindexer_tests_tools::randPoint;
 
 namespace {

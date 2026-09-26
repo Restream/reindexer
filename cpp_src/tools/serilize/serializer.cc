@@ -30,6 +30,10 @@ p_string Serializer::GetPSlice() {
 	throw Error(errParseBin, "Unknown type {} while parsing binary buffer", type);
 }
 
+[[noreturn]] void Serializer::throwValuesCountError(uint64_t count, uint64_t unread) {
+	throw Error(errParseBin, "Binary buffer broken - values count {} exceeds unread bytes {}", count, unread);
+}
+
 Variant Serializer::getPVStringVariant() { return Variant(GetPVString()); }
 
 const v_string_hdr* Serializer::getPVStringPtr() {

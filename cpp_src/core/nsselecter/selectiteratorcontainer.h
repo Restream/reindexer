@@ -4,6 +4,7 @@
 #include "core/ft/functions/ft_function.h"
 #include "core/index/float_vector/knn_raw_result.h"
 #include "core/index/index.h"
+#include "core/nsselecter/comparator/arithmetic_comparator.h"
 #include "core/nsselecter/comparator/comparator_indexed.h"
 #include "core/nsselecter/comparator/comparator_not_indexed.h"
 #include "core/nsselecter/comparator/comporator_distinct_multi.h"
@@ -61,7 +62,7 @@ using ComparatorsPackT =
 			  ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiColumnGetter>,
 			  ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiScalarGetter>, ComparatorIndexed<bool>, ComparatorIndexed<int>,
 			  ComparatorIndexed<int64_t>, ComparatorIndexed<double>, ComparatorIndexed<key_string>, ComparatorIndexed<PayloadValue>,
-			  ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>, FunctionsComparator>;
+			  ComparatorIndexed<Point>, ComparatorIndexed<Uuid>, ComparatorIndexed<FloatVector>, FunctionsComparator, ArithmeticComparator>;
 
 template <typename... Ts>
 using SelectIteratorContainerTreeBase =
@@ -160,7 +161,8 @@ public:
 
 private:
 	ContainRanked prepareIteratorsForSelectLoop(QueryPreprocessor&, size_t begin, size_t end, unsigned sortId, QueryRankType, RankSortType,
-												const NamespaceImpl&, FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&);
+												const NamespaceImpl&, FtFunction::Ptr&, RanksHolder::Ptr&, const RdxContext&,
+												std::optional<int64_t> nowNsec);
 	void sortByCost(std::span<unsigned> indexes, std::span<double> costs, unsigned from, unsigned to, int expectedIterations);
 	double fullCost(std::span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const noexcept;
 	double cost(std::span<unsigned> indexes, unsigned cur, int expectedIterations) const noexcept;

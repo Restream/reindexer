@@ -10,6 +10,17 @@ static constexpr uint32_t kMinPartialMatchDenominator = 3;
 static constexpr size_t kKbLayoutHeuristicMinWords = 10;
 static constexpr size_t kKbLayoutHeuristicMinMergeLimit = 400;
 
+template <class VidsContainer>
+static bool allVidsExcluded(const FtMergeStatuses::Statuses& docsExcluded, const VidsContainer& wordOccurences) {
+	for (const auto& id : wordOccurences) {
+		if (!docsExcluded[id.VdocId()]) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 template <typename IdCont>
 void Selector<IdCont>::filterStopWordsAndAdd(TermVariants& termVariants, h_vector<TermVariant, 5>& newVariants) const {
 	const StopWordsSetT& stopWords = holder_.cfg_->stopWords;
@@ -36,16 +47,13 @@ bool Selector<IdCont>::exceedsKbLayoutHeuristicThresholds(std::u16string_view pa
 		return false;
 	}
 
+	const bool hasDocsExcluded = docsExcluded.size() != 0;
 	for (auto wordIt = suffixes->lower_bound(pattern); wordIt != suffixes->end(); ++wordIt) {
 		if (!SuffixStartsWith(holder_.GetSuffixData(*wordIt), pattern)) {
 			break;
 		}
 
 		const auto suffixInfo = holder_.ResolveSuffix(*wordIt);
-		const auto& wordOccurences = holder_.GetWordOccurences(suffixInfo.wordId);
-		if (allVidsExcluded(docsExcluded, wordOccurences)) {
-			continue;
-		}
 
 		const size_t lengthBeforePattern = suffixInfo.offset;
 		if (!suff && lengthBeforePattern != 0) {
@@ -57,8 +65,13 @@ bool Selector<IdCont>::exceedsKbLayoutHeuristicThresholds(std::u16string_view pa
 			break;
 		}
 
+		const auto wordOccurencesSp = holder_.GetWordOccurences(suffixInfo.wordId);
+		if (hasDocsExcluded && allVidsExcluded(docsExcluded, *wordOccurencesSp)) {
+			continue;
+		}
+
 		++words;
-		docs += wordOccurences.size();
+		docs += wordOccurencesSp->size();
 		if (words >= wordsLimit || docs > docsLimit) {
 			return true;
 		}
@@ -68,7 +81,7 @@ bool Selector<IdCont>::exceedsKbLayoutHeuristicThresholds(std::u16string_view pa
 }
 
 template <typename IdCont>
-bool Selector<IdCont>::shouldEnableKbLayoutCorrection(const FtDSLEntry& term, const FtMergeStatuses::Statuses& docsExcluded) const {
+bool Selector<IdCont>::shouldEnableKbLayoutCorrection(const FtDslTerm& term, const FtMergeStatuses::Statuses& docsExcluded) const {
 	using KbLayoutMode = FTConfig::KbLayoutMode;
 	if (holder_.cfg_->kbLayoutMode == KbLayoutMode::Disable) {
 		return false;
@@ -128,6 +141,29 @@ void Selector<IdCont>::tryToCorrectKbLayout(TermVariants& termVariants, bool ena
 		v.RemovePossibleExtraTermSymbol(splitOptions_);
 	}
 
+	filterStopWordsAndAdd(termVariants, newVariants);
+}
+
+template <typename IdCont>
+void Selector<IdCont>::addCorrectedWrongKbLayoutVariant(const FtDslTerm& term, TermVariants& termVariants) {
+	if (term.Opts().exact || holder_.cfg_->kbLayoutMode == FTConfig::KbLayoutMode::Disable || term.WrongKbLayoutPattern().empty()) {
+		return;
+	}
+
+	__RX_VAR_FROM_POOL__(std::u16string, correctedPattern)
+	holder_.kbLayout_->Transform(term.WrongKbLayoutPattern(), correctedPattern);
+	if (correctedPattern.empty() || correctedPattern == term.WrongKbLayoutPattern()) {
+		return;
+	}
+
+	const float proc = holder_.cfg_->rankingConfig.FullMatch() * holder_.cfg_->rankingConfig.KbLayoutCoeff();
+	FtDslOpts correctedOpts = term.Opts();
+	correctedOpts.pref = term.WrongKbLayoutPref();
+	correctedOpts.suff = term.WrongKbLayoutSuff();
+	correctedOpts.typos = term.WrongKbLayoutTypos();
+	correctedOpts.termLenBoost = term.WrongKbLayoutTermLenBoost();
+	newVariants.resize(0);
+	newVariants.emplace_back(std::move(correctedPattern), proc, correctedOpts);
 	filterStopWordsAndAdd(termVariants, newVariants);
 }
 
@@ -354,30 +390,19 @@ void Selector<IdCont>::addSynonyms(TermVariants& termVariants) {
 	filterStopWordsAndAdd(termVariants, newVariants);
 }
 
-template <class VidsContainer>
-static bool allVidsExcluded(const FtMergeStatuses::Statuses& docsExcluded, const VidsContainer& wordOccurences) {
-	for (const auto& id : wordOccurences) {
-		if (!docsExcluded[id.Id()]) {
-			return false;
-		}
-	}
-
-	return true;
-}
-
 // Lookup indexed words for each variant; apply partial prefix/suffix penalty (PartialMatchDecrease,
 // PrefixMin/SuffixMin) and terms_boost. Best proc per indexed word is kept.
 // See fulltext_ranking.md#how-term-variants-are-scored
 template <typename IdCont>
 void Selector<IdCont>::processExactTermVariant(TermVariant& variant, ft::TermResults<IdCont>& res, FoundWordsType& wordsFound,
-											   size_t& totalVids, const FtMergeStatuses::Statuses& docsExcluded) {
+											   size_t& totalVids, const FtMergeStatuses::Statuses& docsExcluded, bool hasDocsExcluded) {
 	size_t matched = 0, vids = 0, excludedCnt = 0;
 	std::string wordUtf8 = variant.PatternUtf8();
 	const size_t wordOrdinal = holder_.FindWordOrdinal(wordUtf8);
 	if (wordOrdinal != IDataHolder::kIncorrectWordOrdinal) {
 		const WordIdType wordId = holder_.GetWordIdByOrdinal(wordOrdinal);
-		const auto& wordOccurences = holder_.GetWordOccurencesByOrdinal(wordOrdinal);
-		if (allVidsExcluded(docsExcluded, wordOccurences)) {
+		const auto wordOccurencesSp = holder_.GetWordOccurencesByOrdinal(wordOrdinal);
+		if (hasDocsExcluded && allVidsExcluded(docsExcluded, *wordOccurencesSp)) {
 			++excludedCnt;
 		} else {
 			const float boost = std::max(getTermBoost(wordUtf8), variant.boost);
@@ -387,13 +412,13 @@ void Selector<IdCont>::processExactTermVariant(TermVariant& variant, ft::TermRes
 			}
 
 			if (auto it = wordsFound.find(wordId); it != wordsFound.end()) {
-				res.Subterm(it->second).SetProc(std::max(res.Subterm(it->second).Proc(), proc));
+				res.Subterm(it->second).UpdateScore(proc);
 			} else {
-				res.AddSubterm(wordOccurences, std::move(wordUtf8), wordId, proc);
+				res.AddSubterm(wordOccurencesSp, std::move(wordUtf8), wordId, proc, variant.termLenBoost);
 				wordsFound[wordId] = res.NumSubterms() - 1;
 				++matched;
-				totalVids += wordOccurences.size();
-				vids += wordOccurences.size();
+				totalVids += wordOccurencesSp->size();
+				vids += wordOccurencesSp->size();
 			}
 		}
 	}
@@ -407,7 +432,7 @@ void Selector<IdCont>::processExactTermVariant(TermVariant& variant, ft::TermRes
 template <typename IdCont>
 void Selector<IdCont>::processSuffixTermVariant(TermVariant& variant, ft::TermResults<IdCont>& res, FoundWordsType& wordsFound,
 												size_t& totalVids, size_t lowRelevanceLimit, const FtMergeStatuses::Statuses& docsExcluded,
-												const FTRankingConfig& rankingCfg) {
+												bool hasDocsExcluded, const FTRankingConfig& rankingCfg) {
 	size_t matched = 0, vids = 0, excludedCnt = 0;
 	const auto& pattern = variant.pattern;
 	assertrx(!pattern.empty());
@@ -430,11 +455,6 @@ void Selector<IdCont>::processSuffixTermVariant(TermVariant& variant, ft::TermRe
 
 			const auto suffixInfo = holder_.ResolveSuffix(*wordIt);
 			const WordIdType wordId = suffixInfo.wordId;
-			const auto& wordOccurences = holder_.GetWordOccurences(wordId);
-			if (allVidsExcluded(docsExcluded, wordOccurences)) {
-				++excludedCnt;
-				continue;
-			}
 
 			const size_t lengthBeforePattern = suffixInfo.offset;
 			if (!variant.suff && lengthBeforePattern != 0) {
@@ -455,34 +475,38 @@ void Selector<IdCont>::processSuffixTermVariant(TermVariant& variant, ft::TermRe
 			proc = std::min<float>(proc, variant.proc);
 
 			const auto foundWord = wordsFound.find(wordId);
-			float boost = variant.boost;
-			std::string wordUtf8;
-			if (!holder_.stemmedTermsBoost.empty()) {
-				std::string_view word;
-				if (foundWord != wordsFound.end()) {
-					word = res.Subterm(foundWord->second).Pattern();
-				} else {
-					wordUtf8 = utf16_to_utf8(std::u16string_view(holder_.GetWordData(wordId), wordLen));
-					word = wordUtf8;
+			if (foundWord != wordsFound.end()) {
+				float boost = variant.boost;
+				if (!holder_.stemmedTermsBoost.empty()) {
+					boost = std::max(getTermBoost(res.Subterm(foundWord->second).Pattern()), boost);
 				}
-				boost = std::max(getTermBoost(word), boost);
+				if (boost > 0.0f) {
+					proc *= boost;
+				}
+				res.Subterm(foundWord->second).UpdateScore(proc);
+				continue;
+			}
+
+			const auto wordOccurencesSp = holder_.GetWordOccurences(wordId);
+			if (hasDocsExcluded && allVidsExcluded(docsExcluded, *wordOccurencesSp)) {
+				++excludedCnt;
+				continue;
+			}
+
+			float boost = variant.boost;
+			std::string wordUtf8 = utf16_to_utf8(std::u16string_view(holder_.GetWordData(wordId), wordLen));
+			if (!holder_.stemmedTermsBoost.empty()) {
+				boost = std::max(getTermBoost(wordUtf8), boost);
 			}
 			if (boost > 0.0f) {
 				proc *= boost;
 			}
 
-			if (foundWord != wordsFound.end()) {
-				res.Subterm(foundWord->second).SetProc(std::max(res.Subterm(foundWord->second).Proc(), proc));
-			} else {
-				if (wordUtf8.empty()) {
-					wordUtf8 = utf16_to_utf8(std::u16string_view(holder_.GetWordData(wordId), wordLen));
-				}
-				res.AddSubterm(wordOccurences, std::move(wordUtf8), wordId, proc);
-				wordsFound[wordId] = res.NumSubterms() - 1;
-				++matched;
-				totalVids += wordOccurences.size();
-				vids += wordOccurences.size();
-			}
+			res.AddSubterm(wordOccurencesSp, std::move(wordUtf8), wordId, proc, variant.termLenBoost);
+			wordsFound[wordId] = res.NumSubterms() - 1;
+			++matched;
+			totalVids += wordOccurencesSp->size();
+			vids += wordOccurencesSp->size();
 		}
 	}
 
@@ -493,7 +517,7 @@ void Selector<IdCont>::processSuffixTermVariant(TermVariant& variant, ft::TermRe
 }
 
 template <typename IdCont>
-ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& term, TermVariants& termVariants,
+ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDslTerm& term, TermVariants& termVariants,
 														   const FtMergeStatuses::Statuses& docsExcluded) {
 	const FTRankingConfig& rankingCfg = holder_.cfg_->rankingConfig;
 	ft::TermResults<IdCont> res(term);
@@ -505,6 +529,7 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 	const size_t lowRelevanceLimit = 4 * holder_.cfg_->mergeLimit;
 	const size_t singleAffixQueryLimit = 2 * holder_.cfg_->mergeLimit;
 	bool singleAffixQueryLimitApplied = false;
+	const bool hasDocsExcluded = docsExcluded.size() != 0;
 
 	for (auto& variant : termVariants) {
 		if (limitSingleAffixQuerySubterms_ && totalVids > singleAffixQueryLimit) {
@@ -516,9 +541,9 @@ ft::TermResults<IdCont> Selector<IdCont>::buildTermResults(const FtDSLEntry& ter
 		}
 		assertrx(!variant.pattern.empty());
 		if (!variant.pref && !variant.suff) {
-			processExactTermVariant(variant, res, wordsFound, totalVids, docsExcluded);
+			processExactTermVariant(variant, res, wordsFound, totalVids, docsExcluded, hasDocsExcluded);
 		} else {
-			processSuffixTermVariant(variant, res, wordsFound, totalVids, lowRelevanceLimit, docsExcluded, rankingCfg);
+			processSuffixTermVariant(variant, res, wordsFound, totalVids, lowRelevanceLimit, docsExcluded, hasDocsExcluded, rankingCfg);
 			if (limitSingleAffixQuerySubterms_ && totalVids > singleAffixQueryLimit) {
 				singleAffixQueryLimitApplied = true;
 			}
@@ -597,7 +622,7 @@ h_vector<size_t, 4> Selector<IdCont>::addSynonymsBySplittingTermVariants(TermVar
 		}
 
 		ft::TermResults<IdCont> firstPartTerm =
-			buildTermResults(FtDSLEntry(std::u16string(firstSplitPart), opts), firstPartVariants, docsExcluded);
+			buildTermResults(FtDslTerm(std::u16string(firstSplitPart), opts), firstPartVariants, docsExcluded);
 		queryMergeData.totalORVids += firstPartTerm.MaxVDocs();
 		synData.AddTerm(std::move(firstPartTerm));
 
@@ -615,7 +640,7 @@ h_vector<size_t, 4> Selector<IdCont>::addSynonymsBySplittingTermVariants(TermVar
 		}
 
 		ft::TermResults<IdCont> secondPartTerm =
-			buildTermResults(FtDSLEntry(std::u16string(secondSplitPart), opts), secondPartVariants, docsExcluded);
+			buildTermResults(FtDslTerm(std::u16string(secondSplitPart), opts), secondPartVariants, docsExcluded);
 		queryMergeData.totalORVids += secondPartTerm.MaxVDocs();
 		synData.AddTerm(std::move(secondPartTerm));
 
@@ -673,103 +698,99 @@ void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStat
 	const FTRankingConfig& rankingCfg = holder_.cfg_->rankingConfig;
 
 	limitSingleAffixQuerySubterms_ = false;
-	if (query.NumTerms() == 1) {
-		const FtDslOpts& opts = query.GetTerm(0).Opts();
-		limitSingleAffixQuerySubterms_ = (opts.pref || opts.suff) && !opts.exact && opts.phraseNum == -1;
+	if (query.NumEntries() == 1 && query.GetEntry(0).IsTerm()) {
+		const FtDslOpts& opts = query.GetEntry(0).Term().Opts();
+		limitSingleAffixQuerySubterms_ = (opts.pref || opts.suff) && !opts.exact;
 	}
-
-	int curPhraseNum = -1;
-	ft::PhraseResults<IdCont> nextPhrase;
 
 	__RX_VAR_FROM_POOL__(std::vector<TermVariants>, variantsForSubstitution)
 	__RX_VAR_FROM_POOL__(std::vector<size_t>, variantsForSubstitutionPositions)
 
-	for (size_t queryTermIdx = 0; queryTermIdx < query.NumTerms(); ++queryTermIdx) {
+	for (size_t queryEntryIdx = 0; queryEntryIdx < query.NumEntries(); ++queryEntryIdx) {
 		if (!inTransaction) {
 			ThrowOnCancel(rdxCtx);
 		}
 
-		const FtDSLEntry& term = query.GetTerm(queryTermIdx);
-		TermVariants termVariants(term.Opts());
-		termVariants.emplace_back(term.Pattern(), rankingCfg.FullMatch());
-
-		const bool phraseTerm = term.Opts().phraseNum != -1;
-		if (!phraseTerm && nextPhrase.NumTerms()) {
-			queryMergeData.queryParts.emplace_back(std::move(nextPhrase));
-			// NOLINTNEXTLINE(bugprone-use-after-move)
-			nextPhrase.clear();
-		}
-
-		const bool exact = term.Opts().exact;
+		const FtDSLEntry& entry = query.GetEntry(queryEntryIdx);
+		const bool phraseTerm = entry.IsPhrase();
+		const size_t numTerms = phraseTerm ? entry.Phrase().NumTerms() : 1;
+		ft::PhraseResults<IdCont> nextPhrase = phraseTerm ? ft::PhraseResults<IdCont>(entry.Phrase()) : ft::PhraseResults<IdCont>();
 		h_vector<size_t, 4> synonymIds;
-		const bool enableKbLayout = shouldEnableKbLayoutCorrection(term, docsExcluded);
+		for (size_t phraseTermIdx = 0; phraseTermIdx < numTerms; ++phraseTermIdx) {
+			synonymIds.resize(0);
+			const FtDslTerm& term = phraseTerm ? entry.Phrase().GetTerm(phraseTermIdx) : entry.Term();
+			TermVariants termVariants(term.Opts());
+			if (!term.Pattern().empty()) {
+				termVariants.emplace_back(term.Pattern(), rankingCfg.FullMatch());
+			}
 
-		if (phraseTerm) {
-			tryToCorrectKbLayout(termVariants, enableKbLayout);
-			tryToCorrectTypos(termVariants);
-			tryToSplit(termVariants, PhraseTerm_True);
-			addSynonyms(termVariants);
+			const bool exact = term.Opts().exact;
+			const bool enableKbLayout = shouldEnableKbLayoutCorrection(term, docsExcluded);
 
-			if (!exact) {
+			if (phraseTerm) {
+				if (!exact) {
+					tryToCorrectKbLayout(termVariants, enableKbLayout);
+					addCorrectedWrongKbLayoutVariant(term, termVariants);
+				}
+				tryToCorrectTypos(termVariants);
+				tryToSplit(termVariants, PhraseTerm_True);
+
+				if (!exact) {
+					transliterate(termVariants);
+					stem(termVariants);
+					addSynonyms(termVariants);
+					// stem synonyms
+					stem(termVariants);
+				}
+			} else if (exact) {
+				tryToCorrectTypos(termVariants);
+			} else {
+				bool needJoinWithPrevTerm =
+					holder_.cfg_->enableTermsConcat && queryEntryIdx > 0 && query.GetEntry(queryEntryIdx - 1).IsTerm();
+				if (needJoinWithPrevTerm && term.CanBeJoinedWith(query.GetEntry(queryEntryIdx - 1).Term())) {
+					FtDslTerm joinedTerm = term.JoinWithPrevTerm(query.GetEntry(queryEntryIdx - 1).Term());
+					termVariants.emplace_back(std::move(joinedTerm.Pattern()), rankingCfg.Concat(), joinedTerm.Opts());
+					termVariants.back().split = false;
+				}
+
+				tryToCorrectKbLayout(termVariants, enableKbLayout);
+				addCorrectedWrongKbLayoutVariant(term, termVariants);
+				if (term.Opts().op == OpOr && holder_.cfg_->enableTermsSplit) {
+					synonymIds = addSynonymsBySplittingTermVariants(termVariants, docsExcluded, queryMergeData);
+				}
+
+				tryToCorrectTypos(termVariants);
+				tryToSplit(termVariants, PhraseTerm_False);
 				transliterate(termVariants);
 				stem(termVariants);
-			}
-		} else if (exact) {
-			tryToCorrectTypos(termVariants);
-		} else {
-			bool needJoinWithPrevTerm = holder_.cfg_->enableTermsConcat && queryTermIdx > 0;
-			if (needJoinWithPrevTerm && term.CanBeJoinedWith(query.GetTerm(queryTermIdx - 1))) {
-				FtDSLEntry joinedTerm = term.JoinWithPrevTerm(query.GetTerm(queryTermIdx - 1));
-				termVariants.emplace_back(std::move(joinedTerm.Pattern()), rankingCfg.Concat(), joinedTerm.Opts());
-				termVariants.back().split = false;
+				addSynonyms(termVariants);
+				// stem synonyms
+				stem(termVariants);
 			}
 
-			tryToCorrectKbLayout(termVariants, enableKbLayout);
-			if (term.Opts().op == OpOr && holder_.cfg_->enableTermsSplit) {
-				synonymIds = addSynonymsBySplittingTermVariants(termVariants, docsExcluded, queryMergeData);
+			for (auto& v : termVariants) {
+				v.boost = getTermBoost(v.PatternUtf8());
 			}
 
-			tryToCorrectTypos(termVariants);
-			tryToSplit(termVariants, PhraseTerm_False);
-			transliterate(termVariants);
-			stem(termVariants);
-			addSynonyms(termVariants);
-			// stem synonyms
-			stem(termVariants);
+			ft::TermResults<IdCont> nextTerm = buildTermResults(term, termVariants, docsExcluded);
+			queryMergeData.totalORVids += nextTerm.MaxVDocs();
+			if (phraseTerm) {
+				nextPhrase.Add(std::move(nextTerm));
+			} else {
+				queryMergeData.queryParts.emplace_back(std::move(nextTerm));
+				for (size_t synonymId : synonymIds) {
+					queryMergeData.queryParts.back().AddSynonymId(synonymId);
+				}
+
+				if (termVariants.Op() != OpNot) {
+					variantsForSubstitution.emplace_back(std::move(termVariants));
+					variantsForSubstitutionPositions.emplace_back(queryMergeData.queryParts.size() - 1);
+				}
+			}
 		}
-
-		for (auto& v : termVariants) {
-			v.boost = getTermBoost(v.PatternUtf8());
-		}
-
-		ft::TermResults<IdCont> nextTerm = buildTermResults(term, termVariants, docsExcluded);
-		queryMergeData.totalORVids += nextTerm.MaxVDocs();
 		if (phraseTerm) {
-			if (nextPhrase.NumTerms() && curPhraseNum != term.Opts().phraseNum) {
-				queryMergeData.queryParts.emplace_back(std::move(nextPhrase));
-				// NOLINTNEXTLINE(bugprone-use-after-move)
-				nextPhrase.clear();
-			}
-
-			curPhraseNum = term.Opts().phraseNum;
-			nextPhrase.Add(std::move(nextTerm));
-		} else {
-			queryMergeData.queryParts.emplace_back(std::move(nextTerm));
-			for (size_t synonymId : synonymIds) {
-				queryMergeData.queryParts.back().AddSynonymId(synonymId);
-			}
-
-			if (termVariants.Op() != OpNot) {
-				variantsForSubstitution.emplace_back(std::move(termVariants));
-				variantsForSubstitutionPositions.emplace_back(queryMergeData.queryParts.size() - 1);
-			}
+			queryMergeData.queryParts.emplace_back(std::move(nextPhrase));
 		}
-	}
-
-	if (nextPhrase.NumTerms()) {
-		queryMergeData.queryParts.emplace_back(std::move(nextPhrase));
-		// NOLINTNEXTLINE(bugprone-use-after-move)
-		nextPhrase.clear();
 	}
 
 	__RX_VAR_FROM_POOL__(std::vector<Synonyms::Substitution>, substitutions)
@@ -791,7 +812,7 @@ void Selector<IdCont>::buildQueryMergeData(FtDSLQuery&& query, const FtMergeStat
 				v.boost = getTermBoost(v.PatternUtf8());
 			}
 
-			ft::TermResults<IdCont> nextTerm = buildTermResults(FtDSLEntry(word, substOpts), termVariants, docsExcluded);
+			ft::TermResults<IdCont> nextTerm = buildTermResults(FtDslTerm(word, substOpts), termVariants, docsExcluded);
 			queryMergeData.totalORVids += nextTerm.MaxVDocs();
 			synData.AddTerm(std::move(nextTerm));
 		}

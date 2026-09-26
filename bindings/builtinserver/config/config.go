@@ -32,11 +32,17 @@ type NetConf struct {
 }
 
 type LoggerConf struct {
-	ServerLog string `yaml:"serverlog"`
-	CoreLog   string `yaml:"corelog"`
-	HTTPLog   string `yaml:"httplog"`
-	RPCLog    string `yaml:"rpclog"`
-	LogLevel  string `yaml:"loglevel"`
+	ServerLog      string `yaml:"serverlog"`
+	CoreLog        string `yaml:"corelog"`
+	HTTPLog        string `yaml:"httplog"`
+	RPCLog         string `yaml:"rpclog"`
+	GRPCLog        string `yaml:"grpclog"`
+	LogLevel       string `yaml:"loglevel"`
+	ServerLogLevel string `yaml:"server_loglevel"`
+	CoreLogLevel   string `yaml:"core_loglevel"`
+	HTTPLogLevel   string `yaml:"http_loglevel"`
+	RPCLogLevel    string `yaml:"rpc_loglevel"`
+	GRPCLogLevel   string `yaml:"grpc_loglevel"`
 }
 
 type SystemConf struct {
@@ -97,6 +103,8 @@ func DefaultServerConfig() *ServerConfig {
 			ServerLog: "stdout",
 			CoreLog:   "stdout",
 			HTTPLog:   "stdout",
+			RPCLog:    "stdout",
+			GRPCLog:   "",
 			LogLevel:  "error",
 		},
 		System: SystemConf{

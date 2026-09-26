@@ -42,7 +42,7 @@ protected:
 				item[kFieldFour] = currIntValue;
 			} else {
 				// Null value for Sparse field.
-				item[kFieldFour] = Variant();
+				item[kFieldFour] = reindexer::Variant();
 			}
 
 			Upsert(default_namespace, item);

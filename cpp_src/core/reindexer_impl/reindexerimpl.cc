@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdio>
 #include <thread>
+#include <tuple>
 #include "cluster/clustercontrolrequest.h"
 #include "cluster/clusterizator.h"
 #include "core/activity/activity_container.h"
@@ -32,6 +33,7 @@
 #include "tools/logger.h"
 #include "vendor/gason/gason.h"
 
+#include "core/query/query_impl.h"
 #include "debug/backtrace.h"
 #include "debug/terminate_handler.h"
 
@@ -999,7 +1001,7 @@ Error ReindexerImpl::Update(std::string_view nsName, Item& item, LocalQueryResul
 	APPLY_NS_FUNCTION2(true, Update, item, qr);
 }
 
-static void securityCheck(const Query& query, const RdxContext& rdxCtx) {
+static void securityCheck(ConstQueryImpl query, const RdxContext& rdxCtx) {
 	if (query.NsName() != kConfigNamespace || !rdxCtx.NeedMaskingDSN()) {
 		return;
 	}
@@ -1020,6 +1022,33 @@ static void securityCheck(const Query& query, const RdxContext& rdxCtx) {
 	query.Entries().VisitForEach([](const KnnRawSelectResult&) { throw_as_assert; },
 								 Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue, SubQueryEntry, KnnQueryEntry,
 									  MultiDistinctQueryEntry, QueryFunctionEntry>{},
+								 [](const QueryArithmeticEntry& qe) {
+									 const auto checkField = [](std::string_view field) {
+										 if (std::ranges::find(kProtectedPaths, field) != kProtectedPaths.cend()) {
+											 throw Error(errForbidden, errMsg);
+										 }
+									 };
+									 const auto checkExpression = [&checkField](const expressions::ArithmeticExpression& expression) {
+										 for (const std::string_view field : expression.Ast().ReferencedFields()) {
+											 checkField(field);
+										 }
+									 };
+									 if (qe.GetLeftKind() == QueryArithmeticEntry::LeftKind::Field) {
+										 checkField(qe.LeftField().FieldName());
+									 } else {
+										 checkExpression(qe.LeftExpr());
+									 }
+									 switch (qe.GetRightKind()) {
+										 case QueryArithmeticEntry::RightKind::Values:
+											 break;
+										 case QueryArithmeticEntry::RightKind::Field:
+											 checkField(qe.RightField().FieldName());
+											 break;
+										 case QueryArithmeticEntry::RightKind::Arithmetic:
+											 checkExpression(qe.RightExpr());
+											 break;
+									 }
+								 },
 								 [](const concepts::OneOf<QueryEntry, SubQueryFieldEntry> auto& qe) {
 									 if (std::ranges::find(kProtectedPaths, qe.FieldName()) != kProtectedPaths.cend()) {
 										 throw Error(errForbidden, errMsg);
@@ -1041,8 +1070,8 @@ static void securityCheck(const Query& query, const RdxContext& rdxCtx) {
 }
 
 template <QueryType TP>
-Error ReindexerImpl::modifyQ(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx,
-							 void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, const Query&, const NsContext&,
+Error ReindexerImpl::modifyQ(ConstQueryImpl query, LocalQueryResults& result, const RdxContext& rdxCtx,
+							 void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, ConstQueryImpl, const NsContext&,
 													   const functions::PrecomputedValues&)) {
 	// std::cout << query.GetSQL(QueryUpdate) << std::endl;
 	try {
@@ -1060,17 +1089,18 @@ Error ReindexerImpl::modifyQ(const Query& query, LocalQueryResults& result, cons
 
 			auto params = configProvider_.GetUpdDelLoggingParams();
 			const bool isEnabled = params.thresholdUs >= 0 && !isSystemNamespaceNameFast(nsName);
-			QueryStatCalculator statCalculator = QueryStatCalculator(long_actions::MakeLogger<TP>(query, std::move(params)), isEnabled);
+			QueryStatCalculator statCalculator = QueryStatCalculator(long_actions::MakeLogger<TP>(*query, std::move(params)), isEnabled);
 			std::pair<NamespaceImpl::Locker::WLockT, NamespaceImpl::Ptr> unlockData;
 
 			{
-				const Query& q = queryCopy ? *queryCopy : query;
+				ConstQueryImpl q = queryCopy ? Impl(*queryCopy) : query;
 				RxSelector::NsLockerW locks(rdxCtx);
 				locks.Add(nsName, std::move(mainNs), true);
 				// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
-				query.WalkNested(false, false, true, [this, &locks, &rdxCtx](const Query& q) {
-					auto nsWrp = getNamespace(q.NsName(), rdxCtx);
-					locks.Add(q.NsName(), std::move(nsWrp), false);
+				q.WalkNested(false, false, true, [this, &locks, &rdxCtx](ConstQueryImpl q) {
+					const std::string& nestedNs = q.NsName();
+					auto nsWrp = getNamespace(nestedNs, rdxCtx);
+					locks.Add(nestedNs, std::move(nsWrp), false);
 				});
 				locks.Lock(statCalculator);
 				FloatVectorsHolderMap* fvHolder = (TP == QueryType::QueryDelete) ? &result.GetFloatVectorsHolder() : nullptr;
@@ -1082,7 +1112,7 @@ Error ReindexerImpl::modifyQ(const Query& query, LocalQueryResults& result, cons
 			UpdatesContainer pendedRepl;
 			NsContext nsCtx(rdxCtx);
 
-			const Query& q = queryCopy ? *queryCopy : query;
+			ConstQueryImpl q = queryCopy ? Impl(*queryCopy) : query;
 			(*(unlockData.second).*fn)(result, pendedRepl, q, nsCtx, precomputedValues);
 			unlockData.second->replicate(std::move(pendedRepl), std::move(unlockData.first), true, std::move(statCalculator), nsCtx);
 		}
@@ -1105,7 +1135,7 @@ Error ReindexerImpl::modifyQ(const Query& query, LocalQueryResults& result, cons
 	return Error{};
 }
 
-Error ReindexerImpl::Update(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx) {
+Error ReindexerImpl::Update(ConstQueryImpl query, LocalQueryResults& result, const RdxContext& rdxCtx) {
 	return modifyQ<QueryType::QueryUpdate>(query, result, rdxCtx, &NamespaceImpl::doUpdate);
 }
 
@@ -1166,11 +1196,11 @@ Error ReindexerImpl::Delete(std::string_view nsName, Item& item, LocalQueryResul
 	APPLY_NS_FUNCTION2(false, Delete, item, qr);
 }
 
-Error ReindexerImpl::Delete(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx) {
+Error ReindexerImpl::Delete(ConstQueryImpl query, LocalQueryResults& result, const RdxContext& rdxCtx) {
 	return modifyQ<QueryType::QueryDelete>(query, result, rdxCtx, &NamespaceImpl::doDelete);
 }
 
-Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const RdxContext& rdxCtx) {
+Error ReindexerImpl::Select(ConstQueryImpl q, LocalQueryResults& result, const RdxContext& rdxCtx) {
 	try {
 		securityCheck(q, rdxCtx);
 
@@ -1187,7 +1217,6 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 		WrSerializer normalizedSQL, nonNormalizedSQL;
 		if (queriesPerfStatsEnabled) {
 			q.GetSQL(normalizedSQL, true);
-
 			nonNormalizedSQL.Reserve(normalizedSQL.Cap());
 			q.GetSQL(nonNormalizedSQL, false);
 		}
@@ -1207,7 +1236,7 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 			std::move(hitter), std::chrono::microseconds(queriesThresholdUS),
 			queriesPerfStatsEnabled || configProvider_.GetSelectLoggingParams().thresholdUs >= 0,
 			long_actions::MakeLogger<QueryType::QuerySelect>(
-				q, isSystemNsRequest ? LongQueriesLoggingParams{} : configProvider_.GetSelectLoggingParams()));
+				*q, isSystemNsRequest ? LongQueriesLoggingParams{} : configProvider_.GetSelectLoggingParams()));
 
 		StatsLocker::StatsLockT statsSelectLck;
 		if (isSystemNsRequest) {
@@ -1221,11 +1250,12 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 			RxSelector::NsLocker<const RdxContext>& locks;
 			const RdxContext& ctx;
 		} refs{isWalQuery, locks, rdxCtx};
-		q.WalkNested(false, true, true, [this, &refs](const Query& q) {
-			auto nsWrp = getNamespace(q.NsName(), refs.ctx);
+		q.WalkNested(false, true, true, [this, &refs](ConstQueryImpl nested) {
+			const std::string& nestedNs = nested.NsName();
+			auto nsWrp = getNamespace(nestedNs, refs.ctx);
 			auto ns = refs.isWalQuery ? nsWrp->awaitMainNs(refs.ctx) : nsWrp->getMainNs();
 			ns->updateSelectTime();
-			refs.locks.Add(q.NsName(), std::move(ns), std::move(nsWrp));
+			refs.locks.Add(nestedNs, std::move(ns), std::move(nsWrp));
 		});
 
 		functions::PrecomputedValues precomputedValues;
@@ -1243,6 +1273,10 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 		const auto ward = rdxCtx.BeforeSimpleState(Activity::InProgress);
 		FtFunctionsHolder func;
 		RxSelector::DoSelect(q, queryCopy, result, locks, func, rdxCtx);
+
+		// WARNING: unlocks all the namespaces. Everything below works on the data, already owned by the 'result'
+		locks.Unlock();
+
 		func.Process(result);
 
 		if (rdxCtx.NeedMaskingDSN()) {
@@ -1261,7 +1295,7 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 }
 
 void ReindexerImpl::maskingAsyncConfig(LocalQueryResults& result) const {
-	if (result.getMergedNSCount() == 0) {
+	if (result.getNamespacesCount() == 0) {
 		return;
 	}
 
@@ -1338,36 +1372,39 @@ h_vector<FloatVector, 1> calculateEmbedding(const EmbeddingData& embed, const Rd
 template <concepts::OneOf<Query, JoinedQuery> Q>
 std::optional<Q> ReindexerImpl::embedKNNQueries(const Q& query, const RdxContext& ctx) {
 	h_vector<EmbeddingData, 1> embedHolder;
-	for (size_t i = 0, s = query.Entries().Size(); i < s; ++i) {
-		query.Entries().Visit(i,
-							  Skip<QueryEntriesBracket, QueryEntry, BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue, AlwaysFalse,
-								   SubQueryEntry, SubQueryFieldEntry, MultiDistinctQueryEntry, QueryFunctionEntry, SubQueryFunctionEntry>{},
-							  [&](const KnnQueryEntry& qe) {
-								  if (qe.Format() == KnnQueryEntry::DataFormatType::String) {
-									  auto ns = getNamespace(query.NsName(), ctx);
-									  auto embedder = ns->QueryEmbedder(qe.FieldName(), ctx);
-									  embedHolder.emplace_back(i, embedder, qe);
-								  }
-							  });
+	ConstQueryImpl queryImpl = Impl(query);
+	for (size_t i = 0, s = queryImpl.Entries().Size(); i < s; ++i) {
+		queryImpl.Entries().Visit(
+			i,
+			Skip<QueryEntriesBracket, QueryEntry, BetweenFieldsQueryEntry, JoinQueryEntry, AlwaysTrue, AlwaysFalse, SubQueryEntry,
+				 SubQueryFieldEntry, MultiDistinctQueryEntry, QueryFunctionEntry, QueryArithmeticEntry, SubQueryFunctionEntry>{},
+			[&](const KnnQueryEntry& qe) {
+				if (qe.Format() == KnnQueryEntry::DataFormatType::String) {
+					auto ns = getNamespace(queryImpl.NsName(), ctx);
+					auto embedder = ns->QueryEmbedder(qe.FieldName(), ctx);
+					embedHolder.emplace_back(i, embedder, qe);
+				}
+			});
 	}
 
 	std::optional<Q> queryCopy;
 	if (!embedHolder.empty()) {
 		// do copy with embedding
 		queryCopy.emplace(query);
+		QueryImpl queryCopyImpl = Impl(*queryCopy);
 		for (const auto& embed : embedHolder) {
 			try {
 				auto products = calculateEmbedding(embed, ctx);
-				[[maybe_unused]] auto inserted =
-					queryCopy->template SetEntry<KnnQueryEntry>(embed.entryId, embed.qe.FieldName(), products.front(), embed.qe.Params());
+				[[maybe_unused]] auto inserted = queryCopyImpl.template ReplaceQueryEntry<KnnQueryEntry>(
+					embed.entryId, embed.qe.FieldName(), products.front(), embed.qe.Params());
 				assertrx_throw(inserted == 1);
 			} catch (const Error& err) {
 				if (err.code() == errAssert) {
 					throw err;
 				}
 				// NOTE: save error in query data
-				[[maybe_unused]] auto inserted =
-					queryCopy->template SetEntry<KnnQueryEntry>(embed.entryId, embed.qe.FieldName(), err.what(), embed.qe.Params());
+				[[maybe_unused]] auto inserted = queryCopyImpl.template ReplaceQueryEntry<KnnQueryEntry>(
+					embed.entryId, embed.qe.FieldName(), err.what(), embed.qe.Params());
 				assertrx_throw(inserted == 1);
 			}
 		}
@@ -1378,10 +1415,9 @@ std::optional<Q> ReindexerImpl::embedKNNQueries(const Q& query, const RdxContext
 template <concepts::OneOf<Query, JoinedQuery> Q>
 void ReindexerImpl::embedNestedQueries(const Query& q, const std::vector<Q>& nestedQueries,
 									   std::invocable<Query&, size_t, Q&&> auto replacer, const RdxContext& ctx,
-									   std::optional<Query>& queryCopy, functions::PrecomputedValues& precomputedValues) {
+									   std::optional<Query>& queryCopy) {
 	for (size_t i = 0, sz = nestedQueries.size(); i < sz; ++i) {
 		auto subQueryCopy = embedKNNQueries<Q>(nestedQueries[i], ctx);
-		OptimizeFunctionEntries<Q>(nestedQueries[i], subQueryCopy, precomputedValues);
 		if (subQueryCopy) {
 			if (!queryCopy) {
 				queryCopy.emplace(q);
@@ -1391,19 +1427,20 @@ void ReindexerImpl::embedNestedQueries(const Query& q, const std::vector<Q>& nes
 	}
 }
 
-std::optional<Query> ReindexerImpl::embedQuery(const Query& q, const RdxContext& ctx, functions::PrecomputedValues& precomputedValues) {
-	std::optional<Query> queryCopy{embedKNNQueries(q, ctx)};
-	OptimizeFunctionEntries(q, queryCopy, precomputedValues);
-	const Query& query{queryCopy ? queryCopy.value() : q};
+std::optional<Query> ReindexerImpl::embedQuery(ConstQueryImpl q, const RdxContext& ctx, functions::PrecomputedValues& precomputedValues) {
+	const Query& owner = *q;
+	std::optional<Query> queryCopy{embedKNNQueries(owner, ctx)};
+	OptimizeFunctionEntries<Query>(owner, queryCopy, precomputedValues);
+	ConstQueryImpl query{queryCopy ? Impl(*queryCopy) : q};
 	embedNestedQueries(
-		q, query.GetSubQueries(), [](Query& qr, size_t i, Query&& queryN) { qr.ReplaceSubQuery(i, std::move(queryN)); }, ctx, queryCopy,
-		precomputedValues);
+		owner, query.SubQueries(), [](Query& qr, size_t i, Query&& queryN) { Impl(qr).ReplaceSubQuery(i, std::move(queryN)); }, ctx,
+		queryCopy);
 	embedNestedQueries(
-		q, query.GetJoinQueries(), [](Query& qr, size_t i, JoinedQuery&& queryN) { qr.ReplaceJoinQuery(i, std::move(queryN)); }, ctx,
-		queryCopy, precomputedValues);
+		owner, query.JoinQueries(), [](Query& qr, size_t i, JoinedQuery&& queryN) { Impl(qr).ReplaceJoinQuery(i, std::move(queryN)); }, ctx,
+		queryCopy);
 	embedNestedQueries(
-		q, query.GetMergeQueries(), [](Query& qr, size_t i, JoinedQuery&& queryN) { qr.ReplaceMergeQuery(i, std::move(queryN)); }, ctx,
-		queryCopy, precomputedValues);
+		owner, query.MergeQueries(), [](Query& qr, size_t i, JoinedQuery&& queryN) { Impl(qr).ReplaceMergeQuery(i, std::move(queryN)); },
+		ctx, queryCopy);
 	return queryCopy;
 }
 
@@ -1812,7 +1849,7 @@ void ReindexerImpl::createEmbeddings(const Namespace::Ptr& ns, uint32_t batchSiz
 	const auto query = Query(nsName).SelectAllFields();
 
 	LocalQueryResults result;
-	auto err = Select(query, result, ctx);
+	auto err = Select(Impl(query), result, ctx);
 	if (!err.ok()) {
 		throw err;
 	}
@@ -1912,7 +1949,8 @@ Error ReindexerImpl::initSystemNamespaces() {
 	createSystemNamespaces();
 
 	LocalQueryResults results;
-	auto err = Select(Query(kConfigNamespace), results, RdxContext());
+	const Query configQuery{kConfigNamespace};
+	auto err = Select(Impl(configQuery), results, RdxContext());
 	if (!err.ok()) {
 		return err;
 	}
@@ -1989,7 +2027,7 @@ Error ReindexerImpl::initSystemNamespaces() {
 
 	// #config probably was updated, so we need to reload previous results
 	results = LocalQueryResults();
-	err = Select(Query(kConfigNamespace), results, RdxContext());
+	err = Select(Impl(configQuery), results, RdxContext());
 	if (!err.ok()) {
 		return err;
 	}
@@ -2261,7 +2299,7 @@ void ReindexerImpl::updateConfFile(const ConfigT& newConf, std::string_view file
 	}
 }
 
-ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q) {
+ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(ConstQueryImpl q) {
 	FilterNsNamesT res;
 	struct [[nodiscard]] BracketRange {
 		uint32_t begin;
@@ -2309,8 +2347,8 @@ ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q)
 			notBrackets.emplace_back(BracketRange{.begin = i, .end = uint32_t(entries.Size(i))});
 		}
 	}
-	for (auto& jq : q.GetJoinQueries()) {
-		if (jq.joinType == OrInnerJoin) {
+	for (auto& jq : q.JoinQueries()) {
+		if (JoinedImpl(jq).GetJoinType() == OrInnerJoin) {
 			return std::nullopt;
 		}
 	}
@@ -2507,9 +2545,12 @@ ReindexerImpl::StatsLocker::StatsLockT ReindexerImpl::syncSystemNamespaces(std::
 void ReindexerImpl::onProfilingConfigLoad() {
 	LocalQueryResults qr1, qr2, qr3;
 	RdxContext ctx;
-	auto err = Delete(Query(kMemStatsNamespace), qr2, ctx);
-	err = Delete(Query(kQueriesPerfStatsNamespace), qr3, ctx);
-	err = Delete(Query(kPerfStatsNamespace), qr1, ctx);
+	const Query memStatsQuery{kMemStatsNamespace};
+	const Query queriesPerfStatsQuery{kQueriesPerfStatsNamespace};
+	const Query perfStatsQuery{kPerfStatsNamespace};
+	auto err = Delete(Impl(memStatsQuery), qr2, ctx);
+	err = Delete(Impl(queriesPerfStatsQuery), qr3, ctx);
+	err = Delete(Impl(perfStatsQuery), qr1, ctx);
 	(void)err;	// ignore
 }
 
@@ -2579,7 +2620,10 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 		}
 		ns.objName = std::string(objName);
 		LocalQueryResults qr;
-		status = Select(Query(ns.nsName).Limit(0), qr, RdxContext());
+		{
+			const auto q = Query(ns.nsName).Limit(0);
+			status = Select(Impl(q), qr, RdxContext());
+		}
 		if (!status.ok()) {
 			return status;
 		}
@@ -2663,9 +2707,44 @@ Error ReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2& s
 			state = getNamespace(nsName, rdxCtx)->GetReplStateV2(rdxCtx);
 		} else {
 			state.lastLsn = lsn_t();
-			state.dataHash.hashV2 = state.dataHash.hashV1 = 0;
+			state.checksum = 0;
+			state.dataCount = 0;
+			state.nsVersion = lsn_t();
 			auto rlck = nsLock_.RLock(rdxCtx);
 			state.clusterStatus = clusterStatus_;
+		}
+	} CATCH_AND_RETURN;
+	return {};
+}
+
+Error ReindexerImpl::GetNamespacePresence(std::string_view nsName, NamespacePresence& presence, const RdxContext& rdxCtx) noexcept {
+	try {
+		// Same order as Open/Close: CreationLock covers storage dir vs map, RLock only the lookup.
+		auto nsCreationLock = nsLock_.CreationLock(nsName, rdxCtx);
+		{
+			auto rlck = nsLock_.RLock(rdxCtx);
+			if (auto it = namespaces_.find(nsName); it != namespaces_.end() && it->second) {
+				presence = NamespacePresence::Open;
+				return {};
+			}
+		}
+		if (storagePath_.empty()) {
+			presence = NamespacePresence::Absent;
+			return {};
+		}
+		switch (fs::Stat(fs::JoinPath(storagePath_, nsName))) {
+			case fs::StatDir:
+				presence = NamespacePresence::ClosedWithStorage;
+				return {};
+			case fs::StatFile:
+				return Error(errSystem, "Namespace is a file, not a directory: {}", nsName);
+			case fs::StatNotFound:
+				presence = NamespacePresence::Absent;
+				return {};
+			case fs::StatError:
+				return Error(errSystem, "Unable to determine namespace '{}' presence: {}", nsName, strerror(errno));
+			default:
+				std::abort();
 		}
 	} CATCH_AND_RETURN;
 	return {};
@@ -2747,7 +2826,11 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 	bool storageDirExisted = false;
 	bool nsWasCreated = false;
 	auto checkStorageDirExists = [this, &nsDef] {
-		return !storagePath_.empty() && (fs::Stat(fs::JoinPath(storagePath_, nsDef.name)) != fs::FileStatus::StatError);
+		if (storagePath_.empty()) {
+			return false;
+		}
+		const auto st = fs::Stat(fs::JoinPath(storagePath_, nsDef.name));
+		return st == fs::StatDir || st == fs::StatFile;
 	};
 	auto checkAlreadyExistsLocking = [this, &nsDef](const RdxContext& rdxCtx) {
 		auto rlck = nsLock_.RLock(rdxCtx);

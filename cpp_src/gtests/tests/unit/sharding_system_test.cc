@@ -64,7 +64,7 @@ TEST_F(ShardingSystemApi, ReconnectTimeout) {
 		const std::string location = "key" + std::to_string(shard);
 		client::QueryResults qr;
 		auto err = rx->WithTimeout(kTimeout).Update(
-			Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location), qr);
+			(Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location)), qr);
 		if (err.code() != errTimeout && err.code() != errNetwork && err.code() != errUpdateReplication) {
 			ASSERT_TRUE(false) << err.what() << "(" << err.code() << ")" << "; shard = " << shard;
 		}
@@ -74,7 +74,7 @@ TEST_F(ShardingSystemApi, ReconnectTimeout) {
 		const std::string location = "key" + std::to_string(shard);
 		client::QueryResults qr;
 		auto err = rx->WithTimeout(kTimeout).Update(
-			Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location), qr);
+			(Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location)), qr);
 		ASSERT_EQ(err.code(), errTimeout) << err.what() << "; shard = " << shard;
 	}
 }

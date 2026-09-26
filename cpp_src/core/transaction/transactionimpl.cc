@@ -44,7 +44,7 @@ void TransactionImpl::Modify(Query&& query, lsn_t lsn) {
 	}
 
 	try {
-		lazyInit(query);
+		lazyInit(Impl(query));
 
 		if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
 			(*proxiedTx)->Modify(std::move(query), lsn);
@@ -283,7 +283,7 @@ void TransactionImpl::updateShardIdIfNecessary(int shardId, const Variant& curSh
 	}
 }
 
-void TransactionImpl::lazyInit(const Query& q) {
+void TransactionImpl::lazyInit(ConstQueryImpl q) {
 	if (shardingRouter_) {
 		const auto [ids, shardKey] = shardingRouter_.GetShardIdKeyPair(q);
 		if (firstShardKey_.IsNullValue()) {

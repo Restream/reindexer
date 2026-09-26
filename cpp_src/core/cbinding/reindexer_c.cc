@@ -5,6 +5,7 @@
 #include "cgocancelcontextpool.h"
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsonbuilder.h"
+#include "core/query/query_impl.h"
 #include "core/queryresults/itemrefcache.h"
 #include "debug/crashqueryreporter.h"
 #include "estl/gift_str.h"
@@ -103,6 +104,13 @@ struct [[nodiscard]] TransactionWrapper {
 	TransactionWrapper(Transaction&& tr) : tr_(std::move(tr)) {}
 	WrResultSerializer ser_;
 	Transaction tr_;
+};
+class [[nodiscard]] PayloadValueView : public PayloadValue {
+public:
+	explicit PayloadValueView(uint8_t* header) noexcept { setPtr(header); }
+	~PayloadValueView() { setPtr(nullptr); }
+	PayloadValueView(const PayloadValueView&) = delete;
+	PayloadValueView& operator=(const PayloadValueView&) = delete;
 };
 
 static std::atomic<int> serializedResultsCount{0};
@@ -646,18 +654,19 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 				return ret2c(err_too_many_queries, out);
 			}
 
-			Query q{Query::Deserialize(ser, caps.GetQueryFormat())};
-			ActiveQueryScope scope(q, QuerySelect);
-			err = rdxKeeper.db().Select(q, *result);
-			if (q.GetDebugLevel() >= LogError && err.code() != errOK) {
+			auto query{QueryImpl::Deserialize(ser, caps.GetQueryFormat())};
+			const auto queryImpl = Impl(query);
+			ActiveQueryScope scope(queryImpl, QuerySelect);
+			err = rdxKeeper.db().Select(query, *result);
+			if (queryImpl.DebugLevel() >= LogError && err.code() != errOK) {
 				logFmt(LogError, "Query error {}", err.what());
 			}
 			if (err.ok()) {
-				results2c(std::move(result), &out, as_json, {tm_versions, tm_versions_count}, caps, q.GetJoinQueries().empty());
+				results2c(std::move(result), &out, as_json, {tm_versions, tm_versions_count}, caps, queryImpl.JoinQueries().empty());
 			} else {
 				if (result->ser.Cap() >= kWarnLargeResultsLimit) {
 					logFmt(LogWarning, "Query too large results: count={} size={},cap={}, q={}", result->Count(), result->ser.Len(),
-						   result->ser.Cap(), q.GetSQL());
+						   result->ser.Cap(), queryImpl.GetSQL());
 				}
 			}
 		}
@@ -676,21 +685,21 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexe
 			Serializer ser(in.data, in.len);
 			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-			Query q = Query::Deserialize(ser, caps.GetQueryFormat());
-			q.type_ = QueryDelete;
+			const auto query = QueryImpl::Deserialize(ser, caps.GetQueryFormat()).Delete();
+			const auto queryImpl = Impl(query);
 
 			auto result{new_results(false)};
 			if (!result) {
 				return ret2c(err_too_many_queries, out);
 			}
 
-			ActiveQueryScope scope(q, QueryDelete);
-			res = rdxKeeper.db().Delete(q, *result);
-			if (q.GetDebugLevel() >= LogError && res.code() != errOK) {
+			ActiveQueryScope scope(queryImpl, QueryDelete);
+			res = rdxKeeper.db().Delete(query, *result);
+			if (queryImpl.DebugLevel() >= LogError && res.code() != errOK) {
 				logFmt(LogError, "Query error {}", res.what());
 			}
 			if (res.ok()) {
-				results2c(std::move(result), &out, 0, {nullptr, 0}, caps, q.GetJoinQueries().empty());
+				results2c(std::move(result), &out, 0, {nullptr, 0}, caps, !queryImpl.HasJoinQueries());
 			}
 		}
 		return ret2c(res, out);
@@ -709,20 +718,20 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, int32_t*
 			Serializer ser(in.data, in.len);
 			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-			Query q = Query::Deserialize(ser, caps.GetQueryFormat());
-			q.type_ = QueryUpdate;
+			const auto query = QueryImpl::Deserialize(ser, caps.GetQueryFormat());
+			const auto queryImpl = Impl(query);
 			auto result{new_results(false)};
 			if (!result) {
 				return ret2c(err_too_many_queries, out);
 			}
 
-			ActiveQueryScope scope(q, QueryUpdate);
-			res = rdxKeeper.db().Update(q, *result);
-			if (q.GetDebugLevel() >= LogError && res.code() != errOK) {
+			ActiveQueryScope scope(queryImpl, QueryUpdate);
+			res = rdxKeeper.db().Update(query, *result);
+			if (queryImpl.DebugLevel() >= LogError && res.code() != errOK) {
 				logFmt(LogError, "Query error {}", res.what());
 			}
 			if (res.ok()) {
-				results2c(std::move(result), &out, 0, {tm_versions, tm_versions_count}, caps, q.GetJoinQueries().empty());
+				results2c(std::move(result), &out, 0, {tm_versions, tm_versions_count}, caps, !queryImpl.HasJoinQueries());
 			}
 		}
 		return ret2c(res, out);
@@ -741,8 +750,7 @@ reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	}
 	Serializer ser(in.data, in.len);
 	try {
-		Query q = Query::Deserialize(ser, bindingCaps.load(std::memory_order_relaxed).GetQueryFormat());
-		q.type_ = QueryDelete;
+		auto q = QueryImpl::Deserialize(ser, bindingCaps.load(std::memory_order_relaxed).GetQueryFormat()).Delete();
 
 		Error err = trw->tr_.Modify(std::move(q));
 		return error2c(err);
@@ -761,8 +769,7 @@ reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	}
 	Serializer ser(in.data, in.len);
 	try {
-		Query q = Query::Deserialize(ser, bindingCaps.load(std::memory_order_relaxed).GetQueryFormat());
-		q.type_ = QueryUpdate;
+		auto q = QueryImpl::Deserialize(ser, bindingCaps.load(std::memory_order_relaxed).GetQueryFormat());
 
 		Error err = trw->tr_.Modify(std::move(q));
 		return error2c(err);
@@ -773,14 +780,13 @@ reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 // This method is required for builtin modes of java-connector
 reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int ns_id) {
 	QueryResults* qr = reinterpret_cast<QueryResults*>(results_ptr);
-	cptr -= sizeof(PayloadValue::dataHeader);
-
-	PayloadValue* pv = reinterpret_cast<PayloadValue*>(&cptr);
+	auto* header = reinterpret_cast<uint8_t*>(cptr) - sizeof(PayloadValue::dataHeader);
+	PayloadValueView pv(header);
 	const auto tagsMatcher = qr->GetTagsMatcher(ns_id);
 	const auto payloadType = qr->GetPayloadType(ns_id);
 
 	WrSerializer ser;
-	ConstPayload pl(payloadType, *pv);
+	ConstPayload pl(payloadType, pv);
 	CJsonBuilder builder(ser, ObjType::TypePlain);
 	CJsonEncoder cjsonEncoder(&tagsMatcher, &qr->GetFieldsFilter(ns_id));
 

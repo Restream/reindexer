@@ -12,7 +12,7 @@ Error ItemImpl<C>::tryToUpdateTagsMatcher() {
 		return Error(errLogic, "Client pointer is null");
 	}
 	typename C::QueryResultsT qr;
-	Query q = Query(payloadType_.Name()).Limit(0);
+	const auto q = Query(payloadType_.Name()).Limit(0);
 	Error err = client_->Select(q, qr, InternalRdxContext().WithTimeout(requestTimeout_).WithShardId(ShardingKeyType::ProxyOff, false));
 	if (err.ok() && qr.GetNamespacesCount() > 0) {
 		TagsMatcher newTm = qr.GetTagsMatcher(0);

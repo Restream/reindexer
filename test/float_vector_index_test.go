@@ -57,13 +57,14 @@ const (
 )
 
 const (
-	testHnswNsSTNs           = "test_items_hnsw_st"
-	testHnswNsSTNsArr        = "test_items_hnsw_st_arr"
-	testHnswNsMTNs           = "test_items_hnsw_mt"
-	testVecBfNs              = "test_items_vec_bf"
-	testIvfNs                = "test_items_ivf"
-	testMultiIndexVecNs      = "test_items_multi_index_vec"
-	testQuantizationConfigNs = "test_quantization_config"
+	testHnswNsSTNs              = "test_items_hnsw_st"
+	testHnswNsSTNsArr           = "test_items_hnsw_st_arr"
+	testHnswNsMTNs              = "test_items_hnsw_mt"
+	testVecBfNs                 = "test_items_vec_bf"
+	testIvfNs                   = "test_items_ivf"
+	testMultiIndexVecNs         = "test_items_multi_index_vec"
+	testQuantizationConfigNs    = "test_quantization_config"
+	testVectorFieldsInResultsNs = "test_vector_fields_in_results"
 )
 
 func init() {
@@ -74,6 +75,7 @@ func init() {
 	tnamespaces[testIvfNs] = TestItemIvf{}
 	tnamespaces[testMultiIndexVecNs] = TestItemMultiIndexVec{}
 	tnamespaces[testQuantizationConfigNs] = TestQuantizationConfigNs{}
+	tnamespaces[testVectorFieldsInResultsNs] = TestItemHnswST{}
 }
 
 func newTestItemHnswST(id int, pkgsCount int) any {
@@ -548,4 +550,110 @@ func TestChangeQuantizationConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, newConfig, curConfig)
+}
+
+func TestFloatVectorFieldsInResults(t *testing.T) {
+	const (
+		ns     = testVectorFieldsInResultsNs
+		itemID = 1
+	)
+	var vec [kTestFloatVectorDimension]float32
+	copy(vec[:], randVect(kTestFloatVectorDimension))
+
+	require.NoError(t, DB.Upsert(ns, &TestItemHnswST{ID: itemID, Vec: vec}))
+	defer func() {
+		require.NoError(t, DB.TruncateNamespace(ns))
+	}()
+
+	requireVec := func(t *testing.T, item *TestItemHnswST, want bool) {
+		t.Helper()
+		if want {
+			require.Equal(t, vec, item.Vec)
+			return
+		}
+		require.Equal(t, [kTestFloatVectorDimension]float32{}, item.Vec)
+	}
+
+	modes := []struct {
+		name    string
+		apply   func(q *reindexer.Query) *reindexer.Query
+		wantVec bool
+	}{
+		{name: "default", apply: func(q *reindexer.Query) *reindexer.Query { return q }, wantVec: false},
+		{name: "SelectAllFields", apply: func(q *reindexer.Query) *reindexer.Query { return q.SelectAllFields() }, wantVec: true},
+		{name: "vectors()", apply: func(q *reindexer.Query) *reindexer.Query { return q.Select("vectors()") }, wantVec: true},
+	}
+
+	t.Run("query", func(t *testing.T) {
+		for _, mode := range modes {
+			t.Run("select "+mode.name, func(t *testing.T) {
+				q := mode.apply(DB.GetBaseQuery(ns).Where("id", reindexer.EQ, itemID))
+				items, err := q.Exec().FetchAll()
+				require.NoError(t, err)
+				require.Len(t, items, 1)
+				item := items[0].(*TestItemHnswST)
+				if mode.name != "vectors()" {
+					require.Equal(t, itemID, item.ID)
+				}
+				requireVec(t, item, mode.wantVec)
+			})
+
+			t.Run("update "+mode.name, func(t *testing.T) {
+				q := mode.apply(DB.GetBaseQuery(ns).Where("id", reindexer.EQ, itemID).Set("id", itemID))
+				items, err := q.Update().FetchAll()
+				require.NoError(t, err)
+				require.Len(t, items, 1)
+				item := items[0].(*TestItemHnswST)
+				if mode.name != "vectors()" {
+					require.Equal(t, itemID, item.ID)
+				}
+				requireVec(t, item, mode.wantVec)
+			})
+		}
+	})
+
+	t.Run("sql", func(t *testing.T) {
+		t.Run("select default", func(t *testing.T) {
+			items, err := DB.ExecSQL("SELECT * FROM " + ns + " WHERE id = 1").FetchAll()
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			item := items[0].(*TestItemHnswST)
+			require.Equal(t, itemID, item.ID)
+			requireVec(t, item, false)
+		})
+
+		t.Run("select all fields", func(t *testing.T) {
+			items, err := DB.ExecSQL("SELECT *, vectors() FROM " + ns + " WHERE id = 1").FetchAll()
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			item := items[0].(*TestItemHnswST)
+			require.Equal(t, itemID, item.ID)
+			requireVec(t, item, true)
+		})
+
+		t.Run("select vectors()", func(t *testing.T) {
+			items, err := DB.ExecSQL("SELECT vectors() FROM " + ns + " WHERE id = 1").FetchAll()
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			requireVec(t, items[0].(*TestItemHnswST), true)
+		})
+
+		t.Run("update", func(t *testing.T) {
+			items, err := DB.ExecSQL("UPDATE " + ns + " SET id = 1 WHERE id = 1").FetchAll()
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			item := items[0].(*TestItemHnswST)
+			require.Equal(t, itemID, item.ID)
+			requireVec(t, item, true)
+		})
+
+		t.Run("delete", func(t *testing.T) {
+			items, err := DB.ExecSQL("DELETE FROM " + ns + " WHERE id = 1").FetchAll()
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			requireVec(t, items[0].(*TestItemHnswST), true)
+			_, found := DB.GetBaseQuery(ns).Where("id", reindexer.EQ, itemID).Get()
+			require.False(t, found)
+		})
+	})
 }

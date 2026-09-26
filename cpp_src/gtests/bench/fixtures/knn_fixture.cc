@@ -308,7 +308,6 @@ void KnnBench<indexType, metric>::FillFtIndex(State& state) {
 		const auto count = id_seq_->Current();
 		for (int i = id_seq_->Start(); i < count; ++i) {
 			auto q = Query(nsdef_.name).Set("ft"sv, CreatePhrase()).Where("id"sv, CondEq, i);
-			q.type_ = QueryUpdate;
 			auto err = tx.Modify(std::move(q));
 			if (!err.ok()) {
 				state.SkipWithError(err.what());
@@ -447,7 +446,7 @@ void KnnBench<indexType, metric>::AndHybridRrf(State& state) {
 		return Query(nsdef_.name)
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}())
 			.Where("ft"sv, CondEq, RndWord1() + ' ' + RndWord1())
-			.Sort("RRF()"sv, false);
+			.Sort("RRF()"sv, SortOrder::Asc);
 	};
 	ItemsCounter<knnParams> itemsCounter{state};
 	benchQuery(q, state, itemsCounter);
@@ -462,7 +461,7 @@ void KnnBench<indexType, metric>::AndHybridLinear(State& state) {
 		return Query(nsdef_.name)
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}())
 			.Where("ft"sv, CondEq, RndWord1() + ' ' + RndWord1())
-			.Sort("rank(vec) + rank(ft)"sv, false);
+			.Sort("rank(vec) + rank(ft)"sv, SortOrder::Asc);
 	};
 	ItemsCounter<knnParams> itemsCounter{state};
 	benchQuery(q, state, itemsCounter);
@@ -478,7 +477,7 @@ void KnnBench<indexType, metric>::OrHybridRrf(State& state) {
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}())
 			.Or()
 			.Where("ft"sv, CondEq, RndWord1() + ' ' + RndWord1())
-			.Sort("RRF()"sv, false)
+			.Sort("RRF()"sv, SortOrder::Asc)
 			.Limit(kK);
 	};
 	ItemsCounter<knnParams> itemsCounter{state};
@@ -495,7 +494,7 @@ void KnnBench<indexType, metric>::OrHybridLinear(State& state) {
 			.WhereKNN("vec"sv, ConstFloatVectorView{vect}, KnnSearchParams<indexType, metric, knnParams>{}())
 			.Or()
 			.Where("ft"sv, CondEq, RndWord1() + ' ' + RndWord1())
-			.Sort("rank(vec) + rank(ft)"sv, false)
+			.Sort("rank(vec) + rank(ft)"sv, SortOrder::Asc)
 			.Limit(kK);
 	};
 	ItemsCounter<knnParams> itemsCounter{state};

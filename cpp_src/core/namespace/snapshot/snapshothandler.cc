@@ -3,7 +3,9 @@
 #include "core/id_type.h"
 #include "core/namespace/namespace.h"
 #include "core/namespace/namespaceimpl.h"
+#include "core/namespace/system_index_names.h"
 #include "core/nsselecter/selectctx.h"
+#include "core/query/query_impl.h"
 #include "estl/gift_str.h"
 #include "tools/logger.h"
 #include "wal/walselecter.h"
@@ -13,22 +15,20 @@ namespace reindexer {
 Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 	LocalQueryResults walQr;
 	const auto from = opts.from;
-	PayloadChecksum datahash;
-	datahash.hashV1 = ns_.repl_.dataHash.hashV1;
-	datahash.hashV2 = ns_.repl_.dataHash.hashV2 ? *ns_.repl_.dataHash.hashV2 : 0;
+	const auto checksum = ns_.repl_.checksum;
 	try {
 		if (!from.IsCompatibleByNsVersion(ExtendedLsn(ns_.repl_.nsVersion, ns_.wal_.LastLSN()))) {
 			throw Error(errOutdatedWAL, "Requested LSN is not compatible by NS version ({}). Current namespace has {}", from.NsVersion(),
 						ns_.repl_.nsVersion);
 		}
-		Query q = Query(ns_.name_).Where("#lsn", CondGt, int64_t(from.LSN())).SelectAllFields();
-		SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
+		Query q = Query(ns_.name_).Where(kLsnIndexName, CondGt, int64_t(from.LSN())).SelectAllFields();
+		SelectCtx selCtx(Impl(q), std::nullopt, &walQr.GetFloatVectorsHolder());
 		FtFunctionsHolder func;
 		selCtx.functions = &func;
 		selCtx.contextCollectingMode = true;
 		WALSelecter selecter(&ns_, false);
 		selecter(walQr, selCtx, true);
-		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), datahash, ns_.itemsCount(),
+		return Snapshot(ns_.payloadType(), ns_.tagsMatcher(), ns_.repl_.nsVersion, ns_.wal_.LastLSN(), checksum, ns_.itemsCount(),
 						ns_.repl_.clusterStatus, std::move(walQr));
 	} catch (Error& err) {
 		if (err.code() != errOutdatedWAL) {
@@ -37,11 +37,11 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		logFmt(LogInfo, "[repl:{}]:{} Creating RAW (force sync) snapshot. Reason: {}", ns_.name_, ns_.wal_.GetServer(), err.what());
 		const auto minLsn = ns_.wal_.LSNByOffset(opts.maxWalDepthOnForceSync);
 		if (minLsn.isEmpty()) {
-			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion, datahash, ns_.itemsCount(), ns_.repl_.clusterStatus);
+			return Snapshot(ns_.tagsMatcher(), ns_.repl_.nsVersion, checksum, ns_.itemsCount(), ns_.repl_.clusterStatus);
 		}
 		{
-			Query q = Query(ns_.name_).Where("#lsn", CondGe, int64_t(minLsn)).SelectAllFields();
-			SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
+			Query q = Query(ns_.name_).Where(kLsnIndexName, CondGe, int64_t(minLsn)).SelectAllFields();
+			SelectCtx selCtx(Impl(q), std::nullopt, &walQr.GetFloatVectorsHolder());
 			FtFunctionsHolder func;
 			selCtx.functions = &func;
 			selCtx.contextCollectingMode = true;
@@ -51,9 +51,9 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 
 		LocalQueryResults fullQr;
 		{
-			Query q = Query(ns_.name_).Where("#lsn", CondAny, VariantArray{}).SelectAllFields();
+			Query q = Query(ns_.name_).Where(kLsnIndexName, CondAny, VariantArray{}).SelectAllFields();
 			// Reusing walQr's FloatVectorsHolder here
-			SelectCtx selCtx(q, nullptr, &walQr.GetFloatVectorsHolder());
+			SelectCtx selCtx(Impl(q), std::nullopt, &walQr.GetFloatVectorsHolder());
 			FtFunctionsHolder func;
 			selCtx.functions = &func;
 			selCtx.contextCollectingMode = true;
@@ -61,7 +61,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 			selecter(fullQr, selCtx, true);
 		}
 
-		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), datahash, ns_.itemsCount(),
+		return Snapshot(ns_.payloadType(), ns_.tagsMatcher(), ns_.repl_.nsVersion, ns_.wal_.LastLSN(), checksum, ns_.itemsCount(),
 						ns_.repl_.clusterStatus, std::move(walQr), std::move(fullQr));
 	}
 }
@@ -196,8 +196,8 @@ void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, co
 		// Update query
 		case WalUpdateQuery: {
 			LocalQueryResults result;
-			const Query q = Query::FromSQL(rec.data);
-			switch (q.type_) {
+			const auto q = Query::FromSQL(rec.data);
+			switch (Impl(q).Type()) {
 				case QueryDelete:
 					// TODO disabled due to #1771
 					// Query can contain join query
@@ -239,10 +239,8 @@ void SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, co
 			const auto stateToken = ser.GetVarint();
 			tm.deserialize(ser, version, stateToken);
 			logFmt(LogInfo, "[{}]: Changing tm's statetoken on {}: {:#08x}->{:#08x}", ns_.name_, ns_.wal_.GetServer(),
-				   ns_.tagsMatcher_.stateToken(), stateToken);
-			ns_.tagsMatcher_ = std::move(tm);
-			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, ns_.indexes_.SparseIndexes(), NeedChangeTmVersion::No);
-			ns_.tagsMatcher_.setUpdated();
+				   ns_.tagsMatcher().stateToken(), stateToken);
+			ns_.indexRegistry_.ReplaceTagsMatcher(std::move(tm));
 			ns_.saveTagsMatcherToStorage(false);
 			break;
 		}

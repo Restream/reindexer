@@ -176,7 +176,7 @@ CostCalcResults calculateNormalCost(const QueryEntries& qentries, const SelectCt
 			i,
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
-			Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry, QueryFunctionEntry>{},
+			Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry, QueryFunctionEntry, QueryArithmeticEntry>{},
 			[&CostCalculator] RX_PRE_LMBD_ALWAYS_INLINE(
 				const concepts::OneOf<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, KnnQueryEntry> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE noexcept { CostCalculator.MarkInapposite(); },
@@ -256,9 +256,9 @@ size_t calculateOptimizedCost(size_t costNormal, const QueryEntries& qentries, c
 			i, Skip<AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry>{},
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE { throw_as_assert; },
-			[&CostCalculator] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry,
-																			  KnnQueryEntry, QueryFunctionEntry> auto&)
-				RX_POST_LMBD_ALWAYS_INLINE noexcept { CostCalculator.MarkInapposite(); },
+			[&CostCalculator] RX_PRE_LMBD_ALWAYS_INLINE(
+				const concepts::OneOf<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, KnnQueryEntry, QueryFunctionEntry,
+									  QueryArithmeticEntry> auto&) RX_POST_LMBD_ALWAYS_INLINE noexcept { CostCalculator.MarkInapposite(); },
 			[&](const QueryEntry& qe) {
 				if (!qe.IsFieldIndexed() || qe.IndexNo() != ctx.sortingContext.uncommitedIndex) {
 					CostCalculator.MarkInapposite();
@@ -427,9 +427,8 @@ static void findOrderedIndexes(QueryEntries::const_iterator begin, QueryEntries:
 				return {};
 			},
 			[](const concepts::OneOf<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry,
-									 MultiDistinctQueryEntry, QueryEntriesBracket, QueryFunctionEntry> auto&) noexcept {
-				return FoundIndexInfo();
-			});
+									 MultiDistinctQueryEntry, QueryEntriesBracket, QueryFunctionEntry,
+									 QueryArithmeticEntry> auto&) noexcept { return FoundIndexInfo(); });
 		if (hasNonCompatibleDistinct && hasUnorderedConds) {
 			// Selective unordered Eq/Set plus Distinct that cannot lead unbuilt:
 			// prefer idset/comparator plans over inventing an implicit ORDER BY on another field.

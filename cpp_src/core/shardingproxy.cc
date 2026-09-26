@@ -5,6 +5,8 @@
 #include "cluster/sharding/locatorserviceadapter.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "cluster/stats/replicationstats.h"
+#include "core/query/query_impl.h"
+#include "core/query/sql/sql_helpers.h"
 #include "estl/gift_str.h"
 #include "estl/lock.h"
 #include "estl/smart_lock.h"
@@ -22,7 +24,7 @@ void ShardingProxy::ShutdownCluster() {
 	}
 }
 
-auto ShardingProxy::isWithSharding(const Query& q, const RdxContext& ctx, int& actualShardId, int64_t& cfgSourceId) const {
+auto ShardingProxy::isWithSharding(ConstQueryImpl q, const RdxContext& ctx, int& actualShardId, int64_t& cfgSourceId) const {
 	using ret_type = std::optional<decltype(shardingRouter_.SharedLock(ctx))>;
 
 	if (q.IsLocal()) {
@@ -31,8 +33,7 @@ auto ShardingProxy::isWithSharding(const Query& q, const RdxContext& ctx, int& a
 		}
 		return ret_type{};
 	}
-	if (q.Limit() == 0 && q.CalcTotal() == ModeNoTotal && q.GetJoinQueries().empty() && q.GetMergeQueries().empty() &&
-		q.GetSubQueries().empty()) {
+	if (q.Limit() == 0 && q.CalcTotal() == ModeNoTotal && q.JoinQueries().empty() && q.MergeQueries().empty() && q.SubQueries().empty()) {
 		return ret_type{};	// Special case for tagsmatchers selects
 	}
 	if (q.IsWALQuery()) {
@@ -500,8 +501,7 @@ Query ShardingProxy::NamespaceDataChecker::query() const {
 	const bool isDefault = ns_.defaultShard == thisShardId_;
 	auto nextOp = isDefault ? NextOp(&Query::Or) : NextOp(&Query::Not);
 
-	Query query(ns_.ns);
-	query.Select({ns_.index}).Limit(1);
+	auto query = Query(ns_.ns).Select(ns_.index).Limit(1);
 
 	if (!isDefault) {
 		(query.*nextOp)();
@@ -573,12 +573,12 @@ void ShardingProxy::NamespaceDataChecker::Check(ShardingProxy& proxy, const RdxC
 	auto checkQuery = query();
 
 	WrSerializer wr;
-	checkQuery.GetSQL(wr);
+	Impl(checkQuery).GetSQL(wr);
 	logFmt(LogInfo, "Checking namespace '{}' on the shard {} for the absence of irrelevant sharding keys using a query '{}'", ns_.ns,
 		   thisShardId_, wr.Slice());
 
 	LocalQueryResults qr;
-	auto err = proxy.impl_.Select(checkQuery, qr, ctx);
+	auto err = proxy.impl_.Select(Impl(checkQuery), qr, ctx);
 	if (!err.ok()) {
 		throw err;
 	}
@@ -614,7 +614,7 @@ void ShardingProxy::checkSyncCluster(const cluster::ShardingConfig& shardingConf
 			throw Error(errLogic, "Error connecting to node [{}]: {}", dsn, status.what());
 		}
 
-		const Query q = Query(std::string(kReplicationStatsNamespace)).Where("type", CondEq, Variant(cluster::kClusterReplStatsType));
+		const Query q = Query(kReplicationStatsNamespace).Where("type", CondEq, Variant(cluster::kClusterReplStatsType));
 
 		client::QueryResults qr;
 		auto err = connection->WithTimeout(shardingConfig.reconnectTimeout).Select(q, qr);
@@ -1014,13 +1014,13 @@ Error ShardingProxy::Update(std::string_view nsName, Item& item, QueryResults& r
 	}
 }
 
-Error ShardingProxy::Update(const Query& query, QueryResults& result, const RdxContext& ctx) {
+Error ShardingProxy::Update(ConstQueryImpl query, QueryResults& result, const RdxContext& ctx) {
 	try {
-		auto updateFn = [this](const Query& q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Update(q, qr, ctx); };
+		auto updateFn = [this](ConstQueryImpl q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Update(q, qr, ctx); };
 
 		int actualShardId = ShardingKeyType::ProxyOff;
 		int64_t shardingVersion = -1;
-		result.SetQuery(&query);
+		result.SetQuery(&*query);
 		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId, shardingVersion)) {
 			return executeQueryOnShard(*lckRouterOpt, query, result, 0, ctx, std::move(updateFn));
 		}
@@ -1090,11 +1090,11 @@ Error ShardingProxy::Delete(std::string_view nsName, Item& item, QueryResults& r
 	}
 }
 
-Error ShardingProxy::Delete(const Query& query, QueryResults& result, const RdxContext& ctx) {
+Error ShardingProxy::Delete(ConstQueryImpl query, QueryResults& result, const RdxContext& ctx) {
 	try {
-		auto deleteFn = [this](const Query& q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Delete(q, qr, ctx); };
+		auto deleteFn = [this](ConstQueryImpl q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Delete(q, qr, ctx); };
 
-		result.SetQuery(&query);
+		result.SetQuery(&*query);
 		int actualShardId = ShardingKeyType::ProxyOff;
 		int64_t shardingVersion = -1;
 		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId, shardingVersion)) {
@@ -1110,41 +1110,43 @@ Error ShardingProxy::Delete(const Query& query, QueryResults& result, const RdxC
 
 Error ShardingProxy::ExecSQL(std::string_view sql, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx) {
 	try {
-		const Query query = Query::FromSQL(sql);
-		switch (query.type_) {
+		Query query = Query::FromSQL(sql);
+		ApplySqlModifyDefaults(query);
+		QueryImpl queryImpl = Impl(query);
+		switch (queryImpl.Type()) {
 			case QuerySelect: {
-				return Select(query, result, proxyFetchLimit, ctx);
+				return Select(queryImpl, result, proxyFetchLimit, ctx);
 			}
 			case QueryDelete: {
-				return Delete(query, result, ctx);
+				return Delete(queryImpl, result, ctx);
 			}
 			case QueryUpdate: {
-				return Update(query, result, ctx);
+				return Update(queryImpl, result, ctx);
 			}
 			case QueryTruncate: {
-				return TruncateNamespace(query.NsName(), ctx);
+				return TruncateNamespace(queryImpl.NsName(), ctx);
 			}
 			default:
-				return Error(errLogic, "Incorrect sql type {}", int(query.type_));
+				return Error(errLogic, "Incorrect sql type {}", int(queryImpl.Type()));
 		}
 	} catch (const Error& err) {
 		return err;
 	}
 }
 
-Error ShardingProxy::Select(const Query& query, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx) {
+Error ShardingProxy::Select(ConstQueryImpl query, QueryResults& result, unsigned proxyFetchLimit, const RdxContext& ctx) {
 	try {
 		if (query.Type() != QuerySelect) {
 			return Error(errLogic, "'Select' call request type is not equal to 'QuerySelect'.");
 		}
 
-		result.SetQuery(&query);
+		result.SetQuery(&*query);
 		int actualShardId = ShardingKeyType::ProxyOff;
 		int64_t shardingVersion = -1;
 		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId, shardingVersion)) {
 			return executeQueryOnShard(
 				*lckRouterOpt, query, result, proxyFetchLimit, ctx,
-				[this](const Query& q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Select(q, qr, ctx); });
+				[this](ConstQueryImpl q, LocalQueryResults& qr, const RdxContext& ctx) { return impl_.Select(q, qr, ctx); });
 		}
 		result.SetShardingConfigVersion(shardingVersion);
 		result.AddQr(LocalQueryResults{}, actualShardId);
@@ -1336,9 +1338,9 @@ Error ShardingProxy::GetRaftInfo(cluster::RaftInfo& info, const RdxContext& ctx)
 }
 
 template <typename ShardingRouterLock>
-bool ShardingProxy::isSharderQuery(const Query& q, const ShardingRouterLock& shLockShardingRouter) const {
+bool ShardingProxy::isSharderQuery(ConstQueryImpl q, const ShardingRouterLock& shLockShardingRouter) const {
 	bool sharded = false;
-	q.WalkNested(true, true, true, [&shLockShardingRouter, &sharded](const Query& query) {
+	q.WalkNested(true, true, true, [&shLockShardingRouter, &sharded](ConstQueryImpl query) {
 		if (!sharded && shLockShardingRouter->IsSharded(query.NsName())) {
 			sharded = true;
 		}
@@ -1545,7 +1547,7 @@ Error ShardingProxy::modifyItemOnShard(LockedRouter& lockedShardingRouter, const
 }
 
 template <typename LockedRouter, typename LocalFT>
-Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, const Query& query, QueryResults& result,
+Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, ConstQueryImpl query, QueryResults& result,
 										 unsigned proxyFetchLimit, const RdxContext& ctx, LocalFT&& localAction) noexcept {
 	Error status;
 	try {
@@ -1614,16 +1616,17 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 			unsigned limit = query.Limit();
 			unsigned offset = query.Offset();
 
-			Query distributedQuery(query);
-			if (!distributedQuery.GetSortingEntries().empty()) {
-				const auto ns = impl_.GetNamespacePtr(distributedQuery.NsName(), ctx)->getMainNs();
+			Query distributedQuery(*query);
+			QueryImpl distributedQueryImpl = Impl(distributedQuery);
+			if (!distributedQueryImpl.GetSortingEntries().empty()) {
+				const auto ns = impl_.GetNamespacePtr(distributedQueryImpl.NsName(), ctx)->getMainNs();
 				result.SetOrdering(distributedQuery, *ns, ctx);
 			}
-			if (distributedQuery.Limit() != QueryEntry::kDefaultLimit && !distributedQuery.GetSortingEntries().empty()) {
-				distributedQuery.Limit(distributedQuery.Offset() + distributedQuery.Limit());
+			if (distributedQueryImpl.Limit() != QueryEntry::kDefaultLimit && !distributedQueryImpl.GetSortingEntries().empty()) {
+				distributedQuery.Limit(distributedQueryImpl.Offset() + distributedQueryImpl.Limit());
 			}
-			if (distributedQuery.Offset() != QueryEntry::kDefaultOffset) {
-				if (distributedQuery.GetSortingEntries().empty()) {
+			if (distributedQueryImpl.Offset() != QueryEntry::kDefaultOffset) {
+				if (distributedQueryImpl.GetSortingEntries().empty()) {
 					distributedQuery.ReqTotal();
 				} else {
 					distributedQuery.Offset(0);
@@ -1646,11 +1649,11 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 							: connections[i]->WithShardingParallelExecution(connections.size() > 1).WithContext(ctx.GetCancelCtx());
 					client::QueryResults qrClient(result.Flags(), proxyFetchLimit);
 
-					if (distributedQuery.GetSortingEntries().empty()) {
+					if (distributedQueryImpl.GetSortingEntries().empty()) {
 						distributedQuery.Limit(limit);
 						distributedQuery.Offset(offset);
 					}
-					status = executeQueryOnClient(connection, distributedQuery, qrClient,
+					status = executeQueryOnClient(connection, Impl(distributedQuery), qrClient,
 												  [&limit, &offset, this](size_t count, size_t totalCount) {
 													  calculateNewLimitOfsset(count, totalCount, limit, offset);
 												  });
@@ -1667,9 +1670,9 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 					assertrx(i == 0);
 					const auto shCtx = ctx.WithShardId(actualShardId, true);
 					LocalQueryResults lqr;
-					status = localAction(distributedQuery, lqr, shCtx);
+					status = localAction(Impl(distributedQuery), lqr, shCtx);
 					if (status.ok()) {
-						if (distributedQuery.GetSortingEntries().empty()) {
+						if (distributedQueryImpl.GetSortingEntries().empty()) {
 							calculateNewLimitOfsset(lqr.Count(), lqr.TotalCount(), limit, offset);
 						}
 						result.AddQr(std::move(lqr), actualShardId, (i + 1) == connections.size());
@@ -1680,7 +1683,7 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 						return status;
 					}
 				}
-				if (distributedQuery.CalcTotal() == ModeNoTotal && limit == 0 && (i + 1) != connections.size()) {
+				if (distributedQueryImpl.CalcTotal() == ModeNoTotal && limit == 0 && (i + 1) != connections.size()) {
 					result.RebuildMergedData();
 					break;
 				}
@@ -1693,23 +1696,23 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter& lockedShardingRouter, con
 }
 
 template <typename CalucalteFT>
-Error ShardingProxy::executeQueryOnClient(client::Reindexer& connection, const Query& q, client::QueryResults& qrClient,
+Error ShardingProxy::executeQueryOnClient(client::Reindexer& connection, ConstQueryImpl q, client::QueryResults& qrClient,
 										  const CalucalteFT& limitOffsetCalc) {
 	Error status;
 	switch (q.Type()) {
 		case QuerySelect: {
-			status = connection.Select(q, qrClient);
+			status = connection.Select(*q, qrClient);
 			if (q.GetSortingEntries().empty()) {
 				limitOffsetCalc(qrClient.Count(), qrClient.TotalCount());
 			}
 			break;
 		}
 		case QueryUpdate: {
-			status = connection.Update(q, qrClient);
+			status = connection.Update(*q, qrClient);
 			break;
 		}
 		case QueryDelete: {
-			status = connection.Delete(q, qrClient);
+			status = connection.Delete(*q, qrClient);
 			break;
 		}
 		case QueryTruncate:

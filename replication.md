@@ -67,7 +67,7 @@ Reindexer> SELECT * FROM epg LIMIT 2 where #lsn > 1000000
 ## Data integrity check
 
 Replication is a complex mechanism, and there is a potential risk of breaking data consistency between master and slave.
-Reindexer calculates a lightweight incremental hash of all namespace data (Checksum/DataHash). Checksum is used to quickly check that follower data is really up to date with the leader.
+Reindexer calculates a lightweight incremental hash of all namespace data (Checksum). Checksum is used to quickly check that follower data is really up to date with the leader.
 
 ## Async replication
 
@@ -205,7 +205,7 @@ Then you are able to configure specific async replication via `async_replication
 - `enable_compression` - Network traffic compression flag
 - `batching_routines_count` - Number of concurrent routines, used to asynchronously send online updates for each follower. Larger values may reduce network trip-around, but also increase RAM consumption
 - `force_sync_on_logic_error` - Force resync on logic error conditions
-- `force_sync_on_wrong_data_hash` - Force resync if dataHash mismatch
+- `force_sync_on_wrong_data_hash` - Force resync if checksum mismatch
 - `log_level` - Replication log level on replicator's startup. Possible values: none, error, warning, info, trace
 - `max_wal_depth_on_force_sync` - Maximum number of WAL records, which will be copied after force-sync
 - `online_updates_delay_msec` - Delay between write operation and replication. Larger values here will lead to higher replication latency and buffering, but will also provide more effective network batching and CPU utilization

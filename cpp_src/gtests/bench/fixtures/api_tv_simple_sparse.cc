@@ -1,5 +1,6 @@
 #include "api_tv_simple_sparse.h"
 #include "allocs_tracker.h"
+#include "core/enums.h"
 #include "helpers.h"
 
 using reindexer::Query;
@@ -88,8 +89,8 @@ void ApiTvSimpleSparse::WarmUpIndexes(State& state) {
 		WaitForOptimization();
 		for (size_t i = 0; i < packages_.size() * 2; ++i) {
 			QueryResults qres;
-			Query q(nsdef_.name);
-			q.Where("packages", CondSet, packages_.at(i % packages_.size())).Limit(20).Sort("uuid", false);
+			const auto q =
+				Query(nsdef_.name).Where("packages", CondSet, packages_.at(i % packages_.size())).Limit(20).Sort("uuid", SortOrder::Asc);
 			err = db_->Select(q, qres);
 			if (!err.ok()) {
 				state.SkipWithError(err.what());
@@ -99,8 +100,10 @@ void ApiTvSimpleSparse::WarmUpIndexes(State& state) {
 
 		for (size_t i = 0; i < packages_.size() * 2; ++i) {
 			QueryResults qres;
-			Query q(nsdef_.name);
-			q.Where("packages", CondSet, packages_.at(i % packages_.size())).Limit(20).Sort("countries", false);
+			const auto q = Query(nsdef_.name)
+							   .Where("packages", CondSet, packages_.at(i % packages_.size()))
+							   .Limit(20)
+							   .Sort("countries", SortOrder::Asc);
 			err = db_->Select(q, qres);
 			if (!err.ok()) {
 				state.SkipWithError(err.what());
@@ -110,8 +113,7 @@ void ApiTvSimpleSparse::WarmUpIndexes(State& state) {
 
 		for (size_t i = 0; i < priceIDs_.size() * 3; ++i) {
 			QueryResults qres;
-			Query q(kJoinNamespace);
-			q.Where("id", CondSet, priceIDs_.at(i % priceIDs_.size())).Limit(20);
+			const auto q = Query(kJoinNamespace).Where("id", CondSet, priceIDs_.at(i % priceIDs_.size())).Limit(20);
 			err = db_->Select(q, qres);
 			if (!err.ok()) {
 				state.SkipWithError(err.what());
@@ -123,12 +125,12 @@ void ApiTvSimpleSparse::WarmUpIndexes(State& state) {
 
 void ApiTvSimpleSparse::GetByRangeIDAndSortByTreeWithoutNulls(benchmark::State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		// Condition should be similar to GetByRangeIDAndSortByTree
 		return Query(nsdef_.name)
 			.Where("id", CondRange, {idRange.first, idRange.second})
 			.Where("genre", CondAny, Variant())
-			.Sort("genre", false)
+			.Sort("genre", SortOrder::Asc)
 			.Limit(20);
 	};
 	benchQuery(q, state);
@@ -138,9 +140,7 @@ template <typename Total>
 void ApiTvSimpleSparse::QueryFlatArrayLenSparse(State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		// Count nullable scalar fields
-		q.Where(reindexer::functions::FlatArrayLen{"data33"}, CondGe, 1).Limit(20);
+		auto q = Query(nsdef_.name).Where(reindexer::functions::FlatArrayLen{"data33"}, CondGe, 1).Limit(20);
 		Total::Apply(q);
 
 		QueryResults qres;
@@ -172,7 +172,7 @@ void ApiTvSimpleSparse::Query3Cond(benchmark::State& state) {
 					 .Where("genre", CondEq, {1, 2, 5})
 					 .Where("age", CondEq, {1, 2, 3})
 					 .Where("packages", CondSet, packages_.at(randomIndex))
-					 .Sort("year", false)
+					 .Sort("year", SortOrder::Asc)
 					 .Limit(20);
 		Total::Apply(q);
 		return q;
@@ -189,7 +189,7 @@ void ApiTvSimpleSparse::Query4Cond(benchmark::State& state) {
 					 .Where("age", CondEq, {1, 2, 3})
 					 .Where("year", CondRange, {2000, 2039})
 					 .Where("packages", CondSet, packages_.at(randomIndex))
-					 .Sort("year", false)
+					 .Sort("year", SortOrder::Asc)
 					 .Limit(20);
 		Total::Apply(q);
 		return q;
@@ -201,8 +201,8 @@ void ApiTvSimpleSparse::QueryInnerJoinPreselectByValues(benchmark::State& state)
 	auto q4join = Query(kJoinNamespace).Where("device", CondSet, {"ottstb", "smarttv", "stb"});
 	const auto q = Query(nsdef_.name)
 					   .Where("limit", CondRange, {counter_ - 256, counter_ - 1})
-					   .LeftJoin("location", "location", CondSet, std::move(q4join))
-					   .Sort("year", false)
+					   .LeftJoin(std::move(q4join), "location", CondSet, "location")
+					   .Sort("year", SortOrder::Asc)
 					   .Limit(20);
 	benchQuery(q, state);
 }
@@ -211,8 +211,8 @@ void ApiTvSimpleSparse::QueryInnerJoinNoPreselect(benchmark::State& state) {
 	auto q4join = Query(kJoinNamespace).Where("device", CondSet, {"ottstb", "smarttv", "stb"});
 	const auto q = Query(nsdef_.name)
 					   .Where("year", CondRange, {2010, 2030})
-					   .LeftJoin("location", "location", CondSet, std::move(q4join))
-					   .Sort("year", false)
+					   .LeftJoin(std::move(q4join), "location", CondSet, "location")
+					   .Sort("year", SortOrder::Asc)
 					   .Limit(20);
 	benchQuery(q, state);
 }
@@ -222,11 +222,11 @@ void ApiTvSimpleSparse::QueryLeftNestedJoin(benchmark::State& state) {
 		Query(kJoinNamespace).Where("location", CondSet, {"mos", "dv", "sib", "ural"}).Where("id", CondLt, kPriceIdStart + kPriceIdRegion);
 	auto q4join = Query(kJoinNamespace)
 					  .Where("device", CondSet, {"ottstb", "smarttv", "stb"})
-					  .LeftJoin("parent_id", "id", CondEq, std::move(q4nestedJoin));
+					  .LeftJoin(std::move(q4nestedJoin), "parent_id", CondEq, "id");
 	const auto q = Query(nsdef_.name)
 					   .Where("year", CondRange, {2010, 2030})
-					   .LeftJoin("location", "location", CondSet, std::move(q4join))
-					   .Sort("year", false)
+					   .LeftJoin(std::move(q4join), "location", CondSet, "location")
+					   .Sort("year", SortOrder::Asc)
 					   .Limit(20);
 	benchQuery(q, state);
 }
@@ -236,11 +236,11 @@ void ApiTvSimpleSparse::QueryInnerNestedJoin(benchmark::State& state) {
 		Query(kJoinNamespace).Where("location", CondSet, {"mos", "dv", "sib", "ural"}).Where("id", CondLt, kPriceIdStart + kPriceIdRegion);
 	auto q4join = Query(kJoinNamespace)
 					  .Where("device", CondSet, {"ottstb", "smarttv", "stb"})
-					  .InnerJoin("parent_id", "id", CondEq, std::move(q4nestedJoin));
+					  .InnerJoin(std::move(q4nestedJoin), "parent_id", CondEq, "id");
 	const auto q = Query(nsdef_.name)
 					   .Where("year", CondRange, {2010, 2030})
-					   .InnerJoin("location", "location", CondSet, std::move(q4join))
-					   .Sort("year", false)
+					   .InnerJoin(std::move(q4join), "location", CondSet, "location")
+					   .Sort("year", SortOrder::Asc)
 					   .Limit(20);
 	benchQuery(q, state);
 }
@@ -260,7 +260,7 @@ void ApiTvSimpleSparse::query4CondParameterizable(benchmark::State& state, std::
 					   .Where("age", CondSet, {1, 2})
 					   .Where("year", CondRange, {2010, 2020})
 					   .Where(targetIndexName, cond, VariantArray{})
-					   .Sort("year", false)
+					   .Sort("year", SortOrder::Asc)
 					   .Limit(20);
 	benchQuery(q, state);
 }

@@ -3,7 +3,6 @@
 #include <climits>
 #include <set>
 #include "client/queryresults.h"
-#include "core/itemimplrawdata.h"
 #include "fields_filter.h"
 #include "localqueryresults.h"
 #include "tools/serilize/wrserializer.h"
@@ -156,16 +155,16 @@ public:
 		}
 	}
 	const std::string& GetExplainResults() && = delete;
-	int GetMergedNSCount() const noexcept {
+	size_t GetNamespacesCount() const noexcept {
 		switch (type_) {
 			case Type::None: {
 				return 0;
 			}
 			case Type::Local: {
-				return localUnsafe().qr.getMergedNSCount();
+				return localUnsafe().qr.getNamespacesCount();
 			}
 			case Type::SingleRemote: {
-				return remote_[0]->qr.GetMergedNSCount();
+				return remote_[0]->qr.GetNamespacesCount();
 			}
 			case Type::MultipleRemote:
 			case Type::Mixed:

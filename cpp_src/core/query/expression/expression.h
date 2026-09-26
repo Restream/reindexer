@@ -2,73 +2,49 @@
 
 #include "core/query/query.h"
 
+#include <variant>
+
 namespace reindexer::expressions {
 
-using ExpressionValue = std::variant<std::string, VariantArray, functions::FunctionVariant, Query>;
+using ExpressionValue = std::variant<std::string, VariantArray, functions::FunctionVariant, Query, ArithmeticExpression>;
 
-class [[nodiscard]] Expression {
+ExpressionValue Deserialize(Serializer&, QueryFormat);
+
+class [[nodiscard]] Field {
 public:
-	explicit Expression(ExpressionType type) noexcept : type_(type) {}
-	virtual ~Expression() = default;
+	explicit Field(const std::string& fieldName) noexcept : fieldName_(fieldName) {}
 
-	virtual void Serialize(WrSerializer&) const {}
-	static ExpressionValue Deserialize(Serializer&, QueryFormat);
-
-	ExpressionType Type() const noexcept { return type_; }
-
-private:
-	ExpressionType type_;
-};
-
-class [[nodiscard]] Field : public Expression {
-public:
-	Field(const std::string& fieldName) : Expression(ExpressionTypeField), fieldName_(fieldName) {}
-	~Field() override = default;
-
-	void Serialize(WrSerializer& ser) const override;
-
-	const std::string& Get() const;
-	std::string Dump() const;
+	void Serialize(WrSerializer& ser) const;
 
 private:
 	const std::string& fieldName_;
 };
 
-class [[nodiscard]] Values : public Expression {
+class [[nodiscard]] Values {
 public:
-	Values(const VariantArray& values) : Expression(ExpressionTypeValues), values_(values) {}
-	~Values() override = default;
+	explicit Values(const VariantArray& values) noexcept : values_(values) {}
 
-	void Serialize(WrSerializer& ser) const override;
-	const VariantArray& Get() const;
-	std::string Dump() const;
+	void Serialize(WrSerializer& ser) const;
 
 private:
 	const VariantArray& values_;
 };
 
-class [[nodiscard]] Function : public Expression {
+class [[nodiscard]] Function {
 public:
-	Function(const functions::FunctionVariant& function) : Expression(ExpressionTypeExpression), function_(function) {}
-	~Function() override = default;
+	explicit Function(const functions::FunctionVariant& function) noexcept : function_(function) {}
 
-	void Serialize(WrSerializer& ser) const override;
-	const functions::FunctionVariant& Get() const;
-	std::string Dump() const;
+	void Serialize(WrSerializer& ser) const;
 
 private:
 	const functions::FunctionVariant& function_;
 };
 
-class [[nodiscard]] SubQuery : public Expression {
+class [[nodiscard]] SubQuery {
 public:
-	SubQuery(const Query& subQuery, QueryFormat queryFormat)
-		: Expression(ExpressionTypeSubQuery), subQuery_(subQuery), queryFormat_(queryFormat) {}
-	~SubQuery() override = default;
+	SubQuery(const Query& subQuery, QueryFormat queryFormat) noexcept : subQuery_(subQuery), queryFormat_(queryFormat) {}
 
-	void Serialize(WrSerializer& ser) const override;
-	const Query& Get() const;
-	std::string Dump() const;
+	void Serialize(WrSerializer& ser) const;
 
 private:
 	const Query& subQuery_;

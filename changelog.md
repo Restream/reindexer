@@ -1,3 +1,60 @@
+# Version 5.17.0 (26.09.2026)
+## Core
+- [fea] Optimized [transaction](readme.md#transactions-and-batch-update) commit. Transactions with CJSON items now commit 10-20% faster
+- [fea] The namespace write lock is now released before the storage flush during write operations
+- [fea] Reduced PK index memory usage by ~20%
+- [fea] Added support for [subqueries](readme.md#subqueries-nested-queries) inside [joined queries](readme.md#join)
+- [fix] Fixed [`Explain`](readme.md#debug-queries) timings for queries with [`MERGE`](fulltext.md#merging-queries-results). Previously, JOIN preselect time was calculated incorrectly for such queries
+- [fix] Fixed several rare issues with document migration in storage after a PK index change
+- [fix] Fixed `*` and `/` operator precedence in [`UPDATE SET` expressions](readme.md#update-queries)
+- [fix] Fixed `total.data_size` calculation for indexes in `#memstats`. Previously, it could become negative in some cases
+- [fix] Combining [`EQUAL_POSITION`](readme.md#search-in-array-fields-with-matching-indexes) with `ALLSET` conditions is now prohibited (such queries used to work incorrectly)
+- [fix] SQL conditions with `NULL` now follow the Query API rules: `<`, `<=`, `>`, `>=`, and `LIKE` with `NULL` return an error instead of silently working as [`IS NULL`](readme.md#null-values-filtration). `EMPTY` and `NOT NULL` are now allowed only after `IS`
+- [fix] Fixed a data race on transaction commit while multithreaded vector inserts were still running
+- [fix] [Text functions](fulltext.md#using-select-functions) (`snippet()`, `highlight()`, etc.) now return an error when applied to a field without a full-text index
+- [fix] Fixed validation of `#lsn` conditions inside nested queries (`MERGE`/`JOIN`/subqueries)
+- [fix] A failed index update (`UpdateIndex`) no longer drops the original index, even if the error occurs while converting data to the new index type
+- [upd] Removed the deprecated `replication.data_hash` field from `#memstats`. Use `replication.checksum` instead
+
+## Fulltext
+- [fea] Reworked incremental builds for text indexes. Accumulated updates no longer trigger a full blocking index rebuild: documents deleted from the index are now cleaned up in the background instead. Cleanup is controlled by the new `deleted_docs_optimization_threshold` option in the [text index config](fulltext.md#base-config-parameters) and by the [`ft_cleanup_timeout_ms`](https://github.com/Restream/reindexer/blob/v5.17.0/cpp_src/server/contrib/server.yml#L6978) option in the `namespaces` section of `#config`
+- [fea] Improved handling of queries typed in the [wrong keyboard layout](fulltext.md#wrong-keyboard-layout)
+- [fix] Fixed [snippets](fulltext.md#snippet) for array indexes where only some of the array elements match the query
+
+## Vector indexes
+- [fea] Added support for OpenAI-compatible embedding APIs in [auto-embedding](float_vector.md#embedding-configuration) (`protocol.type: "openai"`)
+- [fea] Query-builder and DSL `UPDATE` results no longer include float vector fields unless they are requested explicitly (`SelectAllFields()` or `vectors()`), the same as `SELECT`. SQL `UPDATE` and `DELETE` still return vector fields. See [Float vector fields in selection results](float_vector.md#float-vector-fields-in-selection-results)
+- [fix] Improved handling of invalid responses from the [embedding service](float_vector.md#embedding-configuration)
+
+## Replication
+- [fea] `DELETE` queries, and the delete record written when an `UPDATE` changes the primary key, now store only primary key fields in the WAL and in the replication payload. This cuts WAL size and replication traffic for large documents
+- [fea] Namespace meta (`PutMeta` / `DeleteMeta`) and WAL records are now written asynchronously and do not interfere with background storage flush
+- [fea] Reduced the number of namespace resyncs on intermediate nodes in [cascade replication](replication.md#cascade-replication-setups)
+
+## Reindexer server
+- [fea] Added [runtime log level management](readme.md#configure-server-logging-via-rest-api) via the HTTP API
+- [fea] Added individual log levels for the `core`, `server`, `http`, `rpc`, and `grpc` loggers. See [logging configuration](readme.md#configure-server-logging-via-rest-api) and `RX_*_LOGLEVEL` [Docker variables](cpp_src/readme.md#container-configuration)
+- [fea] Added a separate [gRPC request log](readme.md#configure-server-logging-via-rest-api) (`grpclog` / `--grpclog`, disabled by default)
+- [fea] HTTP/RPC/gRPC request logs now use the `error` level for failed requests and `info` for successful ones. Previously, all requests were logged at `info`
+- [fea] Improved memory release after large requests in RPC/HTTP connections and in the C++ client. This also reduces memory footprint for replication Leader with a large number of Followers
+- [fix] Fixed handling of relative paths in HTTP requests for static files
+- [fix] Fixed a server crash when an invalid path was passed to `--config`
+
+## Reindexer tool
+- [fea] Relaxed format requirements for dumps restored via [`-f`/`--filename`](cpp_src/cmd/reindexer_tool/readme.md#usage)
+
+## Go connector
+- [fix] `ExecSQL` and `ExecSQLToJSON` now take the namespace from `UPDATE` and `TRUNCATE` for metrics and tracing. Those statements have no `FROM`, so the namespace label used to stay empty
+
+## Build
+- [fea] Added [pre-built packages](cpp_src/readme.md#linux) for `Ubuntu 26.04` and `AltLinux p11`
+- [upd] Stopped publishing pre-built packages for `Ubuntu 22.04` and `AltLinux p10`
+
+## Face
+- [fea] Added the `openai` protocol type to the auto-embedding config on the vector index config page
+- [fea] Added per-component runtime log level settings to the Database config page
+- [fix] Fixed the replication table layout
+
 # Version 5.16.0 (19.08.2026)
 ## Core
 - [fea] Added support for [nested left/inner joins](readme.md#nested-join). **Warning:** For `builtin` builds, `Query`/`QueryResults` serialization was migrated to a new format. Updated bindings are required for `builtin` mode to work correctly. Full compatibility is preserved for `cproto`/`ucproto`

@@ -74,8 +74,7 @@ void BaseFixture::Update(::benchmark::State& state) {
 }
 
 void BaseFixture::WaitForOptimization() {
-	reindexer::Query q(reindexer::kMemStatsNamespace);
-	q.Where("name", CondEq, nsdef_.name);
+	const auto q = reindexer::Query(reindexer::kMemStatsNamespace).Where("name", CondEq, nsdef_.name);
 	for (;;) {
 		reindexer::QueryResults res;
 		auto e = db_->Select(q, res);

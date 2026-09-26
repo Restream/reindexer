@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include "core/enums.h"
 #include "core/ft/config/ftconfig.h"
 #include "core/ft/ft_fast/dataholder.h"
@@ -7,37 +8,39 @@
 #include "core/ft/ftdsl.h"
 #include "core/ft/ftsetcashe.h"
 #include "core/index/index.h"
+#include "estl/algorithm.h"
 #include "estl/marked_mutex.h"
 #include "estl/shared_mutex.h"
 #include "fieldsgetter.h"
+#include "vendor/sparse-map/sparse_set.h"
 
 namespace reindexer {
 
 template <class StoreType>
 class VDoc;
 
-class [[nodiscard]] VDocBase {
+// Merge-time vdoc state: version for stale-posting filter + per-field word counts for BM25.
+class [[nodiscard]] VDocMergeInfo {
 public:
-	h_vector<IdType, 1> rowIds_;
-	h_vector<float, 3> wordCounts_;
+	VDocVersion version_ = kEmptyVDocVersion;
+	VDocWordCounts wordCounts_;
+
+	size_t heap_size() const noexcept { return wordCounts_.heap_size(); }
+};
+
+template <>
+class [[nodiscard]] VDoc<key_string> {
+public:
+	using DataType = h_vector<key_string, 1>;
 
 	size_t NumRows() const noexcept { return rowIds_.size(); }
 	bool Removed() const noexcept { return NumRows() == 0; }
 
-	const h_vector<IdType, 1>& RowIds() const noexcept { return rowIds_; }
-
-protected:
-	constexpr static uint64_t kHashMagic = 0x9e3779b97f4a7c15ull;
-};
-
-template <>
-class [[nodiscard]] VDoc<key_string> : public VDocBase {
-public:
-	using DataType = h_vector<key_string, 1>;
+	const h_vector<IdType, 3>& RowIds() const noexcept { return rowIds_; }
 
 	DataType datas_;
 
-	size_t heap_size() const noexcept { return rowIds_.heap_size() + datas_.heap_size() + wordCounts_.heap_size(); }
+	size_t heap_size() const noexcept { return rowIds_.heap_size() + datas_.heap_size(); }
 	size_t strings_heap_size() const noexcept {
 		size_t res = 0;
 		for (auto& str : datas_) {
@@ -57,8 +60,7 @@ public:
 				if (rowIds_.empty()) {
 					dataDetached.swap(datas_);
 					DataType().swap(datas_);
-					h_vector<IdType, 1>().swap(rowIds_);
-					h_vector<float, 3>().swap(wordCounts_);
+					h_vector<IdType, 3>().swap(rowIds_);
 				} else {
 					dataDetached = datas_;
 				}
@@ -97,14 +99,23 @@ public:
 
 		return true;
 	}
+
+private:
+	static constexpr uint64_t kHashMagic = 0x9e3779b97f4a7c15ull;
+	h_vector<IdType, 3> rowIds_;
 };
 
 template <>
-class [[nodiscard]] VDoc<PayloadValue> : public VDocBase {
+class [[nodiscard]] VDoc<PayloadValue> {
 public:
+	size_t NumRows() const noexcept { return rowIds_.size(); }
+	bool Removed() const noexcept { return NumRows() == 0; }
+
+	const h_vector<IdType, 3>& RowIds() const noexcept { return rowIds_; }
+
 	h_vector<PayloadValue, 1> datas_;
 
-	size_t heap_size() const noexcept { return rowIds_.heap_size() + datas_.heap_size() + wordCounts_.heap_size(); }
+	size_t heap_size() const noexcept { return rowIds_.heap_size() + datas_.heap_size(); }
 	size_t strings_heap_size() const noexcept { return 0; }
 
 	PayloadValue DataRef() noexcept {
@@ -121,9 +132,8 @@ public:
 				std::swap(datas_[idx], datas_.back());
 				datas_.pop_back();
 				if (rowIds_.empty()) {
-					h_vector<IdType, 1>().swap(rowIds_);
+					h_vector<IdType, 3>().swap(rowIds_);
 					h_vector<PayloadValue, 1>().swap(datas_);
-					h_vector<float, 3>().swap(wordCounts_);
 				}
 				return;
 			}
@@ -143,8 +153,10 @@ public:
 	}
 
 	void AddRow(IdType rowId, const PayloadValue& data) {
-		rowIds_.push_back(rowId);
+		ensure_capacity_for_one_more(rowIds_);
+		ensure_capacity_for_one_more(datas_);
 		datas_.push_back(data);
+		rowIds_.push_back(rowId);
 	}
 
 	size_t Hash(const PayloadType& type_, const FieldsSet& fields_) const noexcept {
@@ -161,6 +173,9 @@ public:
 
 		return ConstPayload(type_, datas_[0]).IsEQ(other.datas_[0], fields_);
 	}
+
+private:
+	h_vector<IdType, 3> rowIds_;
 };
 
 template <typename StoreType>
@@ -187,6 +202,8 @@ public:
 		// Rebuild will be done on first select
 		return WasCanceled_False;
 	}
+	bool NeedsClean() const noexcept override final;
+	void Clean(const index::ICancelable& cancelable, bool enablePerfCounters) override final;
 
 	void CommitFulltext() override final {
 		cache_ft_.Reinitialize(cacheMaxSize_, hitsToCache_);
@@ -235,31 +252,41 @@ public:
 	const void* ColumnData() const noexcept override final { return nullptr; }
 
 	void SetOpts(const IndexOpts& opts) override;
-	FtMergeStatuses GetFtMergeStatuses(const RdxContext& rdxCtx) override {
-		this->build(rdxCtx);
-		return {FtMergeStatuses::Statuses(vdocs_.size(), false), std::vector<bool>(rowId2Vdoc_.size(), false), &rowId2Vdoc_};
-	}
 	reindexer::FtPreselectT FtPreselect(const RdxContext& rdxCtx) override {
 		this->build(rdxCtx);
-		return FtMergeStatuses{FtMergeStatuses::Statuses(vdocs_.size(), true), std::vector<bool>(rowId2Vdoc_.size(), false), &rowId2Vdoc_};
+		return FtMergeStatuses{.docsExcluded = {}, .rowIds = {}, .rowId2VdocId = &rowId2VdocId_, .vdocsCount = vdocs_.size()};
 	}
 	bool EnablePreselectBeforeFt() const override { return cfg_->enablePreselectBeforeFt; }
 
 	IndexMemStat GetMemStat(const RdxContext& ctx) const override;
 
-	bool DocRemoved(uint32_t vdocId) const noexcept {
-		assertrx_dbg(vdocId < vdocs_.size());
-		return vdocs_[vdocId].Removed();
+	bool IsDeleted(uint32_t vdocId, VDocVersion version) const noexcept {
+		if (vdocId == kEmptyVDocId) {
+			return true;
+		}
+		if (vdocId >= vdocMergeInfo_.size()) {
+			return true;
+		}
+		return vdocMergeInfo_[vdocId].version_ != version;
 	}
-	size_t NumWordsInField(uint32_t vdocId, uint32_t fieldIdx) const noexcept {
-		assertrx_dbg(vdocId < vdocs_.size());
-		assertrx_dbg(fieldIdx < vdocs_[vdocId].wordCounts_.size());
-		return vdocs_[vdocId].wordCounts_[fieldIdx];
+	template <typename OccurenceT>
+	bool IsDeleted(const OccurenceT& occ) const noexcept {
+		return IsDeleted(occ.VdocId(), occ.VdocVersion());
 	}
+	uint32_t NumWordsInField(uint32_t vdocId, uint32_t fieldIdx) const noexcept {
+		assertrx_dbg(vdocId < vdocs_.size());
+		assertrx_dbg(fieldIdx < vdocMergeInfo_[vdocId].wordCounts_.size());
+		return vdocMergeInfo_[vdocId].wordCounts_[fieldIdx];
+	}
+	size_t NumLiveDocs() const noexcept { return vdocSet_.size(); }
 
 	float AvgWordsCount(uint32_t fieldIdx) const noexcept {
-		assertrx_dbg(fieldIdx < avgWordsCount_.size());
-		return avgWordsCount_[fieldIdx];
+		const size_t n = NumLiveDocs();
+		if (n == 0) {
+			return 0.0f;
+		}
+		assertrx_dbg(fieldIdx < sumWordsCount_.size());
+		return float(sumWordsCount_[fieldIdx]) / float(n);
 	}
 
 private:
@@ -272,7 +299,8 @@ private:
 		hash_vdoc& operator=(const hash_vdoc& hc) = default;
 		hash_vdoc& operator=(hash_vdoc&& hc) = default;
 
-		size_t operator()(uint32_t vdocId) const noexcept { return (*vdocs_)[vdocId].Hash(*type_, *fields_); }
+		size_t operator()(uint32_t pos) const noexcept { return (*vdocs_)[pos].Hash(*type_, *fields_); }
+		size_t operator()(const VDoc<StoreType>& vdoc) const noexcept { return vdoc.Hash(*type_, *fields_); }
 
 	private:
 		const PayloadType* type_;
@@ -294,6 +322,7 @@ private:
 
 			return (*vdocs_)[l].Equal((*vdocs_)[r], *type_, *fields_);
 		}
+		bool operator()(const VDoc<StoreType>& l, uint32_t r) const { return l.Equal((*vdocs_)[r], *type_, *fields_); }
 
 	private:
 		const PayloadType* type_;
@@ -304,7 +333,7 @@ private:
 	using VDocSetType = tsl::sparse_set<uint32_t, hash_vdoc, equal_vdoc, std::allocator<uint32_t>, tsl::sh::power_of_two_growth_policy<2>,
 										tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
 
-	static constexpr uint32_t kEmptyVDocId = 0;
+	static_assert(kEmptyVDocId == FtMergeStatuses::kEmpty);
 
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
 
@@ -327,14 +356,69 @@ private:
 	IdSetPlain::Ptr applyCtxTypeAndSelect(DataHolder<VectorType>* d, FtCtx&, FtDSLQuery&& dsl, bool inTransaction, RankSortType,
 										  FtMergeStatuses&& statuses, FtUseExternStatuses useExternSt, const RdxContext& rdxCtx);
 
-	void cleanRemovedVdocs();
 	void commitFulltextImpl();
 	void initConfig(const FTConfig* = nullptr);
 	void initHolder(FTConfig&);
 	void initTermBoosts(FTConfig&);
+	void clearInvertedIndex() {
+		holder_->Clear();
+		deletedDocsSinceOptimization_ = 0;
+	}
 
 	uint32_t getVdocId(IdType rowId) const {
-		return static_cast<size_t>(rowId.ToNumber()) < rowId2Vdoc_.size() ? rowId2Vdoc_[rowId.ToNumber()] : kEmptyVDocId;
+		return static_cast<size_t>(rowId.ToNumber()) < rowId2VdocId_.size() ? rowId2VdocId_[rowId.ToNumber()] : kEmptyVDocId;
+	}
+	void clearVdocSlot(uint32_t vdocId) {
+		const VDocVersion version = vdocMergeInfo_[vdocId].version_;
+		vdocs_[vdocId] = {};
+		vdocMergeInfo_[vdocId] = {};
+		vdocMergeInfo_[vdocId].version_ = version;
+	}
+	void retireVdocSlot(uint32_t vdocId) {
+		const VDocVersion prev = vdocMergeInfo_[vdocId].version_;
+		vdocs_[vdocId] = {};
+		vdocMergeInfo_[vdocId] = {};
+		if (prev >= kMaxVDocVersion) {
+			vdocMergeInfo_[vdocId].version_ = kMaxVDocVersion;
+			++deletedDocsSinceOptimization_;
+			return;
+		}
+		const VDocVersion next = prev + 1;
+		vdocMergeInfo_[vdocId].version_ = next;
+		if (next < kMaxVDocVersion) {
+			freeVdocIds_.push_back(vdocId);
+		}
+		++deletedDocsSinceOptimization_;
+	}
+
+	uint32_t appendVdocSlot() {
+		assertrx_dbg(vdocs_.size() == vdocMergeInfo_.size());
+		ensure_capacity_for_one_more(vdocs_);
+		ensure_capacity_for_one_more(vdocMergeInfo_);
+		vdocs_.resize(vdocs_.size() + 1);
+		vdocMergeInfo_.resize(vdocMergeInfo_.size() + 1);
+		return uint32_t(vdocs_.size() - 1);
+	}
+
+	void addToWordCountSum(const VDocWordCounts& counts) {
+		if (counts.empty()) {
+			return;
+		}
+		if (sumWordsCount_.size() < counts.size()) {
+			sumWordsCount_.resize(counts.size(), 0);
+		}
+		for (size_t i = 0; i < counts.size(); ++i) {
+			sumWordsCount_[i] += counts[i];
+		}
+	}
+	void subFromWordCountSum(const VDocWordCounts& counts) {
+		if (counts.empty()) {
+			return;
+		}
+		assertrx_dbg(sumWordsCount_.size() >= counts.size());
+		for (size_t i = 0; i < counts.size(); ++i) {
+			sumWordsCount_[i] -= counts[i];
+		}
 	}
 
 	template <typename DataType>
@@ -352,18 +436,20 @@ private:
 	RHashMap<std::string, FtIndexFieldPros> ftFields_;
 	std::unique_ptr<FTConfig> cfg_;
 	mutable Mutex mtx_;
+	// Bumped by build() before Unique on mtx_ so background Clean (NonUnique) yields for incremental commit.
+	mutable std::atomic_int32_t cancelCleanCnt_{0};
 
-	std::vector<uint32_t> rowId2Vdoc_;
+	std::vector<uint32_t> rowId2VdocId_;
 	size_t vdocsHeapSize_ = 0;
-
-	uint32_t vdocsIndexed_ = 0;
-	uint32_t removedVdocs_ = 0;
-	size_t vdocsCompactions_ = 0;
 
 	size_t stringsHeapSize_ = 0;
 
 	std::vector<VDoc<StoreType>> vdocs_;
-	std::vector<double> avgWordsCount_;
+	std::vector<VDocMergeInfo> vdocMergeInfo_;
+	std::vector<uint32_t> freeVdocIds_;
+	std::vector<VDocPosting> unindexedVdocs_;
+	std::vector<uint64_t> sumWordsCount_;
+	size_t deletedDocsSinceOptimization_ = 0;
 	VDocSetType vdocSet_;
 };
 

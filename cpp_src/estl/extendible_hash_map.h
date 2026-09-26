@@ -182,7 +182,7 @@ public:
 	bool empty() const noexcept { return !size(); }
 	size_type size() const noexcept { return size_; }
 
-	size_t max_load_factor() const noexcept { return kMaxLoadFactor; }
+	float max_load_factor() const noexcept { return kMaxLoadFactor; }
 
 	template <class... Args>
 	RX_ALWAYS_INLINE std::pair<iterator, bool> emplace(const Key& key, Args&&... value_type_args) {

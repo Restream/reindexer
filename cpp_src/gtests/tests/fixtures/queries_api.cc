@@ -1,4 +1,5 @@
 #include "queries_api.h"
+#include "core/enums.h"
 #include "gtests/tools.h"
 
 using namespace reindexer_tests_tools;
@@ -6,6 +7,7 @@ using namespace reindexer_tests_tools;
 namespace reindexer_tests {
 
 using reindexer::IndexOpts;
+using reindexer::Error;
 
 void QueriesApi::CheckMergeQueriesWithLimit() {
 	Query q = Query{default_namespace}.Merge(Query{joinNs}.Limit(1));
@@ -20,13 +22,13 @@ void QueriesApi::CheckMergeQueriesWithLimit() {
 	EXPECT_FALSE(err.ok());
 	EXPECT_STREQ(err.what(), "Limit and offset in inner merge query is not allowed");
 
-	q = Query{default_namespace}.Merge(Query{joinNs}.Sort(kFieldNameId, false));
+	q = Query{default_namespace}.Merge(Query{joinNs}.Sort(kFieldNameId, SortOrder::Asc));
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
 	EXPECT_STREQ(err.what(), "Sorting in inner merge query is not allowed");  // TODO #1449
 
-	q = Query{default_namespace}.Merge(Query{joinNs}).Sort(kFieldNameId, false);
+	q = Query{default_namespace}.Merge(Query{joinNs}).Sort(kFieldNameId, SortOrder::Asc);
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
@@ -48,13 +50,13 @@ void QueriesApi::CheckMergeQueriesWithLimit() {
 				 "In merge query without sorting all subqueries should contain fulltext or knn with the same metric conditions at the same "
 				 "time: 'not ranked query' VS 'fulltext query'");
 
-	q = Query{default_namespace}.Where(kFieldNameDescription, CondEq, RandString()).Merge(Query{joinNs}).Sort(kFieldNameId, false);
+	q = Query{default_namespace}.Where(kFieldNameDescription, CondEq, RandString()).Merge(Query{joinNs}).Sort(kFieldNameId, SortOrder::Asc);
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
 	EXPECT_STREQ(err.what(), "Sorting in merge query is not implemented yet");	// TODO #1449
 
-	q = Query{default_namespace}.Merge(Query{joinNs}.Where(kFieldNameDescription, CondEq, RandString())).Sort(kFieldNameId, false);
+	q = Query{default_namespace}.Merge(Query{joinNs}.Where(kFieldNameDescription, CondEq, RandString())).Sort(kFieldNameId, SortOrder::Asc);
 	qr.Clear();
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
@@ -64,19 +66,37 @@ void QueriesApi::CheckMergeQueriesWithLimit() {
 	q = Query{default_namespace}.Merge(Query{joinNs}).Limit(10);
 	rt.Select(q, qr);
 	EXPECT_EQ(qr.Count(), 10);
-	EXPECT_EQ(qr.GetMergedNSCount(), 2);
+	EXPECT_EQ(qr.GetNamespacesCount(), 2);
 
 	qr.Clear();
 	q = Query{default_namespace}.Merge(Query{joinNs}).Offset(10);
 	rt.Select(q, qr);
-	EXPECT_EQ(qr.GetMergedNSCount(), 2);
+	EXPECT_EQ(qr.GetNamespacesCount(), 2);
 
 	q = Query{default_namespace}
 			.Where(kFieldNameDescription, CondEq, RandString())
 			.Merge(Query{joinNs}.Where(kFieldNameDescription, CondEq, RandString()));
 	qr.Clear();
 	rt.Select(q, qr);
-	EXPECT_EQ(qr.GetMergedNSCount(), 2);
+	EXPECT_EQ(qr.GetNamespacesCount(), 2);
+
+	bool exceptionCatched = false;
+	try {
+		q = Query{default_namespace}.Merge(Query{default_namespace}.Where(reindexer::kLsnIndexName, CondAny, VariantArray{}));
+	} catch (const std::exception& err) {
+		EXPECT_STREQ(err.what(), "WAL queries cannot be used in merge, join or subquery");
+		exceptionCatched = true;
+	}
+	EXPECT_TRUE(exceptionCatched);
+
+	exceptionCatched = false;
+	try {
+		q = Query{default_namespace}.Where(reindexer::kLsnIndexName, CondAny, VariantArray{}).Merge(Query{default_namespace});
+	} catch (const std::exception& err) {
+		EXPECT_STREQ(err.what(), "WAL queries cannot be used in merge, join or subquery");
+		exceptionCatched = true;
+	}
+	EXPECT_TRUE(exceptionCatched);
 }
 
 void QueriesApi::CheckMergeQueriesWithAggregation() {
@@ -546,22 +566,26 @@ void QueriesApi::CheckSqlQueries() {
 	using namespace std::string_view_literals;
 
 	checkSqlQuery("SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY year DESC LIMIT 10000000"sv,
-				  Query(default_namespace, 0, 10000000).Where(kFieldNameYear, CondGt, 2016).Sort(kFieldNameYear, true));
+				  Query(default_namespace).Limit(10000000).Where(kFieldNameYear, CondGt, 2016).Sort(kFieldNameYear, SortOrder::Desc));
 
-	checkSqlQuery("SELECT ID, Year, Genre FROM test_namespace WHERE genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000"sv,
-				  Query(default_namespace, 0, 10000000).Where(kFieldNameGenre, CondSet, {1, 2, 3}).Sort(kFieldNameYear, true));
+	checkSqlQuery(
+		"SELECT ID, Year, Genre FROM test_namespace WHERE genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000"sv,
+		Query(default_namespace).Limit(10000000).Where(kFieldNameGenre, CondSet, {1, 2, 3}).Sort(kFieldNameYear, SortOrder::Desc));
 
 	const std::string likePattern = RandLikePattern();
-	checkSqlQuery("SELECT ID, Year, Genre FROM test_namespace WHERE name LIKE '"s + likePattern + "' ORDER BY year DESC LIMIT 10000000"s,
-				  Query(default_namespace, 0, 10000000).Where(kFieldNameName, CondLike, likePattern).Sort(kFieldNameYear, true));
+	checkSqlQuery(
+		"SELECT ID, Year, Genre FROM test_namespace WHERE name LIKE '"s + likePattern + "' ORDER BY year DESC LIMIT 10000000"s,
+		Query(default_namespace).Limit(10000000).Where(kFieldNameName, CondLike, likePattern).Sort(kFieldNameYear, SortOrder::Desc));
 
 	checkSqlQuery("SELECT FACET(ID, Year ORDER BY ID DESC ORDER BY Year ASC LIMIT 20 OFFSET 1) FROM test_namespace LIMIT 10000000"sv,
-				  Query(default_namespace, 0, 10000000)
+				  Query(default_namespace)
+					  .Limit(10000000)
 					  .Aggregate(AggFacet, {kFieldNameId, kFieldNameYear}, {{kFieldNameId, true}, {kFieldNameYear, false}}, 20, 1));
 
 	checkSqlQuery("SELECT ID FROM test_namespace WHERE name LIKE '"s + likePattern +
 					  "' AND (genre IN ('1', '2', '3') AND year > '2016' ) OR age IN ('1', '2', '3', '4') LIMIT 10000000"s,
-				  Query(default_namespace, 0, 10000000)
+				  Query(default_namespace)
+					  .Limit(10000000)
 					  .Where(kFieldNameName, CondLike, likePattern)
 					  .OpenBracket()
 					  .Where(kFieldNameGenre, CondSet, {1, 2, 3})
@@ -570,14 +594,16 @@ void QueriesApi::CheckSqlQueries() {
 					  .Or()
 					  .Where(kFieldNameAge, CondSet, {1, 2, 3, 4}));
 
-	checkSqlQuery(fmt::format("SELECT ID FROM test_namespace ORDER BY '{} + {} * 5' DESC LIMIT 10000000", kFieldNameYear, kFieldNameId),
-				  Query(default_namespace, 0, 10000000).Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true));
+	checkSqlQuery(
+		fmt::format("SELECT ID FROM test_namespace ORDER BY '{} + {} * 5' DESC LIMIT 10000000", kFieldNameYear, kFieldNameId),
+		Query(default_namespace).Limit(10000000).Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", SortOrder::Desc));
 
 	checkSqlQuery(fmt::format("SELECT ID FROM test_namespace ORDER BY '{} + {} * 5' DESC ORDER BY '2 * {} / (1 + {})' ASC LIMIT 10000000",
 							  kFieldNameYear, kFieldNameId, kFieldNameGenre, kFieldNameIsDeleted),
-				  Query(default_namespace, 0, 10000000)
-					  .Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true)
-					  .Sort(std::string("2 * ") + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ')', false));
+				  Query(default_namespace)
+					  .Limit(10000000)
+					  .Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", SortOrder::Desc)
+					  .Sort(std::string("2 * ") + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ')', SortOrder::Asc));
 
 	// Checks that SQL queries with DWithin and sort by Distance work and compares the result with the result of corresponding C++ query
 	reindexer::Point point = randPoint(10);
@@ -592,7 +618,7 @@ void QueriesApi::CheckSqlQueries() {
 							  kFieldNamePointNonIndex, toString(distance), kFieldNamePointLinearRTree, pointToSQL(point, true)),
 				  Query(geomNs)
 					  .DWithin(kFieldNamePointNonIndex, point, distance)
-					  .Sort(std::string("ST_Distance(") + kFieldNamePointLinearRTree + ", " + pointToSQL(point) + ')', false));
+					  .Sort(std::string("ST_Distance(") + kFieldNamePointLinearRTree + ", " + pointToSQL(point) + ')', SortOrder::Asc));
 
 	checkSqlQuery(fmt::format("SELECT * FROM {} WHERE {} >= {};", default_namespace, kFieldNameGenre, kFieldNameRate),
 				  Query(default_namespace).WhereBetweenFields(kFieldNameGenre, CondGe, kFieldNameRate));
@@ -646,7 +672,7 @@ void QueriesApi::CheckDslQueries() {
 void QueriesApi::CheckStandardQueries() {
 	using namespace std::string_literals;
 
-	const bool kSortOrders[] = {true, false};
+	const SortOrder kSortOrders[] = {SortOrder::Desc, SortOrder::Asc};
 	const std::string kSortIdxs[] = {""s,
 									 kFieldNameName,
 									 kFieldNameYear,
@@ -657,7 +683,7 @@ void QueriesApi::CheckStandardQueries() {
 
 	if (std::getenv("REINDEXER_FULL_CXX_QUERIES_TEST")) {
 		TEST_COUT << "Running full queries test set" << std::endl;
-		for (const bool sortOrder : kSortOrders) {
+		for (const auto sortOrder : kSortOrders) {
 			for (const auto& sortIdx : kSortIdxs) {
 				for (const std::string& distinct : kDistincts) {
 					CheckStandardQueries(sortOrder, sortIdx, distinct);
@@ -666,17 +692,19 @@ void QueriesApi::CheckStandardQueries() {
 		}
 	} else {
 		TEST_COUT << "Running partial queries test set" << std::endl;
-		const bool sortOrder = randOneOf(kSortOrders);
+		const auto sortOrder = randOneOf(kSortOrders);
 		const std::string& sortIdx = randOneOf(kSortIdxs);
 		const std::string& distinct = randOneOf(kDistincts);
 		CheckStandardQueries(sortOrder, sortIdx, distinct);
 	}
 }
 
-void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx, const std::string& distinct) {
+void QueriesApi::CheckStandardQueries(SortOrder sortOrder, const std::string& sortIdx, const std::string& distinct) {
 	using namespace std::string_literals;
+	const auto invertedSortOrder = sortOrder == SortOrder::Asc ? SortOrder::Desc : SortOrder::Asc;
 	try {
-		TEST_COUT << "DISTINCT '" << distinct << "'; ORDER BY '" << sortIdx << "'; DESC " << std::boolalpha << sortOrder << std::endl;
+		TEST_COUT << "DISTINCT '" << distinct << "'; ORDER BY '" << sortIdx << "'; DESC " << std::boolalpha
+				  << (sortOrder == SortOrder::Desc) << std::endl;
 		[[maybe_unused]] const int randomAge = rand() % 50;
 		[[maybe_unused]] const int randomGenre = rand() % 50;
 		[[maybe_unused]] const int randomGenreUpper = rand() % 100;
@@ -841,9 +869,9 @@ void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
 							 .Where(kFieldNameName, CondRange, {RandString(), RandString()})
-							 .Sort(kFieldNameYear, true)
-							 .Sort(kFieldNameName, false)
-							 .Sort(kFieldNameLocation, true));
+							 .Sort(kFieldNameYear, SortOrder::Desc)
+							 .Sort(kFieldNameName, SortOrder::Asc)
+							 .Sort(kFieldNameLocation, SortOrder::Desc));
 
 		ExecuteAndVerify(Query(default_namespace).Not().Where(kFieldNameYearSparse, CondEq, {Variant{}}));
 
@@ -857,20 +885,20 @@ void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
 							 .Where(kFieldNameName, CondRange, {RandString(), RandString()})
-							 .Sort(kFieldNameGenre, true)
-							 .Sort(kFieldNameActor, false)
-							 .Sort(kFieldNameRate, true)
-							 .Sort(kFieldNameLocation, false));
+							 .Sort(kFieldNameGenre, SortOrder::Desc)
+							 .Sort(kFieldNameActor, SortOrder::Asc)
+							 .Sort(kFieldNameRate, SortOrder::Desc)
+							 .Sort(kFieldNameLocation, SortOrder::Asc));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
 							 .Where(kFieldNameName, CondLike, RandLikePattern())
-							 .Sort(kFieldNameGenre, true)
-							 .Sort(kFieldNameActor, false)
-							 .Sort(kFieldNameRate, true)
-							 .Sort(kFieldNameLocation, false));
+							 .Sort(kFieldNameGenre, SortOrder::Desc)
+							 .Sort(kFieldNameActor, SortOrder::Asc)
+							 .Sort(kFieldNameRate, SortOrder::Desc)
+							 .Sort(kFieldNameLocation, SortOrder::Asc));
 
-		ExecuteAndVerify(Query(default_namespace).Sort(kFieldNameGenre, true, {10, 20, 30}));
+		ExecuteAndVerify(Query(default_namespace).Sort(kFieldNameGenre, SortOrder::Desc, {10, 20, 30}));
 
 		ExecuteAndVerify(
 			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNamePackages, CondAny, VariantArray{}).Sort(sortIdx, sortOrder));
@@ -1092,74 +1120,81 @@ void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
+							 .InnerJoin(Query(joinNs), kFieldNameYear, CondEq, kFieldNameYear)
 							 .Sort(joinNs + '.' + kFieldNameId, sortOrder));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
+							 .InnerJoin(Query(joinNs), kFieldNameYear, CondEq, kFieldNameYear)
 							 .Sort(joinNs + '.' + kFieldNameName, sortOrder));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
+							 .InnerJoin(Query(joinNs), kFieldNameYear, CondEq, kFieldNameYear)
 							 .Sort(joinNs + '.' + kFieldNameId + " * " + joinNs + '.' + kFieldNameGenre +
 									   (sortIdx.empty() || (sortIdx == kFieldNameName) ? "" : (" + " + sortIdx)),
 								   sortOrder));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq,
-										Query(joinNs)
+							 .InnerJoin(Query(joinNs)
 											.Where(kFieldNameId, CondSet, RandIntVector(20, 0, 100))
-											.Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder)));
+											.Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder),
+										kFieldNameYear, CondEq, kFieldNameYear));
 
 		ExecuteAndVerify(
 			TestQuery(default_namespace)
 				.Distinct(distinct)
-				.InnerJoin(kFieldNameYear, kFieldNameYear, CondEq,
-						   Query(joinNs).Where(kFieldNameYear, CondGe, 1925).Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder)));
+				.InnerJoin(Query(joinNs).Where(kFieldNameYear, CondGe, 1925).Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder),
+						   kFieldNameYear, CondEq, kFieldNameYear));
+
 		ExecuteAndVerify(
 			TestQuery(default_namespace)
 				.Distinct(distinct)
-				.InnerJoin(kFieldNameYear, kFieldNameYear, randCond(), Query(joinNs).Where(kFieldNameYear, CondGe, 2000 + rand() % 210)));
+				.InnerJoin(Query(joinNs).Where(kFieldNameYear, CondGe, 2000 + rand() % 210), kFieldNameYear, randCond(), kFieldNameYear));
+
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameYear, kFieldNameYear, randCond(),
-										Query(joinNs).Where(kFieldNameYear, CondLe, 2000 + rand() % 210).Limit(rand() % 10)));
+							 .InnerJoin(Query(joinNs).Where(kFieldNameYear, CondLe, 2000 + rand() % 210).Limit(rand() % 10), kFieldNameYear,
+										randCond(), kFieldNameYear));
+
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
 							 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210) /*.Offset(rand() % 10)*/)
 							 .On(kFieldNameYear, randCond(), kFieldNameYear));
+
 		ExecuteAndVerify(
 			TestQuery(default_namespace).Distinct(distinct).Where(kFieldNameYearSparse, CondEq, std::to_string(2000 + rand() % 60)));
-		ExecuteAndVerify(TestQuery(default_namespace)
-							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameYear, kFieldNameYear, randCond(),
-										Query(joinNs).Where(kFieldNameYear, CondLt, 2000 + rand() % 210).Sort(kFieldNameName, sortOrder)));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameId, kFieldNameId, CondEq,
-										Query(joinNs)
+							 .InnerJoin(Query(joinNs).Where(kFieldNameYear, CondLt, 2000 + rand() % 210).Sort(kFieldNameName, sortOrder),
+										kFieldNameYear, randCond(), kFieldNameYear));
+
+		ExecuteAndVerify(TestQuery(default_namespace)
+							 .Distinct(distinct)
+							 .InnerJoin(Query(joinNs)
 											.Where(kFieldNameRegion, CondSet,
 												   {Variant{rand() % 10}, Variant{rand() % 10}, Variant{rand() % 10}, Variant{rand() % 10},
 													Variant{rand() % 10}})
 											.Where(kFieldNameYear, CondLt, 2000 + rand() % 210)
 											.Where(kFieldNameAge, CondGe, rand() % 30)
 											.Sort(kFieldNameAge, sortOrder)
-											.Limit(3)));
+											.Limit(3),
+										kFieldNameId, CondEq, kFieldNameId));
+
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameId, kFieldNameId, CondEq,
-										Query(joinNs)
+							 .InnerJoin(Query(joinNs)
 											.Where(kFieldNameRegion, CondSet,
 												   {Variant{rand() % 10}, Variant{rand() % 10}, Variant{rand() % 10}, Variant{rand() % 10},
 													Variant{rand() % 10}})
 											.Where(kFieldNameYear, CondLt, 2000 + rand() % 210)
 											.Where(kFieldNameAge, CondGe, rand() % 30)
 											.Sort(kFieldNameYear, sortOrder)
-											.Limit(3)));
+											.Limit(3),
+										kFieldNameId, CondEq, kFieldNameId));
+
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
 							 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210))
@@ -1520,18 +1555,18 @@ void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx
 		ExecuteAndVerify(
 			TestQuery(default_namespace)
 				.Distinct(distinct)
-				.Where(kFieldNameGenre, CondSet, Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
+				.Where(kFieldNameGenre, CondSet, Query(joinNs).Select(kFieldNameGenre).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
 				.Sort(sortIdx, sortOrder));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .Where(Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondGt, 10), CondSet, {10, 20, 30, 40})
+							 .Where(Query(joinNs).Select(kFieldNameGenre).Where(kFieldNameId, CondGt, 10), CondSet, {10, 20, 30, 40})
 							 .Sort(sortIdx, sortOrder));
 
 		ExecuteAndVerify(
 			TestQuery(default_namespace)
 				.Distinct(distinct)
-				.Where(Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondGt, 10).Offset(1), CondSet, {10, 20, 30, 40})
+				.Where(Query(joinNs).Select(kFieldNameGenre).Where(kFieldNameId, CondGt, 10).Offset(1), CondSet, {10, 20, 30, 40})
 				.Sort(sortIdx, sortOrder));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
@@ -1553,7 +1588,7 @@ void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx
 				.Not()
 				.Where(Query(default_namespace).Where(kFieldNameGenre, CondEq, 5), CondAny, reindexer::Variant{})
 				.Or()
-				.Where(kFieldNameGenre, CondSet, Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
+				.Where(kFieldNameGenre, CondSet, Query(joinNs).Select(kFieldNameGenre).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
 				.Not()
 				.OpenBracket()
 				.Where(kFieldNameYear, CondRange, {2001, 2020})
@@ -1582,21 +1617,21 @@ void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
 							 .Where(kCompositeFieldIdTemp, CondEq,
-									Query(default_namespace).Select({kCompositeFieldIdTemp}).Where(kFieldNameId, CondGt, 10))
+									Query(default_namespace).Select(kCompositeFieldIdTemp).Where(kFieldNameId, CondGt, 10))
 							 .Sort(sortIdx, sortOrder));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .Where(Query(default_namespace).Select({kCompositeFieldUuidName}).Where(kFieldNameId, CondGt, 10), CondRange,
+							 .Where(Query(default_namespace).Select(kCompositeFieldUuidName).Where(kFieldNameId, CondGt, 10), CondRange,
 									{VariantArray::Create(nilUuid(), RandString()), VariantArray::Create(randUuid(), RandString())})
 							 .Sort(sortIdx, sortOrder));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
 							 .Where(Query(default_namespace)
-										.Select({kCompositeFieldAgeGenre})
+										.Select(kCompositeFieldAgeGenre)
 										.Where(kFieldNameId, CondGt, 10)
-										.Sort(kCompositeFieldAgeGenre, false)
+										.Sort(kCompositeFieldAgeGenre, SortOrder::Asc)
 										.Limit(10),
 									CondLe, {Variant(VariantArray::Create(rand() % 50, rand() % 50))})
 							 .Sort(sortIdx, sortOrder));
@@ -1614,22 +1649,22 @@ void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx
 		// Multisort with tree index
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query(joinNs).Limit(3))
+							 .InnerJoin(Query(joinNs).Limit(3), kFieldNameId, CondEq, kFieldNameId)
 							 .Sort(kFieldNameGenre, sortOrder)
-							 .Sort(kFieldNameYear, !sortOrder)
+							 .Sort(kFieldNameYear, invertedSortOrder)
 							 .Limit(rand() % 5 + 4));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query(joinNs).Limit(1))
-							 .Sort(kFieldNameGenre, !sortOrder)
+							 .InnerJoin(Query(joinNs).Limit(1), kFieldNameId, CondEq, kFieldNameId)
+							 .Sort(kFieldNameGenre, invertedSortOrder)
 							 .Sort(kFieldNameYear, sortOrder)
 							 .Offset(rand() % 7 + 2)
 							 .Limit(rand() % 5 + 4));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query(joinNs).Limit(1))
+							 .InnerJoin(Query(joinNs).Limit(1), kFieldNameId, CondEq, kFieldNameId)
 							 .Sort(kFieldNameGenre, sortOrder)
 							 .Sort(kFieldNameAge, sortOrder)
 							 .Sort(kFieldNameYear, sortOrder)
@@ -1638,22 +1673,22 @@ void QueriesApi::CheckStandardQueries(bool sortOrder, const std::string& sortIdx
 		// Multisort with hash index
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query(joinNs).Limit(3))
+							 .InnerJoin(Query(joinNs).Limit(3), kFieldNameId, CondEq, kFieldNameId)
 							 .Sort(kFieldNameAge, sortOrder)
-							 .Sort(kFieldNameYear, !sortOrder)
+							 .Sort(kFieldNameYear, invertedSortOrder)
 							 .Limit(rand() % 5 + 4));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query(joinNs).Limit(1))
-							 .Sort(kFieldNameAge, !sortOrder)
+							 .InnerJoin(Query(joinNs).Limit(1), kFieldNameId, CondEq, kFieldNameId)
+							 .Sort(kFieldNameAge, invertedSortOrder)
 							 .Sort(kFieldNameYear, sortOrder)
 							 .Offset(rand() % 7 + 2)
 							 .Limit(rand() % 5 + 4));
 
 		ExecuteAndVerify(TestQuery(default_namespace)
 							 .Distinct(distinct)
-							 .InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query(joinNs).Limit(1))
+							 .InnerJoin(Query(joinNs).Limit(1), kFieldNameId, CondEq, kFieldNameId)
 							 .Sort(kFieldNameEndTime, sortOrder)
 							 .Sort(kFieldNameAge, sortOrder)
 							 .Sort(kFieldNameYear, sortOrder)

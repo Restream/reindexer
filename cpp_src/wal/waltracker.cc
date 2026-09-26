@@ -96,6 +96,23 @@ bool WALTracker::Resize(int64_t sz) {
 }
 
 void WALTracker::Reset() {
+	if (storage_ && storage_->IsValid()) {
+		// WAL writes are async (prefix "W"). GetCursor sees only LSM, so Flush before deleting.
+		storage_->Flush(StorageFlushOpts{});
+		{
+			StorageOpts opts;
+			auto dbIter = storage_->GetCursor(opts);
+			for (dbIter->Seek(kStorageWALPrefix);
+				 dbIter->Valid() &&
+				 dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF\xFF\xFF\xFF")) < 0;
+				 dbIter->Next()) {
+				dbIter.RemoveThisKey(opts);
+			}
+		}
+		// RemoveThisKey may fall back to async, requiring a second Flush before ring clear.
+		storage_->Flush(StorageFlushOpts{});
+	}
+	// If Flush throws, retaining the ring prevents WAL revival from leftovers on reopen.
 	records_.clear();
 	lsnCounter_ = lsn_t(0, lsnCounter_.Server());
 	walOffset_ = 0;
@@ -103,15 +120,6 @@ void WALTracker::Reset() {
 	std::vector<MarkedPackedWALRecord> oldRecords;
 	std::swap(records_, oldRecords);
 	heapSize_ = 0;
-	if (storage_ && storage_->IsValid()) {
-		StorageOpts opts;
-		auto dbIter = storage_->GetCursor(opts);
-		for (dbIter->Seek(kStorageWALPrefix);
-			 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF\xFF\xFF\xFF")) < 0;
-			 dbIter->Next()) {
-			dbIter.RemoveThisKey(opts);
-		}
-	}
 }
 
 void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage& storage) {
@@ -173,7 +181,7 @@ void WALTracker::writeToStorage(lsn_t lsn) {
 		data.PutUInt64(int64_t(lsn));
 		data.Write(std::string_view(reinterpret_cast<char*>(records_[pos].data()), records_[pos].size()));
 
-		storage_->WriteSync(StorageOpts(), key.Slice(), data.Slice());
+		storage_->Write(key.Slice(), data.Slice());
 	}
 }
 

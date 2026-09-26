@@ -63,7 +63,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.16.0")
+set (REINDEXER_VERSION_DEFAULT "5.17.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -119,7 +119,9 @@ endif()
 
 if(MSVC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP -MD")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP -MD /bigobj")
+  # /Zc:__cplusplus: MSVC otherwise reports __cplusplus as 199711L, and Bison's
+  # variant skeleton takes the C++98 copy path (unique_ptr is not copyable).
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP -MD /bigobj /Zc:__cplusplus")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wfloat-equal -Werror -Wswitch-enum")
@@ -163,7 +165,7 @@ elseif(WITH_TSAN)
   set(EXTRA_FLAGS "-fsanitize=thread")
   add_definitions(-DREINDEX_WITH_TSAN)
 elseif(WITH_UBSAN)
-  set(EXTRA_FLAGS "-fsanitize=undefined")
+  set(EXTRA_FLAGS "-fsanitize=undefined,float-divide-by-zero")
   add_definitions(-DREINDEX_WITH_UBSAN)
 endif()
 if(WITH_GCOV)
@@ -186,6 +188,10 @@ endif()
 
 if(WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG OR WITH_UBSAN)
   add_definitions(-DREINDEX_WITH_DEBUG_ASSERT=1)
+endif()
+
+if(WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG)
+  add_definitions(-DRX_WITH_SLOW_RUNTIME=1)
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXTRA_FLAGS}")
@@ -216,6 +222,27 @@ file (
   ${REINDEXER_SOURCE_PATH}/events/*
   ${REINDEXER_SOURCE_PATH}/updates/*
 )
+
+list(FILTER SRCS EXCLUDE REGEX ".*\\.(y|l)$")
+
+# The generated parser is committed. Regenerate it explicitly after changing expression.y.
+find_program(BISON_EXECUTABLE bison)
+if(BISON_EXECUTABLE)
+  add_custom_target(regenerate_expression_parser
+    COMMAND ${CMAKE_COMMAND} -E env bash ${REINDEXER_SOURCE_PATH}/core/function/regenerate_expression_parser.sh ${BISON_EXECUTABLE}
+    DEPENDS ${REINDEXER_SOURCE_PATH}/core/function/expression.y
+            ${REINDEXER_SOURCE_PATH}/core/function/regenerate_expression_parser.sh
+    COMMENT "Regenerating expression parser"
+  )
+endif()
+
+# Bison-generated parser triggers warnings under -Werror (GCC/Clang).
+if(NOT MSVC)
+  set_source_files_properties(
+    ${REINDEXER_SOURCE_PATH}/core/function/expression_yy.cc
+    PROPERTIES COMPILE_FLAGS "-Wno-switch-enum -Wno-old-style-cast -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-zero-as-null-pointer-constant"
+  )
+endif()
 
 string (REGEX REPLACE "([][+*()^])" "\\\\\\1" BASE_CORO_CONTEXT_DIR "${REINDEXER_SOURCE_PATH}/vendor/koishi")
 set(CONTEXT_ASM_DIR "${BASE_CORO_CONTEXT_DIR}/fcontext/asm")

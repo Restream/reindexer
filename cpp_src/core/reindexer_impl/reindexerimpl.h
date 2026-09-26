@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <thread>
@@ -28,10 +29,9 @@
 
 namespace reindexer {
 
-class IClientsStats;
+class ConstQueryImpl;
+
 struct ClusterControlRequestData;
-class IUpdatesObserverV3;
-class UpdatesFilters;
 class EmbeddersCache;
 struct SQLSuggestions;
 
@@ -82,6 +82,7 @@ public:
 	};
 
 	using CallbackMap = fast_hash_map<CallbackT::Key, CallbackT::Value, CallbackT::Hash>;
+	enum class [[nodiscard]] NamespacePresence : int8_t { Open, ClosedWithStorage, Absent };
 
 	ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities, CallbackMap&& proxyCallbacks);
 
@@ -108,13 +109,13 @@ public:
 	Error Insert(std::string_view nsName, Item& item, LocalQueryResults&, const RdxContext& ctx);
 	Error Update(std::string_view nsName, Item& item, const RdxContext& ctx);
 	Error Update(std::string_view nsName, Item& item, LocalQueryResults&, const RdxContext& ctx);
-	Error Update(const Query& query, LocalQueryResults& result, const RdxContext& ctx);
+	Error Update(ConstQueryImpl query, LocalQueryResults& result, const RdxContext& ctx);
 	Error Upsert(std::string_view nsName, Item& item, const RdxContext& ctx);
 	Error Upsert(std::string_view nsName, Item& item, LocalQueryResults&, const RdxContext& ctx);
 	Error Delete(std::string_view nsName, Item& item, const RdxContext& ctx);
 	Error Delete(std::string_view nsName, Item& item, LocalQueryResults&, const RdxContext& ctx);
-	Error Delete(const Query& query, LocalQueryResults& result, const RdxContext& ctx);
-	Error Select(const Query& query, LocalQueryResults& result, const RdxContext& ctx);
+	Error Delete(ConstQueryImpl query, LocalQueryResults& result, const RdxContext& ctx);
+	Error Select(ConstQueryImpl query, LocalQueryResults& result, const RdxContext& ctx);
 	Item NewItem(std::string_view nsName, const RdxContext& ctx);
 
 	LocalTransaction NewTransaction(std::string_view nsName, const RdxContext& ctx);
@@ -127,6 +128,7 @@ public:
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, SQLSuggestions& suggestions, const RdxContext& ctx);
 	Error GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2& state, const RdxContext& ctx) noexcept;
+	Error GetNamespacePresence(std::string_view nsName, NamespacePresence& presence, const RdxContext& ctx) noexcept;
 	Error SetClusterOperationStatus(std::string_view nsName, const ClusterOperationStatus& status, const RdxContext& ctx) noexcept;
 	Error GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot, const RdxContext& ctx) noexcept;
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch, const RdxContext& ctx) noexcept;
@@ -286,7 +288,7 @@ private:
 					   const RdxContext& ctx) noexcept;
 	void getLeaderDsn(DSN& dsn, unsigned short serverId, const cluster::RaftInfo& info);
 	Error insertDontUpdateSystemNS(std::string_view nsName, Item& item, const RdxContext& ctx);
-	FilterNsNamesT detectFilterNsNames(const Query& q);
+	FilterNsNamesT detectFilterNsNames(ConstQueryImpl q);
 	StatsLocker::StatsLockT syncSystemNamespaces(std::string_view sysNsName, const FilterNsNamesT&, const RdxContext& ctx);
 	void createSystemNamespaces();
 	void handleDropANNCacheAction(const gason::JsonNode& action, const RdxContext& ctx);
@@ -353,13 +355,13 @@ private:
 
 	template <concepts::OneOf<Query, JoinedQuery> Q>
 	void embedNestedQueries(const Query& q, const std::vector<Q>& nestedQueries, std::invocable<Query&, size_t, Q&&> auto replacer,
-							const RdxContext& ctx, std::optional<Query>& queryCopy, functions::PrecomputedValues& precomputedValues);
+							const RdxContext& ctx, std::optional<Query>& queryCopy);
 
-	std::optional<Query> embedQuery(const Query& query, const RdxContext& ctx, functions::PrecomputedValues& precomputedValues);
+	std::optional<Query> embedQuery(ConstQueryImpl query, const RdxContext& ctx, functions::PrecomputedValues& precomputedValues);
 
 	template <QueryType TP>
-	Error modifyQ(const Query& query, LocalQueryResults& result, const RdxContext& rdxCtx,
-				  void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, const Query&, const NsContext&,
+	Error modifyQ(ConstQueryImpl query, LocalQueryResults& result, const RdxContext& rdxCtx,
+				  void (NamespaceImpl::*fn)(LocalQueryResults&, UpdatesContainer&, ConstQueryImpl, const NsContext&,
 											const functions::PrecomputedValues&));
 	void maskingAsyncConfig(LocalQueryResults& result) const;
 

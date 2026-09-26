@@ -6,6 +6,8 @@
 #include <rocksdb/db.h>
 #include <rocksdb/iterator.h>
 #include <rocksdb/slice.h>
+#include <cerrno>
+#include <cstring>
 #include "tools/fsops.h"
 
 namespace reindexer {
@@ -14,7 +16,6 @@ namespace datastorage {
 using namespace std::string_view_literals;
 
 constexpr auto kStorageNotInitialized = "Storage is not initialized"sv;
-constexpr auto kLostDirName = "lost"sv;
 
 static void toWriteOptions(const StorageOpts& opts, rocksdb::WriteOptions& wopts) noexcept { wopts.sync = opts.IsSync(); }
 
@@ -47,16 +48,16 @@ Error RocksDbStorage::Open(const std::string& path, const StorageOpts& opts) {
 }
 
 void RocksDbStorage::Destroy(const std::string& path) {
-	std::ignore = fs::RmDirAll(fs::JoinPath(path, std::string(kLostDirName)));
-
 	rocksdb::Options options;
 	options.create_if_missing = true;
 	db_.reset();
 	rocksdb::Status status = rocksdb::DestroyDB(path.c_str(), options);
-	fprintf(stderr, "reindexer error: unable to remove RocksDB's storage: %s, %s. Trying to remove files using backup mechanism...\n",
-			path.c_str(), status.ToString().c_str());
-	if (fs::RmDirAll(path) != 0) {
-		fprintf(stderr, "reindexer error: unable to remove RocksDB's storage: %s, %s", path.c_str(), strerror(errno));
+	if (!status.ok()) {
+		fprintf(stderr, "reindexer error: unable to remove RocksDB's storage: %s, %s. Trying to remove files using backup mechanism...\n",
+				path.c_str(), status.ToString().c_str());
+	}
+	if (fs::RmDirAll(path) != 0 && errno != ENOENT) {
+		fprintf(stderr, "reindexer error: unable to remove RocksDB's storage: %s, %s\n", path.c_str(), strerror(errno));
 	}
 }
 

@@ -946,7 +946,7 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		ExecAndVerify(t)
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
-		Where("id", reindexer.LE, newTestQuery(DB, namespace).AggregateAvg("id").Where("id", reindexer.LT, mkID(rand.Int()%5000+5))).
+		Where("id", reindexer.LE, newTestQuery(DB, namespace).AggregateAvg("id").Where("id", reindexer.LT, mkID(rand.Int()%1500+3001))).
 		ExecAndVerify(t)
 
 	if !testComposite {

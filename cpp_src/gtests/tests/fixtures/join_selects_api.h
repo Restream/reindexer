@@ -3,6 +3,8 @@
 #include <gmock/gmock.h>
 #include <map>
 #include <sstream>
+#include <string_view>
+#include <tuple>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/nsselecter/joins/item_context.h"
@@ -17,6 +19,8 @@
 #include "tools/serilize/wrserializer.h"
 
 namespace reindexer_tests {
+
+using reindexer::Variant;
 
 class [[nodiscard]] JoinSelectsApi : public ReindexerApi {
 protected:
@@ -135,7 +139,7 @@ protected:
 	}
 
 	void RemoveLastAuthors(int32_t count) {
-		VariantArray idsToRemove;
+		reindexer::VariantArray idsToRemove;
 		idsToRemove.reserve(std::min(size_t(count), authorsIds.size()));
 		auto rend = authorsIds.rbegin() + std::min(size_t(count), authorsIds.size());
 		for (auto ait = authorsIds.rbegin(); ait != rend; ++ait) {
@@ -325,7 +329,7 @@ protected:
 		rt.UpsertJSON(reindexer::kConfigNamespace, ser.Slice());
 	}
 
-	void TurnOnJoinCache(const std::string& nsName) {
+	void TurnOnJoinCache(const std::string& nsName, std::string_view mode = "on") {
 		reindexer::WrSerializer ser;
 		reindexer::JsonBuilder jb(ser);
 
@@ -334,7 +338,7 @@ protected:
 		auto ns = nsArray.Object();
 		ns.Put("namespace", nsName.c_str());
 		ns.Put("log_level", "none");
-		ns.Put("join_cache_mode", "on");
+		ns.Put("join_cache_mode", mode);
 		ns.Put("start_copy_policy_tx_size", 10000);
 		ns.End();
 		nsArray.End();
@@ -423,7 +427,7 @@ protected:
 			EXPECT_EQ(err.code(), expectedCode) << sql;
 			EXPECT_THAT(err.what(), testing::ContainsRegex(expectedRegex)) << sql;
 		}
-		EXPECT_THROW(const Query q = Query::FromSQL(sql), Error) << sql;
+		EXPECT_THROW(std::ignore = Query::FromSQL(sql), Error) << sql;
 	}
 
 	static std::string addQuotes(const std::string& str) {

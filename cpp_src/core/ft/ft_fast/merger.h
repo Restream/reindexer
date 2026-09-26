@@ -11,6 +11,7 @@ namespace ft {
 struct [[nodiscard]] MergerDocumentData {
 	MergerDocumentData() noexcept = default;
 	explicit MergerDocumentData(PositionsVector&& positions, float r) noexcept : nextTermPositions(std::move(positions)), rank(r) {}
+	explicit MergerDocumentData(PosType position, float r) : rank(r) { nextTermPositions.emplace_back(position); }
 	explicit MergerDocumentData(float r) noexcept : rank(r) {}
 	MergerDocumentData(MergerDocumentData&&) noexcept = default;
 	MergerDocumentData& operator=(MergerDocumentData&&) noexcept = default;
@@ -41,6 +42,7 @@ public:
 	constexpr static bool kWithAreas = kWithRegularAreas || kWithDebugAreas;
 
 	using InfoType = typename MergeDataType::InfoType;
+	static constexpr MergeOffsetT kNotInMerge = std::numeric_limits<MergeOffsetT>::max();
 
 	Merger(size_t totalNumDocs, FTConfig* cfg, FtMergeStatuses::Statuses& docsExcluded, size_t fieldSize, int maxAreasInDoc,
 		   bool inTransaction, const RdxContext& ctx)
@@ -56,10 +58,16 @@ public:
 	MergeDataType Merge(QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType, const DocsStatsGetter& docsStatsGetter);
 
 private:
-	const InfoType& getMergeData(index_t docId) const noexcept { return mergeData_[idoffsets_[docId]]; }
-	const MergerDocumentData& getMergeDataExtended(index_t docId) const noexcept { return mergeDataExtended_[idoffsets_[docId]]; }
-	InfoType& getMergeData(index_t docId) noexcept { return mergeData_[idoffsets_[docId]]; }
-	MergerDocumentData& getMergeDataExtended(index_t docId) noexcept { return mergeDataExtended_[idoffsets_[docId]]; }
+	MergeOffsetT mergeDataIdx(uint32_t vdocId) const noexcept {
+		assertrx_dbg(useIdoffsets_);
+		assertrx_dbg(vdocId < idoffsets_.size());
+		assertrx_dbg(idoffsets_[vdocId] != kNotInMerge);
+		return idoffsets_[vdocId];
+	}
+	const InfoType& getMergeData(uint32_t vdocId) const noexcept { return mergeData_[mergeDataIdx(vdocId)]; }
+	const MergerDocumentData& getMergeDataExtended(uint32_t vdocId) const noexcept { return mergeDataExtended_[mergeDataIdx(vdocId)]; }
+	InfoType& getMergeData(uint32_t vdocId) noexcept { return mergeData_[mergeDataIdx(vdocId)]; }
+	MergerDocumentData& getMergeDataExtended(uint32_t vdocId) noexcept { return mergeDataExtended_[mergeDataIdx(vdocId)]; }
 
 	template <typename Bm25Type, typename DocsStatsGetter>
 	void init(QueryMergeData<IdCont>& queryMergeData, uint32_t maxMergedSize, const DocsStatsGetter& docsStatsGetter) {
@@ -68,7 +76,8 @@ private:
 		mergeData_.reserve(maxMergedDocs_);
 
 		if (!queryMergeData.Trivial()) {
-			idoffsets_.resize(totalNumDocs_, maxMergedDocs_);
+			useIdoffsets_ = true;
+			idoffsets_.assign(totalNumDocs_, kNotInMerge);
 		}
 
 		if (!queryMergeData.Simple()) {
@@ -160,10 +169,10 @@ private:
 
 	size_t numDocs() const noexcept { return mergeData_.size(); }
 
-	bool docAdded(int docId) const noexcept { return !idoffsets_.empty() && idoffsets_[docId] != maxMergedDocs_; }
+	bool docAdded(uint32_t vdocId) const noexcept { return useIdoffsets_ && idoffsets_[vdocId] != kNotInMerge; }
 
-	void addDoc(int docId, float proc, uint8_t field) {
-		InfoType info{.id = IdType::FromNumber(docId), .proc = proc, .field = field};
+	void addDoc(uint32_t vdocId, float proc, uint8_t field) {
+		InfoType info{.id = IdType::FromNumber(vdocId), .proc = proc, .field = field};
 
 		if constexpr (kWithAreas) {
 			auto& area = mergeData_.vectorAreas.emplace_back();
@@ -172,22 +181,35 @@ private:
 		}
 
 		mergeData_.push_back(std::move(info));
-		if (!idoffsets_.empty()) {
-			idoffsets_[docId] = mergeData_.size() - 1;
+		if (useIdoffsets_) {
+			idoffsets_[vdocId] = MergeOffsetT(mergeData_.size() - 1);
 		}
 	}
 
-	void addDoc(int docId, float proc, uint8_t field, PositionsVector&& positions, TermRankInfo& subtermInf,
+	void addDoc(uint32_t vdocId, float proc, uint8_t field, PositionsVector&& positions, TermRankInfo& subtermInf,
 				const std::u16string& pattern) {
-		addDoc(docId, proc, field);
+		addDoc(vdocId, proc, field);
 		addLastDocAreas(positions, proc, subtermInf, pattern);
 		mergeDataExtended_.emplace_back(std::move(positions), proc);
 	}
 
-	void addDocAreas(int docId, const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
+	void addDoc(uint32_t vdocId, float proc, uint8_t field, PosType position, TermRankInfo& subtermInf, const std::u16string& pattern) {
+		addDoc(vdocId, proc, field);
+		addLastDocAreas(position, proc, subtermInf, pattern);
+		mergeDataExtended_.emplace_back(position, proc);
+	}
+
+	void addDocAreas(uint32_t vdocId, const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
 		if constexpr (kWithAreas) {
-			auto& md = getMergeData(docId);
+			auto& md = getMergeData(vdocId);
 			addAreas(md.areaIndex, positions, rank, termInf, pattern);
+		}
+	}
+
+	void addDocAreas(uint32_t vdocId, PosType position, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
+		if constexpr (kWithAreas) {
+			auto& md = getMergeData(vdocId);
+			addAreas(md.areaIndex, position, rank, termInf, pattern);
 		}
 	}
 
@@ -195,6 +217,28 @@ private:
 		if constexpr (kWithAreas) {
 			size_t lastAreaIdx = mergeData_.vectorAreas.size() - 1;
 			addAreas(lastAreaIdx, positions, rank, termInf, pattern);
+		}
+	}
+
+	void addLastDocAreas(PosType position, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
+		if constexpr (kWithAreas) {
+			size_t lastAreaIdx = mergeData_.vectorAreas.size() - 1;
+			addAreas(lastAreaIdx, position, rank, termInf, pattern);
+		}
+	}
+
+	void addAreas(size_t areaIdx, PosType pos, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
+		if constexpr (kWithRegularAreas) {
+			auto& docAreas = mergeData_.vectorAreas[areaIdx];
+			std::ignore = docAreas.AddWord(Area(pos.pos(), pos.pos() + 1, pos.arrayIdx()), pos.field(), rank, maxAreasInDoc_);
+			docAreas.UpdateRank(rank);
+		} else if constexpr (kWithDebugAreas) {
+			auto& docAreas = mergeData_.vectorAreas[areaIdx];
+			utf16_to_utf8(pattern, const_cast<std::string&>(termInf.ftDslTerm));
+			std::ignore =
+				docAreas.AddWord(AreaDebug(pos.pos(), pos.pos() + 1, pos.arrayIdx(), termInf.ToString(), AreaDebug::PhraseMode::None),
+								 pos.field(), termInf.termRank, -1);
+			docAreas.UpdateRank(termInf.termRank);
 		}
 	}
 
@@ -222,21 +266,25 @@ private:
 
 	void switchToNextWord() {
 		for (auto& mdExt : mergeDataExtended_) {
-			if (mdExt.nextTermPositions.size()) {
+			if (!mdExt.nextTermPositions.empty()) {
 				mdExt.lastTermPositions.swap(mdExt.nextTermPositions);
-				mdExt.nextTermPositions.resize(0);
+				mdExt.nextTermPositions.clear();
 				mdExt.rank = 0;
 			}
 		}
 	}
 
-	void calcTermBitmask(const TermResults<IdCont>& term, BitsetType& termMask);
-	void excludeTermFromBitmask(const TermResults<IdCont>& term, BitsetType& mask);
+	template <typename DocsStatsGetter>
+	void calcTermBitmask(const TermResults<IdCont>& term, BitsetType& termMask, const DocsStatsGetter& docsStatsGetter);
+	template <typename DocsStatsGetter>
+	void excludeTermFromBitmask(const TermResults<IdCont>& term, BitsetType& mask, const DocsStatsGetter& docsStatsGetter);
 
+	template <typename DocsStatsGetter>
 	void calcTermScores(TermResults<IdCont>& term, const BitsetType& restrictingMask, BitsetType& termMask,
-						std::vector<uint16_t>& docsScore);
+						std::vector<uint16_t>& docsScore, const DocsStatsGetter& docsStatsGetter);
 
-	void buildRestrictingBitmask(QueryMergeData<IdCont>& queryData);
+	template <typename DocsStatsGetter>
+	void buildRestrictingBitmask(QueryMergeData<IdCont>& queryData, const DocsStatsGetter& docsStatsGetter);
 
 	template <typename DocsStatsGetter>
 	void preselectMostRelevantDocs(QueryMergeData<IdCont>& queryData, const DocsStatsGetter& docsStatsGetter);
@@ -281,8 +329,8 @@ private:
 	std::vector<MergerDocumentData> mergeDataExtended_;
 	uint32_t maxMergedDocs_ = 0;
 	std::vector<MergeOffsetT> idoffsets_;
+	bool useIdoffsets_ = false;
 	BitsetType restrictingMask_;
-	bool needToCheckRemoved_ = true;
 
 	bool inTransaction_ = false;
 	const RdxContext& ctx_;

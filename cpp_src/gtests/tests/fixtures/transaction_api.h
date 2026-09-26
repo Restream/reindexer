@@ -6,6 +6,8 @@
 
 namespace reindexer_tests {
 
+using reindexer::Variant;
+
 class [[nodiscard]] TransactionApi : public ReindexerApi {
 public:
 	struct [[nodiscard]] DataRange {
@@ -37,7 +39,7 @@ public:
 	}
 
 	void SetTxCopyConfigs([[maybe_unused]] Reindexer& reindexer) {
-#if defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_TSAN)
+#if RX_WITH_SLOW_RUNTIME
 		QueryResults qr;
 		auto err = reindexer.Update(Query(reindexer::kConfigNamespace)
 										.Set("namespaces[*].tx_size_to_always_copy", 8000)
@@ -45,7 +47,7 @@ public:
 										.Where("type", CondEq, "namespaces"),
 									qr);
 		ASSERT_TRUE(err.ok()) << err.what();
-#endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_TSAN)
+#endif	// RX_WITH_SLOW_RUNTIME
 	}
 
 	Item MakeItem(Reindexer& reindexer, int id, const std::string& baseData) {

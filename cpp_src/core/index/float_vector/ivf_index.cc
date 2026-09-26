@@ -540,7 +540,9 @@ FloatVectorIndex::StorageCacheWriteResult IvfIndex::WriteIndexCache(WrSerializer
 		assertf_dbg(false, "Error: '{}'", err.what());	// Don't expect this error in test scenarios
 		res.err = std::move(err);
 	} catch (const std::exception& err) {
-		assertf_dbg(false, "Error: '{}'", err.what());	// Don't expect this error in test scenarios
+		if (std::string_view(err.what()).find(faiss::kSavingCanceledMsg) == std::string_view::npos) {
+			assertf_dbg(false, "Error: '{}'", err.what());	// Don't expect this error in test scenarios
+		}
 		res.err = Error{errLogic, err.what()};
 	} catch (...) {
 		assertrx_dbg(false);  // Don't expect this error in test scenarios

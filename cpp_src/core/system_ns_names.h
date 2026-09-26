@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string_view>
-
 namespace reindexer {
 
 constexpr std::string_view kPerfStatsNamespace = "#perfstats";

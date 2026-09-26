@@ -3,8 +3,8 @@
 #include "client/itemimpl.h"
 #include "client/namespace.h"
 #include "client/rpcclient.h"
-#include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/p_string.h"
+#include "core/query/query_impl.h"
 #include "net/cproto/coroclientconnection.h"
 
 namespace reindexer::client {
@@ -51,10 +51,11 @@ Error CoroTransaction::Modify(Query&& query, lsn_t lsn) {
 	if (!i_.rpcClient_) {
 		return Error(errLogic, "Connection pointer in transaction is nullptr.");
 	}
+	QueryImpl queryImpl = reindexer::Impl(query);
 	WrSerializer ser;
 	auto caps = i_.rpcClient_->conn_.GetBindingCapabilities();
-	query.Serialize(ser, Normal, caps.GetQueryFormat());
-	switch (query.type_) {
+	queryImpl.Serialize(ser, Normal, caps.GetQueryFormat());
+	switch (queryImpl.Type()) {
 		case QueryUpdate: {
 			return i_.rpcClient_->conn_
 				.Call({cproto::kCmdUpdateQueryTx, i_.requestTimeout_, i_.execTimeout_, lsn, -1, ShardingKeyType::NotSetShard, nullptr,
@@ -72,7 +73,7 @@ Error CoroTransaction::Modify(Query&& query, lsn_t lsn) {
 		case QuerySelect:
 		case QueryTruncate:
 		default:
-			return Error(errParams, "Incorrect query type in transaction modify {}", int(query.type_));
+			return Error(errParams, "Incorrect query type in transaction modify {}", int(queryImpl.Type()));
 	}
 }
 
@@ -117,9 +118,12 @@ Error CoroTransaction::addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 
 		CoroQueryResults qr;
 		InternalRdxContext ctx = InternalRdxContext{}.WithTimeout(i_.execTimeout_).WithShardId(ShardingKeyType::ProxyOff, false);
-		err = i_.rpcClient_->Select(Query(i_.ns_->name).Limit(0), qr, ctx);
-		if (!err.ok()) {
-			return Error(errLogic, "Can't update TagsMatcher");
+		{
+			const auto query = Query(i_.ns_->name).Limit(0);
+			err = i_.rpcClient_->Select(query, qr, ctx);
+			if (!err.ok()) {
+				return Error(errLogic, "Can't update TagsMatcher");
+			}
 		}
 
 		auto nsTm = i_.ns_->GetTagsMatcher();

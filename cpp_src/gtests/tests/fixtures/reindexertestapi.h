@@ -1,11 +1,17 @@
 #pragma once
 #include <gtest/gtest.h>
+#include <chrono>
 #include <memory>
 #include "client/reindexer.h"
 #include "core/namespace/namespacestat.h"
+#include "core/query/query_impl.h"
 #include "core/reindexer.h"
 
 namespace reindexer_tests {
+
+using reindexer::Query;
+using reindexer::QueryImpl;
+using reindexer::Error;
 
 struct [[nodiscard]] IndexDeclaration {
 	std::string_view indexName;
@@ -19,7 +25,7 @@ struct [[nodiscard]] ReplicationTestState {
 	reindexer::lsn_t lsn;
 	reindexer::lsn_t nsVersion;
 	reindexer::lsn_t ownLsn;
-	reindexer::PayloadChecksum dataHash;
+	uint64_t checksum = 0;
 	size_t dataCount = 0;
 	std::optional<int> tmVersion;
 	std::optional<int> tmStatetoken;
@@ -64,16 +70,19 @@ public:
 	void Update(std::string_view ns, ItemType& item, QueryResultsType&);
 	void UpsertJSON(std::string_view ns, std::string_view json);
 	void InsertJSON(std::string_view ns, std::string_view json);
-	void Update(const reindexer::Query& q, QueryResultsType& qr);
-	size_t Update(const reindexer::Query& q);
-	QueryResultsType UpdateQR(const reindexer::Query& q);
-	void Select(const reindexer::Query& q, QueryResultsType& qr) const;
-	QueryResultsType Select(const reindexer::Query& q) const;
+	void Update(const Query& q, QueryResultsType& qr);
+	Error UpdateErr(const Query& q, QueryResultsType& qr);
+	size_t Update(const Query& q);
+	QueryResultsType UpdateQR(const Query& q);
+	void Select(const Query& q, QueryResultsType& qr) const;
+	Error SelectErr(const Query& q, QueryResultsType& qr) const;
+	Error SelectWithTimeout(const Query& q, QueryResultsType& qr, std::chrono::milliseconds timeout) const;
+	QueryResultsType Select(const Query& q) const;
 	QueryResultsType ExecSQL(std::string_view sql) const;
 	void Delete(std::string_view ns, ItemType& item);
 	void Delete(std::string_view ns, ItemType& item, QueryResultsType&);
-	size_t Delete(const reindexer::Query& q);
-	void Delete(const reindexer::Query& q, QueryResultsType& qr);
+	size_t Delete(const Query& q);
+	void Delete(const Query& q, QueryResultsType& qr);
 	std::vector<reindexer::NamespaceDef> EnumNamespaces(reindexer::EnumNamespacesOpts opts);
 	void RenameNamespace(std::string_view srcNsName, const std::string& dstNsName);
 	TransactionType NewTransaction(std::string_view ns);

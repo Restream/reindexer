@@ -21,7 +21,7 @@ inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept {
 	return std::sqrt((p1.X() - p2.X()) * (p1.X() - p2.X()) + (p1.Y() - p2.Y()) * (p1.Y() - p2.Y()));
 }
 
-reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, int index,
+reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, const reindexer::TagsMatcher& tagsMatcher, int index,
 									   std::string_view column) {
 	reindexer::VariantArray values;
 	if (index == IndexValueType::SetByJsonPath) {
@@ -35,7 +35,7 @@ reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reindexer::Ta
 	return values;
 }
 
-reindexer::VariantArray getJsonFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, std::string_view json) {
+reindexer::VariantArray getJsonFieldValues(reindexer::ConstPayload pv, const reindexer::TagsMatcher& tagsMatcher, std::string_view json) {
 	reindexer::VariantArray values;
 	pv.GetByJsonPath(json, tagsMatcher, values, reindexer::KeyValueType::Undefined{});
 	return values;
@@ -70,7 +70,7 @@ VariantArray SortExpression::GetJoinedFieldValues(IdType rowId, const joins::Nam
 	std::reference_wrapper<const PayloadType> pt =
 		std::visit(overloaded{[](const joins::PreSelect::Values& values) noexcept { return std::cref(values.payloadType); },
 							  [&js]<concepts::OneOf<IdSetPlain, SelectIteratorContainer> T>(const T&) noexcept {
-								  return std::cref(js.rightNs_->payloadType_);
+								  return std::cref(js.rightNs_->payloadType());
 							  }},
 				   js.PreSelectResults().payload);
 	const ConstPayload pv{pt, getJoinedValue(rowId, joinResults, joinItemsProcessors, nsIdx)};
@@ -79,7 +79,7 @@ VariantArray SortExpression::GetJoinedFieldValues(IdType rowId, const joins::Nam
 		TagsMatcher tm =
 			std::visit(overloaded{[](const joins::PreSelect::Values& values) noexcept { return std::cref(values.tagsMatcher); },
 								  [&js]<concepts::OneOf<IdSetPlain, SelectIteratorContainer> T>(const T&) noexcept {
-									  return std::cref(js.rightNs_->tagsMatcher_);
+									  return std::cref(js.rightNs_->tagsMatcher());
 								  }},
 					   js.PreSelectResults().payload);
 		pv.GetByJsonPath(column, tm, values, KeyValueType::Undefined{});
@@ -104,7 +104,7 @@ SortExprFuncs::JoinedIndex& SortExpression::GetJoinedIndex() {
 	return container_[0].Value<JoinedIndex>();
 }
 
-double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+double SortExprFuncs::Index::GetValue(ConstPayload pv, const TagsMatcher& tagsMatcher) const {
 	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column);
 	if (values.empty()) {
 		throw Error(errQueryExec, "Empty field in sort expression: {}", column);
@@ -115,7 +115,7 @@ double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher)
 	return values[0].As<double>();
 }
 
-double SortExprFuncs::ProxiedField::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+double SortExprFuncs::ProxiedField::GetValue(ConstPayload pv, const TagsMatcher& tagsMatcher) const {
 	const VariantArray values = getJsonFieldValues(pv, tagsMatcher, json);
 	if (values.empty()) {
 		throw Error(errQueryExec, "Empty field in sort expression: {}", json);
@@ -126,12 +126,12 @@ double SortExprFuncs::ProxiedField::GetValue(ConstPayload pv, TagsMatcher& tagsM
 	return values[0].As<double>();
 }
 
-double DistanceFromPoint::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+double DistanceFromPoint::GetValue(ConstPayload pv, const TagsMatcher& tagsMatcher) const {
 	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column);
 	return distance(static_cast<Point>(values), point);
 }
 
-double ProxiedDistanceFromPoint::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+double ProxiedDistanceFromPoint::GetValue(ConstPayload pv, const TagsMatcher& tagsMatcher) const {
 	const VariantArray values = getJsonFieldValues(pv, tagsMatcher, json);
 	return distance(static_cast<Point>(values), point);
 }
@@ -154,19 +154,19 @@ double DistanceJoinedIndexFromPoint::GetValue(IdType rowId, const joins::Namespa
 	return distance(static_cast<Point>(values), point);
 }
 
-double DistanceBetweenIndexes::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+double DistanceBetweenIndexes::GetValue(ConstPayload pv, const TagsMatcher& tagsMatcher) const {
 	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index1, column1);
 	const VariantArray values2 = getFieldValues(pv, tagsMatcher, index2, column2);
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 }
 
-double ProxiedDistanceBetweenFields::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+double ProxiedDistanceBetweenFields::GetValue(ConstPayload pv, const TagsMatcher& tagsMatcher) const {
 	const VariantArray values1 = getJsonFieldValues(pv, tagsMatcher, json1);
 	const VariantArray values2 = getJsonFieldValues(pv, tagsMatcher, json2);
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 }
 
-double DistanceBetweenIndexAndJoinedIndex::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher, IdType rowId,
+double DistanceBetweenIndexAndJoinedIndex::GetValue(ConstPayload pv, const TagsMatcher& tagsMatcher, IdType rowId,
 													const joins::NamespaceResults& joinResults,
 													std::span<const joins::ItemsProcessor> joinItemsProcessors) const {
 	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index, column);
@@ -187,13 +187,13 @@ double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::N
 	std::reference_wrapper<const PayloadType> pt =
 		std::visit(overloaded{[](const joins::PreSelect::Values& values) noexcept { return std::cref(values.payloadType); },
 							  [&js]<concepts::OneOf<IdSetPlain, SelectIteratorContainer> T>(const T&) noexcept {
-								  return std::cref(js.rightNs_->payloadType_);
+								  return std::cref(js.rightNs_->payloadType());
 							  }},
 				   js.PreSelectResults().payload);
 	const ConstPayload pv{pt, SortExpression::getJoinedValue(rowId, joinResults, joinItemsProcessors, nsIdx)};
 	TagsMatcher tm = std::visit(overloaded{[](const joins::PreSelect::Values& values) noexcept { return std::cref(values.tagsMatcher); },
 										   [&js]<concepts::OneOf<IdSetPlain, SelectIteratorContainer> T>(const T&) noexcept {
-											   return std::cref(js.rightNs_->tagsMatcher_);
+											   return std::cref(js.rightNs_->tagsMatcher());
 										   }},
 								js.PreSelectResults().payload);
 	VariantArray values1;
@@ -222,6 +222,9 @@ constexpr static estl::Charset kIndexNameSyms{'a', 'b', 'c', 'd', 'e', 'f', 'g',
 											  'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
 											  'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+', '"'};
 
+static std::string_view rightNsName(const JoinedQuery& jq) noexcept { return JoinedImpl(jq).RightNsName(); }
+static std::string_view rightNsName(const auto& ip) noexcept { return ip.RightNsName(); }
+
 template <typename T>
 static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, std::span<T> joinItemsProcessors, std::string_view fullExpr) {
 	auto pos = expr.data();
@@ -245,10 +248,10 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, std::span<
 
 		++pos;
 		joinItemsProcessorIt = std::find_if(joinItemsProcessors.begin(), joinItemsProcessors.end(),
-											[namespaceName](const T& js) { return iequals(namespaceName, js.RightNsName()); });
+											[namespaceName](const T& js) { return iequals(namespaceName, rightNsName(js)); });
 		if (joinItemsProcessorIt != joinItemsProcessors.end()) {
 			if (std::find_if(joinItemsProcessorIt + 1, joinItemsProcessors.end(), [namespaceName](const T& js) {
-					return iequals(namespaceName, js.RightNsName());
+					return iequals(namespaceName, rightNsName(js));
 				}) != joinItemsProcessors.end()) {
 				throwParseError(fullExpr, pos - fullExpr.data(),
 								fmt::format("Sorting by namespace which has been joined more than once: '{}'", namespaceName));
@@ -692,7 +695,7 @@ static double CalcSortHash(IdType rowId, uint32_t seed, uint32_t shardIdHash) no
 
 double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv,
 								 const joins::NamespaceResults* joinedResults, std::span<const joins::ItemsProcessor> js, RankT rank,
-								 TagsMatcher& tagsMatcher, uint32_t shardIdHash) {
+								 const TagsMatcher& tagsMatcher, uint32_t shardIdHash) {
 	assertrx_throw(it != end);
 	assertrx_throw(it->operation.op == OpPlus);
 	double totalResult = 0.0;
@@ -765,7 +768,7 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 }
 
 double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv, RankT rank,
-										TagsMatcher& tagsMatcher, uint32_t shardIdHash) {
+										const TagsMatcher& tagsMatcher, uint32_t shardIdHash) {
 	assertrx(it != end);
 	assertrx(it->operation.op == OpPlus);
 	double totalResult = 0.0;
@@ -815,7 +818,7 @@ std::string ProxiedSortExpression::getJsonPath(std::string_view columnName, int 
 		return std::string(columnName);
 	} else {
 		assertrx_throw(idxNo >= 0);
-		const auto& payloadType = *ns.payloadType_;
+		const auto& payloadType = *ns.payloadType();
 		assertrx_throw(idxNo < payloadType.NumFields());
 		const auto& jsons = payloadType.Field(idxNo).JsonPaths();
 		assertrx_throw(jsons.size() == 1);
@@ -866,7 +869,7 @@ void SortExpression::PrepareSortIndex(std::string& column, int& indexNo, const N
 	assertrx_throw(!column.empty());
 	indexNo = IndexValueType::SetByJsonPath;
 	if (ns.tryGetIndexByNameOrJsonPath(column, indexNo)) {
-		const auto& index = *ns.indexes_[indexNo];
+		const auto& index = *ns.indexes()[indexNo];
 		if (isRanked) {
 			if (!index.IsFloatVector() && !IsFullText(index.Type())) {
 				throw Error(errQueryExec, "Ordering by rank allowed by fulltext or float vector index only: '{}'", column);
@@ -875,7 +878,7 @@ void SortExpression::PrepareSortIndex(std::string& column, int& indexNo, const N
 			throw Error(errQueryExec, "Ordering by float vector index is not allowed: '{}'", column);
 		}
 		if (index.Opts().IsSparse()) {
-			assertrx_dbg(indexNo < ns.indexes_.firstCompositePos());
+			assertrx_dbg(indexNo < ns.indexes().firstCompositePos());
 			const auto& fields = index.Fields();
 			assertrx_dbg(fields.getJsonPathsLength() == 1);
 			column = fields.getJsonPath(0);
@@ -1299,15 +1302,15 @@ Reranker SortExpression::ToReranker(const NamespaceImpl& ns, Desc desc) const {
 			}
 		}
 	}
-	assertrx_throw(size_t(idxNo1) < ns.indexes_.size());
-	assertrx_throw(size_t(idxNo2) < ns.indexes_.size());
-	if (ns.indexes_[idxNo1]->IsFloatVector()) {
-		if (!ns.indexes_[idxNo2]->IsFulltext()) {
+	assertrx_throw(size_t(idxNo1) < ns.indexes().size());
+	assertrx_throw(size_t(idxNo2) < ns.indexes().size());
+	if (ns.indexes()[idxNo1]->IsFloatVector()) {
+		if (!ns.indexes()[idxNo2]->IsFulltext()) {
 			ThrowNonReranker();
 		}
 		return {RerankerLinear{k1, default1, k2, default2, c}, desc};
 	} else {
-		if (!ns.indexes_[idxNo1]->IsFulltext() || !ns.indexes_[idxNo2]->IsFloatVector()) {
+		if (!ns.indexes()[idxNo1]->IsFulltext() || !ns.indexes()[idxNo2]->IsFloatVector()) {
 			ThrowNonReranker();
 		}
 		return {RerankerLinear{k2, default2, k1, default1, c}, desc};

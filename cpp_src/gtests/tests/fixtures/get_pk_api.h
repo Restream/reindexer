@@ -3,7 +3,9 @@
 #include <gtest/gtest.h>
 #include <memory>
 
+#include "core/query/query_impl.h"
 #include "core/reindexer.h"
+#include "estl/expected.h"
 #include "estl/fast_hash_map.h"
 #include "fmt/printf.h"
 #include "gtests/tests/gtest_cout.h"
@@ -80,19 +82,17 @@ public:
 		return item;
 	}
 
-	std::tuple<Error, QueryResults> Select(const Query& query, bool print = false) {
-		typedef std::tuple<Error, QueryResults> ResultType;
-
+	reindexer::Expected<QueryResults> Select(const Query& query, bool print = false) {
 		QueryResults qres;
 		Error err = db_->Select(query, qres);
 		if (!err.ok()) {
-			return ResultType(err, QueryResults{});
+			return reindexer::Unexpected(err);
 		}
 
 		if (print) {
-			printQueryResults(query.NsName(), qres);
+			printQueryResults(Impl(query).NsName(), qres);
 		}
-		return ResultType(err, std::move(qres));
+		return qres;
 	}
 
 protected:

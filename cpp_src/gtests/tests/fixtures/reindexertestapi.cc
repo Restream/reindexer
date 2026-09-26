@@ -1,6 +1,5 @@
 #include "reindexertestapi.h"
 #include <thread>
-#include "core/cjson/tagsmatcher.h"
 #include "core/system_ns_names.h"
 #include "gtests/tests/gtest_cout.h"
 #include "utf8cpp/utf8/checked.h"
@@ -188,33 +187,48 @@ void ReindexerTestApi<DB>::InsertJSON(std::string_view ns, std::string_view json
 }
 
 template <typename DB>
-void ReindexerTestApi<DB>::Update(const reindexer::Query& q, QueryResultsType& qr) {
-	auto err = reindexer->WithTimeout(kBasicTimeout).Update(q, qr);
-	ASSERT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryUpdate);
+Error ReindexerTestApi<DB>::UpdateErr(const Query& q, QueryResultsType& qr) {
+	return reindexer->WithTimeout(kBasicTimeout).Update(q, qr);
 }
 
 template <typename DB>
-size_t ReindexerTestApi<DB>::Update(const reindexer::Query& q) {
+void ReindexerTestApi<DB>::Update(const Query& q, QueryResultsType& qr) {
+	auto err = UpdateErr(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what() << "; " << Impl(q).GetSQL(QueryUpdate);
+}
+
+template <typename DB>
+size_t ReindexerTestApi<DB>::Update(const Query& q) {
 	QueryResultsType qr;
 	Update(q, qr);
 	return qr.Count();
 }
 
 template <typename DB>
-typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::UpdateQR(const reindexer::Query& q) {
+typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::UpdateQR(const Query& q) {
 	QueryResultsType qr;
 	Update(q, qr);
 	return qr;
 }
 
 template <typename DB>
-void ReindexerTestApi<DB>::Select(const reindexer::Query& q, QueryResultsType& qr) const {
-	auto err = reindexer->WithTimeout(kBasicTimeout).Select(q, qr);
+void ReindexerTestApi<DB>::Select(const Query& q, QueryResultsType& qr) const {
+	auto err = SelectErr(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL();
 }
 
 template <typename DB>
-typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::Select(const reindexer::Query& q) const {
+Error ReindexerTestApi<DB>::SelectErr(const Query& q, QueryResultsType& qr) const {
+	return SelectWithTimeout(q, qr, kBasicTimeout);
+}
+
+template <typename DB>
+Error ReindexerTestApi<DB>::SelectWithTimeout(const Query& q, QueryResultsType& qr, std::chrono::milliseconds timeout) const {
+	return reindexer->WithTimeout(timeout).Select(q, qr);
+}
+
+template <typename DB>
+typename ReindexerTestApi<DB>::QueryResultsType ReindexerTestApi<DB>::Select(const Query& q) const {
 	QueryResultsType qr;
 	Select(q, qr);
 	return qr;
@@ -243,17 +257,17 @@ void ReindexerTestApi<DB>::Delete(std::string_view ns, ItemType& item, QueryResu
 }
 
 template <typename DB>
-size_t ReindexerTestApi<DB>::Delete(const reindexer::Query& q) {
+size_t ReindexerTestApi<DB>::Delete(const Query& q) {
 	QueryResultsType qr;
 	auto err = reindexer->WithTimeout(kBasicTimeout).Delete(q, qr);
-	EXPECT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryDelete);
+	EXPECT_TRUE(err.ok()) << err.what() << "; " << Impl(q).GetSQL(QueryDelete);
 	return qr.Count();
 }
 
 template <typename DB>
-void ReindexerTestApi<DB>::Delete(const reindexer::Query& q, QueryResultsType& qr) {
+void ReindexerTestApi<DB>::Delete(const Query& q, QueryResultsType& qr) {
 	auto err = reindexer->WithTimeout(kBasicTimeout).Delete(q, qr);
-	EXPECT_TRUE(err.ok()) << err.what() << "; " << q.GetSQL(QueryDelete);
+	EXPECT_TRUE(err.ok()) << err.what() << "; " << Impl(q).GetSQL(QueryDelete);
 }
 
 template <typename DB>
@@ -292,19 +306,17 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 	{
 		Query qr = Query(kMemStatsNamespace).Where("name", CondEq, ns);
 		QueryResultsType res;
-		auto err = reindexer->WithTimeout(kBasicTimeout).Select(qr, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		Select(qr, res);
 		for (auto it : res) {
 			WrSerializer ser;
-			err = it.GetJSON(ser, false);
+			auto err = it.GetJSON(ser, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			gason::JsonParser parser;
 			auto root = parser.Parse(ser.Slice());
 			state.lsn.FromJSON(root["replication"]["last_lsn_v2"]);
 
 			state.dataCount = root["replication"]["data_count"].As<int64_t>();
-			state.dataHash.hashV1 = root["replication"]["data_hash"].As<uint64_t>();
-			state.dataHash.hashV2 = root["replication"]["checksum"].As<uint64_t>();
+			state.checksum = root["replication"]["checksum"].As<uint64_t>();
 			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
 			state.updateUnixNano = root["replication"]["updated_unix_nano"].As<uint64_t>();
 			try {
@@ -320,7 +332,7 @@ ReplicationTestState ReindexerTestApi<DB>::GetReplicationState(std::string_view 
 #if 0
 			std::ostringstream os;
 			os << "\n"
-			   << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount << " dataHash = " << state.dataHash
+			   << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount << " checksum = " << state.checksum
 			   << " [" << ser.Slice() << "]\n"
 			   << std::endl;
 			TestCout() << os.str();

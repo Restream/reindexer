@@ -3,6 +3,7 @@
 #include <memory>
 #include "client/reindexer.h"
 #include "cluster/config.h"
+#include "core/query/query_impl.h"
 #include "estl/condition_variable.h"
 #include "estl/fast_hash_map.h"
 #include "estl/mutex.h"
@@ -27,7 +28,7 @@ public:
 	explicit RoutingStrategy(const cluster::ShardingConfig& config);
 	~RoutingStrategy() = default;
 
-	std::pair<ShardIDsContainer, Variant> GetHostsIdsKeyPair(const Query&) const;
+	std::pair<ShardIDsContainer, Variant> GetHostsIdsKeyPair(ConstQueryImpl) const;
 	std::pair<int, Variant> GetHostIdKeyPair(std::string_view ns, const Item&) const;
 	ShardIDsContainer GetHostsIds(std::string_view ns) const { return keys_.GetShardsIds(ns); }
 	ShardIDsContainer GetHostsIds() const { return keys_.GetShardsIds(); }
@@ -36,7 +37,7 @@ public:
 	int GetDefaultHost(std::string_view ns) const { return keys_.GetDefaultHost(ns); }
 
 private:
-	bool getHostIdForQuery(const Query&, int& currentId, Variant& shardKey) const;
+	bool getHostIdForQuery(ConstQueryImpl, int& currentId, Variant& shardKey) const;
 	ShardingKeys keys_;
 };
 
@@ -117,11 +118,11 @@ public:
 	std::pair<int, Variant> GetShardIdKeyPair(std::string_view ns, const Item& item) const {
 		return routingStrategy_.GetHostIdKeyPair(ns, item);
 	}
-	std::pair<ShardIDsContainer, Variant> GetShardIdKeyPair(const Query& q) const { return routingStrategy_.GetHostsIdsKeyPair(q); }
+	std::pair<ShardIDsContainer, Variant> GetShardIdKeyPair(ConstQueryImpl q) const { return routingStrategy_.GetHostsIdsKeyPair(q); }
 	std::shared_ptr<client::Reindexer> GetShardConnection(std::string_view ns, int shardId, Error& status);
 
 	ConnectionsPtr GetShardsConnections(std::string_view ns, int shardId, Error& status) RX_REQUIRES(!m_);
-	ConnectionsPtr GetShardsConnectionsWithId(const Query& q, Error& status) RX_REQUIRES(!m_);
+	ConnectionsPtr GetShardsConnectionsWithId(ConstQueryImpl q, Error& status) RX_REQUIRES(!m_);
 	ConnectionsPtr GetShardsConnections(Error& status) RX_REQUIRES(!m_) { return GetShardsConnections("", -1, status); }
 	ConnectionsPtr GetAllShardsConnections(Error& status);
 	ShardConnection GetShardConnectionWithId(std::string_view ns, const Item& item, Error& status) {

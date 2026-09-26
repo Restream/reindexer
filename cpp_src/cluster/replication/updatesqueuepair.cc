@@ -14,6 +14,13 @@ typename UpdatesQueuePair<T>::Pair UpdatesQueuePair<T>::GetQueue(const Namespace
 	const size_t hash = token.hash();
 	Pair result;
 	shared_lock<MtxT> lck(mtx_);
+	if (token.empty()) {
+		// DB-level records (sharding config, NodeNetworkCheck) go to the sync cluster queue only.
+		if (syncQueue_->IsEnabled()) {
+			result.sync = syncQueue_;
+		}
+		return result;
+	}
 	if (syncQueue_->TokenIsInWhiteList(token, hash)) {
 		result.sync = syncQueue_;
 	}
@@ -54,6 +61,9 @@ std::pair<Error, bool> UpdatesQueuePair<T>::PushAsync(UpdatesContainerT&& data) 
 	std::shared_ptr<QueueT> shard;
 	{
 		std::string_view token(data[0].NsName());
+		if (token.empty()) {
+			return std::make_pair(Error(), false);
+		}
 		const HashT h;
 		const size_t hash = h(token);
 		shared_lock<MtxT> lck(mtx_);

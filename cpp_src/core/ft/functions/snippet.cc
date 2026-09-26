@@ -170,6 +170,10 @@ void Snippet::buildResult(RecalcZoneHelper& recalcZoneHelper, const h_vector<std
 	// resultString = preDelim_ + with_area_str + data_str_before + marker_before + zone_str + marker_after + data_strAfter + postDelim_
 	Area snippetAreaPrev;
 	zonesList_.clear<false>();
+	if (areas.empty()) {
+		resultString.append(data);
+		return;
+	}
 
 	for (const auto& area : areas) {
 		Areas a = recalcZoneHelper.template RecalcZoneToOffset<Areas>(area);
@@ -214,6 +218,10 @@ void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const h_
 	Area snippetAreaPrev;
 	Area snippetAreaPrevChar;
 	zonesList_.clear<false>();
+	if (areas.empty()) {
+		resultString.append(data);
+		return;
+	}
 
 	for (const auto& area : areas) {
 		AreasEx a = recalcZoneHelper.template RecalcZoneToOffset<AreasEx>(area);
@@ -237,7 +245,7 @@ void Snippet::buildResultWithPrefix(RecalcZoneHelper& recalcZoneHelper, const h_
 	addSnippet(resultString, data, snippetAreaPrev, snippetAreaPrevChar);
 }
 
-bool Snippet::Process(ItemRef& res, PayloadType& plType, const FtFuncStruct& func, std::vector<key_string>& stringsHolder) {
+bool Snippet::Process(ItemRef& res, const PayloadType& plType, const FtFuncStruct& func, std::vector<key_string>& stringsHolder) {
 	if (!func.ctx) {
 		return false;
 	}

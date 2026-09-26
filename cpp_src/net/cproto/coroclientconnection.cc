@@ -209,6 +209,7 @@ CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uin
 		snappy::Compress(data.data(), data.length(), &compressedBuffer_);
 		ser.Reset(sizeof(hdr));
 		ser.Write(compressedBuffer_);
+		releaseScratchIfOversized(compressedBuffer_);
 	}
 	assertrx(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
 	reinterpret_cast<CProtoHeader*>(ser.Buf())->len = ser.Len() - sizeof(hdr);
@@ -283,6 +284,7 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 		auto written = conn_.async_write(buf, err);
 		auto toWrite = buf.size();
 		buf.clear();
+		releaseScratchIfOversized(buf);
 		if (err != 0) {
 			// TODO: handle reconnects
 			if (err > 0) {
@@ -407,11 +409,13 @@ void CoroClientConnection::writerRoutine() {
 			// disconnected
 			handleFatalErrorFromWriter(Error(errNetwork, "Write error: {}", err > 0 ? strerror(err) : "Connection closed"));
 			buf.clear();
+			releaseScratchIfOversized(buf);
 			continue;
 		}
 		assertrx(written == buf.size());
 		(void)written;
 		buf.clear();
+		releaseScratchIfOversized(buf);
 	}
 }
 
@@ -421,6 +425,8 @@ void CoroClientConnection::readerRoutine() {
 	buf.reserve(kReadBufReserveSize);
 	std::string uncompressed;
 	do {
+		releaseScratchIfOversized(buf);
+		releaseScratchIfOversized(uncompressed);
 		buf.resize(sizeof(CProtoHeader));
 		int err = 0;
 		auto read = conn_.async_read(buf, sizeof(CProtoHeader), err);

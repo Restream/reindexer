@@ -3,7 +3,7 @@
 #include "core/item.h"
 #include "core/itemimpl.h"
 #include "core/payload/payloadtype.h"
-#include "core/query/query.h"
+#include "core/query/query_impl.h"
 #include "transaction.h"
 
 namespace reindexer {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace reindexer {
@@ -23,10 +24,16 @@ public:
 		return clamp(rawValue(maxIterations, itemsCount, offset, limit));
 	}
 
-	static size_t EstimateBatchSize(size_t accepted, size_t presented, size_t needed) {
+	static size_t EstimateBatchSize(size_t accepted, size_t presented, size_t needed) noexcept {
 		const size_t remaining = accepted >= needed ? 1 : needed - accepted;
 		const double amplification = double(presented) / std::max(size_t(1), accepted);
-		return clamp(amplification * remaining);
+		const double value = amplification * double(remaining);
+		// Saturate before the integer cast: a value outside the size_t range is undefined, and the
+		// batch is capped at kMaxEfBatch anyway.
+		if (!std::isfinite(value) || value >= double(kMaxEfBatch)) [[unlikely]] {
+			return kMaxEfBatch;
+		}
+		return clamp(size_t(value));
 	}
 
 private:

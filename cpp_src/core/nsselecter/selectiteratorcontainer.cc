@@ -22,16 +22,18 @@
 #include "querypreprocessor.h"
 #include "sorting_heuristics.h"
 #include "tools/logger.h"
+#include "tools/timetools.h"
 #include "tools/use_pmr.h"
 
 #ifdef USE_PMR
 #include <memory_resource>
+#include "core/query/query_impl.h"
 #endif	// USE_PMR
 
 namespace reindexer {
 
 constexpr std::string_view kForbiddenCondsErrorMsg =
-	"Conditions IN(with empty parameter list), IS NULL, KNN and DWithin are not allowed for equal position";
+	"Conditions IN(with empty parameter list), IS NULL, ALLSET, KNN and DWithin are not allowed for equal position";
 
 void SelectIteratorContainer::SortByCost(int expectedIterations) {
 	std::ignore = markBracketsHavingJoins(begin(), end());
@@ -218,7 +220,7 @@ void SelectIteratorContainer::CheckFirstQuery() {
 
 SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry& qe, const NamespaceImpl& ns, StrictMode strictMode) {
 	if (!qe.HaveEmptyField()) {
-		return ComparatorNotIndexed{qe.FieldName(), qe.Condition(), qe.Values(), ns.payloadType_, qe.Fields().getTagsPath(0),
+		return ComparatorNotIndexed{qe.FieldName(), qe.Condition(), qe.Values(), ns.payloadType(), qe.Fields().getTagsPath(0),
 									qe.Distinct()};
 	} else if (strictMode == StrictModeNone) {
 		// Ignore non-index/non-existing fields
@@ -238,7 +240,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry& qe
 template <bool left>
 void SelectIteratorContainer::processField(FieldsComparator& fc, const QueryField& field, const NamespaceImpl& ns) const {
 	if (field.IsFieldIndexed()) {
-		auto& index = ns.indexes_[field.IndexNo()];
+		auto& index = ns.indexes()[field.IndexNo()];
 		if constexpr (left) {
 			fc.SetLeftField(field.Fields(), field.FieldType(), index->Opts().IsArray(), index->Opts().collateOpts_);
 		} else {
@@ -262,7 +264,7 @@ h_vector<SelectKeyResults, 2> SelectIteratorContainer::processQueryEntry(const Q
 																		 FtFunction::Ptr& ftFunc, RanksHolder::Ptr& ranks,
 																		 reindexer::IsRanked& isRanked, StrictMode strictMode,
 																		 QueryPreprocessor& qPreproc, const RdxContext& rdxCtx) {
-	auto& index = ns.indexes_[qe.IndexNo()];
+	auto& index = ns.indexes()[qe.IndexNo()];
 	isRanked = reindexer::IsRanked(index->IsFulltext() && !qe.IsDistinctOnly());
 
 	Index::SelectContext selectCtx;
@@ -294,7 +296,7 @@ h_vector<SelectKeyResults, 2> SelectIteratorContainer::processQueryEntry(const Q
 	selectCtx.opts.inTransaction = ctx_->inTransaction;
 	selectCtx.opts.strictMode = strictMode;
 	if (ftFunc && isRanked) {
-		selectCtx.selectFuncCtx.emplace(*ftFunc, ranks, qe.IndexNo());
+		selectCtx.selectFuncCtx.emplace(*ftFunc, ranks, qe.IndexNo(), NsFtFuncInterface{ns});
 	}
 
 	if (index->Opts().GetCollateMode() == CollateUTF8 || isRanked) {
@@ -323,10 +325,10 @@ void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry& jqe, OpType
 	assertrx_throw(ctx_);
 	assertrx_throw(!ctx_->joinItemsProcessors.empty());
 	auto& js = ctx_->joinItemsProcessors[jqe.joinIndex];
-	if (js.JoinQuery().joinEntries_.empty()) {
+	if (js.JoinQuery().JoinEntries().empty()) {
 		throw Error(errQueryExec, "Join without ON conditions");
 	}
-	if (js.JoinQuery().joinEntries_[0].Operation() == OpOr) {
+	if (js.JoinQuery().JoinEntries()[0].Operation() == OpOr) {
 		throw Error(errQueryExec, "The first ON condition cannot have OR operation");
 	}
 	if (js.Type() != InnerJoin && js.Type() != OrInnerJoin) {
@@ -413,7 +415,7 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults&& select
 template <typename EqCompT>
 void SelectIteratorContainer::bindFieldEqualPositions(const NamespaceImpl& ns, const EqualPositions& eqPos, const QueryEntries& queries,
 													  const EqualPosition_t& eqPosStr) {
-	EqCompT cmp{ns.payloadType_, &ns.tagsMatcher_};
+	EqCompT cmp{ns.payloadType(), &ns.tagsMatcher()};
 	bool containsNonExistingFields = false;
 	for (size_t i = 0, size = eqPos.size(); i < size; ++i) {
 		const QueryEntry& qe = queries.Get<QueryEntry>(eqPos[i]);
@@ -422,6 +424,7 @@ void SelectIteratorContainer::bindFieldEqualPositions(const NamespaceImpl& ns, c
 			case CondDWithin:
 			case CondKnn:
 			case CondEmpty:
+			case CondAllSet:
 				throw Error(errQueryExec, kForbiddenCondsErrorMsg);
 			case CondEq:
 			case CondSet:
@@ -436,14 +439,13 @@ void SelectIteratorContainer::bindFieldEqualPositions(const NamespaceImpl& ns, c
 			case CondGt:
 			case CondGe:
 			case CondRange:
-			case CondAllSet:
 				break;
 			default:
 				throw Error(errLogic, "Unknown condition value for equal position: {}", int(cond));
 		}
 		if (qe.IsFieldIndexed()) {
 			const size_t idxNo = qe.IndexNo();
-			if (IsComposite(ns.indexes_[idxNo]->Type())) [[unlikely]] {
+			if (IsComposite(ns.indexes()[idxNo]->Type())) [[unlikely]] {
 				throw Error(errParams, "Equal positions doesn't support 'composite' values");
 			}
 		}
@@ -460,8 +462,8 @@ void SelectIteratorContainer::bindFieldEqualPositions(const NamespaceImpl& ns, c
 				cmp.BindField(qe.FieldName(), qe.Fields().getFieldsPath(0), qe.Values(), qe.Condition());
 			} else {
 				const size_t idxNo = qe.Fields()[0];
-				assertrx_throw(idxNo < ns.indexes_.size());
-				cmp.BindField(qe.FieldName(), idxNo, qe.Values(), qe.Condition(), ns.indexes_[idxNo]->Opts().collateOpts_);
+				assertrx_throw(idxNo < ns.indexes().size());
+				cmp.BindField(qe.FieldName(), idxNo, qe.Values(), qe.Condition(), ns.indexes()[idxNo]->Opts().collateOpts_);
 			}
 		} else {
 			cmp.BindField(qe.FieldName(), qe.Values(), qe.Condition(), eqPosStr[i]);
@@ -542,7 +544,7 @@ h_vector<SelectIteratorContainer::EqualPositions, 2> SelectIteratorContainer::pr
 				int indNo = 0;
 				if (ns.tryGetIndexByJsonPath(*it, indNo, EnableMultiJsonPath_True)) {
 					res += '(';
-					res += ns.indexes_[indNo]->Name();
+					res += ns.indexes()[indNo]->Name();
 					res += ')';
 				}
 				return res;
@@ -633,7 +635,9 @@ h_vector<SelectIteratorContainer::EqualPositions, 2> SelectIteratorContainer::pr
 		for (size_t j = begin, next; j < end; j = next) {
 			next = queries.Next(j);
 			queries.Visit(
-				j, Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry, QueryFunctionEntry>{},
+				j,
+				Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse, AlwaysTrue, MultiDistinctQueryEntry, QueryFunctionEntry,
+					 QueryArithmeticEntry>{},
 				[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) { throw_as_assert; },
 				[](const KnnQueryEntry&) { throw Error(errQueryExec, kForbiddenCondsErrorMsg); },
 				[&](const QueryEntry& qEntry) {
@@ -697,7 +701,7 @@ SelectKeyResult SelectIteratorContainer::processKnnQueryEntry(const QueryPreproc
 	assertrx_throw(ctx_);
 	assertrx_throw(!ranks);
 
-	const FloatVectorIndex& idx = static_cast<const FloatVectorIndex&>(*ns.indexes_[qe.IndexNo()]);
+	const FloatVectorIndex& idx = static_cast<const FloatVectorIndex&>(*ns.indexes()[qe.IndexNo()]);
 	ranks = make_intrusive<RanksHolder>();
 	if (streamingKnnMode_) {
 		const size_t offset = qPreproc.Start();
@@ -716,7 +720,7 @@ SelectKeyResult SelectIteratorContainer::processKnnQueryEntry(const QueryPreproc
 
 		IndexIterator::Ptr streamingIterator = make_intrusive<StreamingKnnIndexIterator>(
 			idx, StreamingKnnParams{.ef = ef, .needed = needed}, qe.Value(), std::span{ns.items_.data(), ns.items_.size()},
-			ns.indexes_[qe.IndexNo()]->GetSelectPerfCounter(), ns.enablePerfCounters_, rdxCtx);
+			ns.indexes()[qe.IndexNo()]->GetSelectPerfCounter(), ns.enablePerfCounters_, rdxCtx);
 		SelectKeyResult res;
 		res.emplace_back(SingleSelectKeyResult(std::move(streamingIterator)));
 		return res;
@@ -728,7 +732,7 @@ SelectKeyResult SelectIteratorContainer::processKnnQueryEntry(const QueryPreproc
 }
 
 KnnRawResult SelectIteratorContainer::processKnnQueryEntryRaw(const KnnQueryEntry& qe, const NamespaceImpl& ns, const RdxContext& rdxCtx) {
-	const FloatVectorIndex& idx = static_cast<const FloatVectorIndex&>(*ns.indexes_[qe.IndexNo()]);
+	const FloatVectorIndex& idx = static_cast<const FloatVectorIndex&>(*ns.indexes()[qe.IndexNo()]);
 	if (qe.Format() != KnnQueryEntry::DataFormatType::Vector) {
 		logFmt(LogWarning, "KnnQueryEntry data format is not 'vector'. Create empty KNN result");
 		return KnnRawResult(EmptyKnnRawResult{}, VectorMetric::L2);
@@ -740,8 +744,8 @@ KnnRawResult SelectIteratorContainer::processKnnQueryEntryRaw(const KnnQueryEntr
 void SelectIteratorContainer::PrepareIteratorsForSelectLoop(QueryPreprocessor& qPreproc, unsigned sortId, QueryRankType queryRankType,
 															RankSortType rankSortType, const NamespaceImpl& ns, FtFunction::Ptr& ftFunc,
 															RanksHolder::Ptr& ranks, const RdxContext& rdxCtx) {
-	const auto containRanked =
-		prepareIteratorsForSelectLoop(qPreproc, 0, qPreproc.Size(), sortId, queryRankType, rankSortType, ns, ftFunc, ranks, rdxCtx);
+	const auto containRanked = prepareIteratorsForSelectLoop(qPreproc, 0, qPreproc.Size(), sortId, queryRankType, rankSortType, ns, ftFunc,
+															 ranks, rdxCtx, qPreproc.ExecutionNowNsec());
 	(void)containRanked;
 }
 
@@ -763,7 +767,7 @@ void SelectIteratorContainer::Clear(bool preserveDistincts) {
 					for (size_t bracketEnd = i + bracket.Size(); i < bracketEnd; ++i) {
 						Visit(i,
 							  Skip<SelectIteratorsBracket, JoinSelectIterator, AlwaysFalse, AlwaysTrue, KnnRawSelectResult,
-								   FunctionsComparator>{},
+								   FunctionsComparator, ArithmeticComparator>{},
 							  [](const concepts::OneOf<SelectIterator, ComparatorsPackT> auto& e) {
 								  if (e.IsDistinct()) [[unlikely]] {
 									  throw Error(errLogic, "Unexpected distinct inside bracket");
@@ -797,7 +801,7 @@ void SelectIteratorContainer::throwIfNotFt(const QueryEntries& queries, size_t i
 		throwORbetweenRankedAndNotRanked();
 	}
 	const QueryEntry& qe = queries.Get<QueryEntry>(i);
-	if (!qe.IsFieldIndexed() || !IsFullText(ns.indexes_[qe.IndexNo()]->Type())) {
+	if (!qe.IsFieldIndexed() || !IsFullText(ns.indexes()[qe.IndexNo()]->Type())) {
 		throwORbetweenRankedAndNotRanked();
 	}
 }
@@ -820,7 +824,8 @@ typename SelectIteratorContainer::iterator SelectIteratorContainer::lastAppended
 ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor& qPreproc, size_t begin, size_t end, unsigned sortId,
 																	 QueryRankType queryRankType, RankSortType rankSortType,
 																	 const NamespaceImpl& ns, FtFunction::Ptr& ftFunc,
-																	 RanksHolder::Ptr& ranks, const RdxContext& rdxCtx) {
+																	 RanksHolder::Ptr& ranks, const RdxContext& rdxCtx,
+																	 std::optional<int64_t> nowNsec) {
 	const auto& queries = qPreproc.GetQueryEntries();
 	auto equalPositions = prepareEqualPositions(ns, queries, begin, end);
 	bool sortIndexFound = false;
@@ -833,8 +838,8 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 			[](const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry> auto&) -> ContainRanked { throw_as_assert; },
 			[&](const QueryEntriesBracket&) {
 				OpenBracket(op);
-				const ContainRanked contRanked =
-					prepareIteratorsForSelectLoop(qPreproc, i + 1, next, sortId, queryRankType, rankSortType, ns, ftFunc, ranks, rdxCtx);
+				const ContainRanked contRanked = prepareIteratorsForSelectLoop(qPreproc, i + 1, next, sortId, queryRankType, rankSortType,
+																			   ns, ftFunc, ranks, rdxCtx, nowNsec);
 				if (contRanked && (op != OpAnd || (next < end && queries.GetOperation(next) == OpOr))) {
 					throw Error(errLogic, "OR and NOT operations are not allowed with bracket containing fulltext or knn condition");
 				}
@@ -862,26 +867,26 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 				std::string comparatorName("MultiDistinct");
 				for (const auto& f : fieldSet) {
 					if (f != IndexValueType::SetByJsonPath) {
-						if (ns.indexes_[f]->Type() == IndexRTree) {
+						if (ns.indexes()[f]->Type() == IndexRTree) {
 							throw Error(errLogic, "Rtree index is not supported in the distinct aggregator. Field name '{}'",
-										ns.indexes_[f]->Name());
+										ns.indexes()[f]->Name());
 						}
-						const void* raw = ns.indexes_[f]->ColumnData();
+						const void* raw = ns.indexes()[f]->ColumnData();
 						if (raw) {
 							++indexedColumnCount;
-							rawData.emplace_back(std::in_place_index<0>, raw, ns.indexes_[f]->SelectKeyType());
-							fieldsColumn.emplace_back(raw, ns.indexes_[f]->SelectKeyType());
+							rawData.emplace_back(std::in_place_index<0>, raw, ns.indexes()[f]->SelectKeyType());
+							fieldsColumn.emplace_back(raw, ns.indexes()[f]->SelectKeyType());
 						} else {
-							ns.indexes_[f]->Opts().IsArray() ? indexedArrayCount++ : indexedScalarCount++;
+							ns.indexes()[f]->Opts().IsArray() ? indexedArrayCount++ : indexedScalarCount++;
 							rawData.emplace_back(std::in_place_index<1>, f);
 							fieldsIndex.emplace_back(f);
 						}
 						comparatorName += ' ';
-						comparatorName += ns.indexes_[f]->Name();
+						comparatorName += ns.indexes()[f]->Name();
 					} else {
 						rawData.emplace_back(std::in_place_index<2>, fieldSet.getTagsPath(tagPathIdx));
 						comparatorName += ' ';
-						comparatorName += ns.tagsMatcher_.Path2Name(fieldSet.getTagsPath(tagPathIdx));
+						comparatorName += ns.tagsMatcher().Path2Name(fieldSet.getTagsPath(tagPathIdx));
 						tagPathIdx++;
 					}
 				}
@@ -891,33 +896,33 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 						op, std::move(comparatorName), std::move(getter));
 
 				} else if (indexedScalarCount == fieldSetSize) {
-					ComparatorDistinctMultiIndexedGetter getter{ns.payloadType_, std::move(fieldsIndex)};
+					ComparatorDistinctMultiIndexedGetter getter{ns.payloadType(), std::move(fieldsIndex)};
 					std::ignore = Append<ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiIndexedGetter>>(
 						op, std::move(comparatorName), std::move(getter));
 				} else if (indexedArrayCount == fieldSetSize) {
 					std::ignore =
-						Append<ComparatorDistinctMultiArray>(op, ns.payloadType_, std::move(comparatorName), std::move(fieldsIndex));
+						Append<ComparatorDistinctMultiArray>(op, ns.payloadType(), std::move(comparatorName), std::move(fieldsIndex));
 
 				} else if (indexedColumnCount + indexedScalarCount == fieldSetSize) {
-					ComparatorDistinctMultiScalarGetter getter{ns.payloadType_, std::move(rawData)};
+					ComparatorDistinctMultiScalarGetter getter{ns.payloadType(), std::move(rawData)};
 					std::ignore = Append<ComparatorDistinctMultiScalarBase<ComparatorDistinctMultiScalarGetter>>(
 						op, std::move(comparatorName), std::move(getter));
 				} else {
-					std::ignore = Append<ComparatorDistinctMulti>(op, ns.payloadType_, std::move(comparatorName), qe.FieldNames(),
+					std::ignore = Append<ComparatorDistinctMulti>(op, ns.payloadType(), std::move(comparatorName), qe.FieldNames(),
 																  std::move(rawData));
 				}
 				return ContainRanked_False;
 			},
 			[&](const QueryEntry& qe) {
 				const ContainRanked isFT =
-					ContainRanked(qe.IsFieldIndexed() && !qe.IsDistinctOnly() && IsFullText(ns.indexes_[qe.IndexNo()]->Type()));
+					ContainRanked(qe.IsFieldIndexed() && !qe.IsDistinctOnly() && IsFullText(ns.indexes()[qe.IndexNo()]->Type()));
 				if (isFT) {
 					switch (op) {
 						case OpAnd:
 							break;
 						case OpNot:
 							throw Error(errLogic, "NOT operation is not allowed with fulltext index: '{}'",
-										ns.indexes_[qe.IndexNo()]->Name());
+										ns.indexes()[qe.IndexNo()]->Name());
 						case OpOr:
 							if (!queries.Is<KnnQueryEntry>(prev)) {
 								throwORbetweenRankedAndNotRanked();
@@ -974,7 +979,7 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 			},
 			[&](const QueryFunctionEntry& qe) {
 				auto verifyIndexField = [&](const QueryField& field) {
-					const auto& index{ns.indexes_[field.IndexNo()]};
+					const auto& index{ns.indexes()[field.IndexNo()]};
 					if (index && IsComposite(index->Type())) {
 						if (field.Fields().size() != 1) {
 							throw Error(errQueryExec,
@@ -996,7 +1001,12 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 					}
 					fieldsInfo.comparisonField = qe.ComparisonField().Fields();
 				}
-				FunctionsComparator comparator{std::move(fieldsInfo), qe.Condition(), qe.Values(), qe.FunctionVariant(), ns.payloadType_};
+				FunctionsComparator comparator{std::move(fieldsInfo), qe.Condition(), qe.Values(), qe.FunctionVariant(), ns.payloadType()};
+				std::ignore = Append(op, std::move(comparator));
+				return ContainRanked_False;
+			},
+			[&](const QueryArithmeticEntry& qe) {
+				ArithmeticComparator comparator{QueryArithmeticEntry{qe}, ns.payloadType(), ns, nowNsec};
 				std::ignore = Append(op, std::move(comparator));
 				return ContainRanked_False;
 			},
@@ -1005,7 +1015,7 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 				return ContainRanked_False;
 			},
 			[&](const BetweenFieldsQueryEntry& qe) {
-				FieldsComparator fc{qe.LeftFieldName(), qe.Condition(), qe.RightFieldName(), ns.payloadType_};
+				FieldsComparator fc{qe.LeftFieldName(), qe.Condition(), qe.RightFieldName(), ns.payloadType()};
 				processField<true>(fc, qe.LeftFieldData(), ns);
 				processField<false>(fc, qe.RightFieldData(), ns);
 				std::ignore = Append(op, std::move(fc));
@@ -1232,8 +1242,8 @@ bool SelectIteratorContainer::isRanked(const_iterator it, const NamespaceImpl& n
 			if (si.IndexNo() < 0) {
 				return false;
 			}
-			assertrx_throw(size_t(si.IndexNo()) < ns.indexes_.size());
-			const auto& idx = *ns.indexes_[si.IndexNo()];
+			assertrx_throw(size_t(si.IndexNo()) < ns.indexes().size());
+			const auto& idx = *ns.indexes()[si.IndexNo()];
 			assertrx_throw(!idx.IsFloatVector());
 			return idx.IsFulltext() || idx.IsFloatVector();
 		});
@@ -1474,7 +1484,7 @@ void SelectIteratorContainer::mergeRanked(RanksHolder::Ptr& ranks, const Reranke
 	assertrx_throw(itFirst->Is<SelectIterator>() || itSecond->Is<SelectIterator>());
 	auto& knnRes = itFirst->Is<KnnRawSelectResult>() ? itFirst->Value<KnnRawSelectResult>() : itSecond->Value<KnnRawSelectResult>();
 	const auto& ftSI = itFirst->Is<SelectIterator>() ? itFirst->Value<SelectIterator>() : itSecond->Value<SelectIterator>();
-	assertrx_throw(ns.indexes_[ftSI.IndexNo()]->IsFulltext());
+	assertrx_throw(ns.indexes()[ftSI.IndexNo()]->IsFulltext());
 
 	MergeType mergeType = MergeType::Intersection;
 	assertrx_throw(itFirst->operation == OpAnd);
@@ -1620,15 +1630,15 @@ void SelectIteratorContainer::dump(size_t level, const_iterator begin, const_ite
 void JoinSelectIterator::Dump(WrSerializer& ser, std::span<const joins::ItemsProcessor> joinItemsProcessors) const {
 	const auto& js = joinItemsProcessors[joinIndex];
 	const auto& q = js.JoinQuery();
-	ser << js.Type() << " (" << q.GetSQL() << ") ON ";
+	ser << js.Type() << " (" << (*q).GetSQL() << ") ON ";
 	ser << '(';
-	for (const auto& jqe : q.joinEntries_) {
-		if (&jqe != &q.joinEntries_.front()) {
+	for (const auto& jqe : q.JoinEntries()) {
+		if (&jqe != &q.JoinEntries().front()) {
 			ser << ' ' << jqe.Operation() << ' ';
 		} else {
 			assertrx_throw(jqe.Operation() == OpAnd);
 		}
-		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << jqe.Condition() << ' ' << jqe.LeftFieldName();
+		ser << q.RightNsName() << '.' << jqe.RightFieldName() << ' ' << jqe.Condition() << ' ' << jqe.LeftFieldName();
 	}
 	ser << ')';
 }

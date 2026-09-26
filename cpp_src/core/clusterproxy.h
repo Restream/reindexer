@@ -8,6 +8,8 @@
 
 namespace reindexer {
 
+class Query;
+
 namespace sharding {
 struct ShardingControlRequestData;
 struct ShardingControlResponseData;
@@ -35,13 +37,13 @@ public:
 	Error Insert(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Error Update(std::string_view nsName, Item& item, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Error Update(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
-	Error Update(const Query& q, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Update(ConstQueryImpl q, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Error Upsert(std::string_view nsName, Item& item, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Error Upsert(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Error Delete(std::string_view nsName, Item& item, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Error Delete(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
-	Error Delete(const Query& q, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
-	Error Select(const Query& q, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Delete(ConstQueryImpl q, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
+	Error Select(ConstQueryImpl q, LocalQueryResults& qr, const RdxContext& ctx) RX_REQUIRES(!mtx_);
 	Item NewItem(std::string_view nsName, const RdxContext& ctx) { return impl_.NewItem(nsName, ctx); }
 
 	Transaction NewTransaction(std::string_view nsName, const RdxContext& ctx) RX_REQUIRES(!mtx_);
@@ -102,7 +104,7 @@ private:
 	using ProxiedItemSimpleActionFT = Error (client::Reindexer::*)(std::string_view, client::Item&) noexcept;
 	using LocalItemQrActionFT = Error (ReindexerImpl::*)(std::string_view, Item&, LocalQueryResults&, const RdxContext&);
 	using ProxiedItemQrActionFT = Error (client::Reindexer::*)(std::string_view, client::Item&, client::QueryResults&) noexcept;
-	using LocalQueryActionFT = Error (ReindexerImpl::*)(const Query&, LocalQueryResults&, const RdxContext&);
+	using LocalQueryActionFT = Error (ReindexerImpl::*)(ConstQueryImpl, LocalQueryResults&, const RdxContext&);
 	using ProxiedQueryActionFT = Error (client::Reindexer::*)(const Query&, client::QueryResults&) noexcept;
 
 	class [[nodiscard]] ConnectionsMap {
@@ -159,12 +161,12 @@ private:
 	template <ProxiedItemSimpleActionFT fnl>
 	Error itemFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, std::string_view nsName, Item& item);
 	template <ProxiedQueryActionFT fnl>
-	Error resultFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, const Query& query, LocalQueryResults& qr);
+	Error resultFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, ConstQueryImpl query, LocalQueryResults& qr);
 	template <ProxiedItemQrActionFT fnl>
 	Error resultItemFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, std::string_view nsName, Item& item,
 								   LocalQueryResults& qr);
 	void clientToCoreQueryResults(client::QueryResults&, LocalQueryResults&);
-	bool shouldProxyQuery(const Query& q);
+	bool shouldProxyQuery(ConstQueryImpl q);
 
 	static ReindexerImpl::CallbackMap addCallbacks(ReindexerImpl::CallbackMap&& callbackMap);
 };

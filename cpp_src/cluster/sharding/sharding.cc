@@ -22,11 +22,39 @@ void validate(const SubQueryFunctionEntry& sqe, std::string_view ns, const Shard
 		}
 	}
 }
+
+void validate(const QueryArithmeticEntry& qe, std::string_view ns, const ShardingKeys& keys) {
+	const auto checkField = [&](std::string_view field) {
+		if (keys.IsShardIndex(ns, field)) {
+			throw Error(errLogic, "Shard key cannot be used in arithmetic expression");
+		}
+	};
+	const auto checkExpr = [&](const expressions::ArithmeticExpression& expr) {
+		for (const auto field : expr.Ast().ReferencedFields()) {
+			checkField(field);
+		}
+	};
+	if (qe.GetLeftKind() == QueryArithmeticEntry::LeftKind::Field) {
+		checkField(qe.LeftField().FieldName());
+	} else {
+		checkExpr(qe.LeftExpr());
+	}
+	switch (qe.GetRightKind()) {
+		case QueryArithmeticEntry::RightKind::Values:
+			break;
+		case QueryArithmeticEntry::RightKind::Field:
+			checkField(qe.RightField().FieldName());
+			break;
+		case QueryArithmeticEntry::RightKind::Arithmetic:
+			checkExpr(qe.RightExpr());
+			break;
+	}
+}
 }  // namespace
 
 RoutingStrategy::RoutingStrategy(const cluster::ShardingConfig& config) : keys_(config) {}
 
-bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& shardKey) const {
+bool RoutingStrategy::getHostIdForQuery(ConstQueryImpl q, int& hostId, Variant& shardKey) const {
 	bool containsKey = false;
 	std::string_view ns = q.NsName();
 	for (auto it = q.Entries().cbegin(), next = it, end = q.Entries().cend(); it != end; ++it) {
@@ -68,6 +96,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 				}
 			},
 			[&](const SubQueryFunctionEntry& sqe) { validate(sqe, ns, keys_); },
+			[&](const QueryArithmeticEntry& qe) { validate(qe, ns, keys_); },
 			[&](const BetweenFieldsQueryEntry& qe) {
 				if (keys_.IsShardIndex(ns, qe.LeftFieldName()) || keys_.IsShardIndex(ns, qe.RightFieldName())) {
 					throw Error(errLogic, "Shard key cannot be compared with another field");
@@ -90,6 +119,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 							}
 						},
 						[&](const SubQueryFunctionEntry& sqe) { validate(sqe, ns, keys_); },
+						[&](const QueryArithmeticEntry& qe) { validate(qe, ns, keys_); },
 						[&](const BetweenFieldsQueryEntry& qe) {
 							if (keys_.IsShardIndex(ns, qe.LeftFieldName()) || keys_.IsShardIndex(ns, qe.RightFieldName())) {
 								throw Error(errLogic, "Shard key cannot be compared with another field");
@@ -105,7 +135,7 @@ bool RoutingStrategy::getHostIdForQuery(const Query& q, int& hostId, Variant& sh
 	return containsKey;
 }
 
-std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(const Query& q) const {
+std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(ConstQueryImpl q) const {
 	int hostId = ShardingKeyType::ProxyOff;
 	Variant shardKey;
 	const std::string_view mainNs = q.NsName();
@@ -115,15 +145,15 @@ std::pair<ShardIDsContainer, Variant> RoutingStrategy::GetHostsIdsKeyPair(const 
 
 	QueryShardingKeyValidator validator{keys_, hostId, shardKey, hasShardingKeys,
 										[this](const Query& query, int& currentId, Variant& currentShardKey) {
-											return this->getHostIdForQuery(query, currentId, currentShardKey);
+											return this->getHostIdForQuery(Impl(query), currentId, currentShardKey);
 										}};
 	validator.Validate(q);
 	if (mainQueryToAllShards || !hasShardingKeys) {
-		if (!q.GetJoinQueries().empty() || !q.GetMergeQueries().empty() || !q.GetSubQueries().empty()) {
-			const auto errorCode = q.GetMergeQueries().empty() ? errLogic : errParams;
+		if (!q.JoinQueries().empty() || !q.MergeQueries().empty() || !q.SubQueries().empty()) {
+			const auto errorCode = q.MergeQueries().empty() ? errLogic : errParams;
 			throw Error(errorCode, "Query to all shard can't contain JOIN, MERGE or SUBQUERY");
 		}
-		for (const auto& agg : q.aggregations_) {
+		for (const auto& agg : q.Aggregations()) {
 			if (agg.Type() == AggAvg || agg.Type() == AggFacet || agg.Type() == AggDistinct || agg.Type() == AggUnknown) {
 				throw Error(errLogic, "Query to all shard can't contain aggregations AVG, Facet or Distinct");
 			}
@@ -232,7 +262,7 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 			++stData->completed;
 		}
 	}
-	const Query q = Query(std::string(kReplicationStatsNamespace)).Where("type", CondEq, Variant(cluster::kClusterReplStatsType));
+	const Query q = Query(kReplicationStatsNamespace).Where("type", CondEq, Variant(cluster::kClusterReplStatsType));
 	unique_lock lck(stData->mtx);
 	stData->cv.wait(lck, [stData] { return stData->onlineIdx >= 0 || stData->completed == stData->statuses.size(); });
 	const int idx = stData->onlineIdx;
@@ -484,13 +514,14 @@ ConnectionsPtr LocatorService::GetAllShardsConnections(Error& status) {
 	return connections;
 }
 
-ConnectionsPtr LocatorService::GetShardsConnectionsWithId(const Query& q, Error& status) {
+ConnectionsPtr LocatorService::GetShardsConnectionsWithId(ConstQueryImpl q, Error& status) {
 	ShardIDsContainer ids = routingStrategy_.GetHostsIdsKeyPair(q).first;
 	assert(ids.size() > 0);
+	const std::string& nsName = q.NsName();
 	if (ids.size() > 1) {
-		return GetShardsConnections(q.NsName(), ShardingKeyType::NotSetShard, status);
+		return GetShardsConnections(nsName, ShardingKeyType::NotSetShard, status);
 	} else {
-		return GetShardsConnections(q.NsName(), ids[0], status);
+		return GetShardsConnections(nsName, ids[0], status);
 	}
 }
 

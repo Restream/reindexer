@@ -23,6 +23,8 @@ struct [[nodiscard]] ItemImplRawData {
 	PayloadValue payloadValue_;
 	MemBuf tupleData_;
 	std::unique_ptr<char[]> sourceData_;
+	// Cached source CJSON reference. Every payload mutator has to reset it
+	std::string_view cjson_;
 	std::vector<std::unique_ptr<char[]>> largeJSONStrings_;
 	std::vector<std::string> precepts_;
 	std::unique_ptr<HolderT> holder_;

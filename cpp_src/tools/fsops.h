@@ -19,6 +19,7 @@ enum [[nodiscard]] FileStatus {
 	StatError = -1,
 	StatFile = 1,
 	StatDir = 2,
+	StatNotFound = 3,
 };
 
 struct [[nodiscard]] TimeStats {

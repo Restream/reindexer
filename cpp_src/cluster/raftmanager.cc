@@ -355,6 +355,7 @@ void RaftManager::startPingRoutines() {
 			(void)err;	// Error will be handled during the further requests
 			bool isFirstPing = true;
 			while (!terminate_.load()) {
+				const auto roundBeg = ClockT::now();
 				auto voteData = voting_.GetVoteData();
 				if (voteData.role != RaftInfo::Role::Leader) {
 					break;
@@ -385,7 +386,12 @@ void RaftManager::startPingRoutines() {
 					node.hasNetworkError = isNetworkError;
 					isFirstPing = false;
 				}
-				loop_.sleep(kLeaderPingInterval);
+				// Adjust sleep time to compensate for round trip duration. This prevents followers from
+				// hitting their fixed kMinLeaderAwaitInterval deadline and starting false elections.
+				const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(ClockT::now() - roundBeg);
+				if (elapsed < kLeaderPingInterval) {
+					loop_.sleep(kLeaderPingInterval - elapsed);
+				}
 			}
 			node.client.Stop();
 		});

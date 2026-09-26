@@ -300,6 +300,7 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 				}
 				if (!bodyLeft_) {
 					handleRequest(request_);
+					shrinkRdBufIfNeeded();
 				}
 			} else if (int(rdBuf_.size()) >= bodyLeft_) {
 				// TODO: support chunked request body
@@ -318,12 +319,14 @@ ServerConnection::ReadResT ServerConnection::onRead() {
 				handleRequest(request_);
 				std::ignore = rdBuf_.erase(bodyLeft_);
 				bodyLeft_ = 0;
+				shrinkRdBufIfNeeded();
 			} else {
 				break;
 			}
 		}
 		if (!rdBuf_.size() && !bodyLeft_) {
 			rdBuf_.clear();
+			shrinkRdBufIfNeeded();
 		}
 	} catch (std::exception& e) {
 		fprintf(stderr, "reindexer error: dropping HTTP-connection. Reason: %s\n", e.what());

@@ -1,3 +1,4 @@
+#include "core/query/query_impl.h"
 #include "gtests/tests/fixtures/float_vector_index.h"
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
@@ -203,40 +204,40 @@ static std::vector<RecallScenario> scenarios(VectorMetric metric) {
 		//////////////////////////////////////////////////// tree string scenarios ////////////////////////////////////////////////////
 		{
 			"tree_str_group_20pct",
-			[](Query& q) { q.Where(kGroupTreeStr, CondEq, std::string("g0")); },
+			[](Query& q) { q.Where(kGroupTreeStr, CondEq, "g0"); },
 			25,
 			0,
 			metric == VectorMetric::L2 ? 0.5f : 0.4f,
 		},
 		{
 			"tree_str_and_hash10pct_2pct",
-			[](Query& q) { q.Where(kGroupTreeStr, CondEq, std::string("g0")).Where(kHash10pct, CondEq, 0); },
+			[](Query& q) { q.Where(kGroupTreeStr, CondEq, "g0").Where(kHash10pct, CondEq, 0); },
 			25,
 			0,
 			metric == VectorMetric::L2 ? 0.75f : 0.65f,
 		},
 		{
 			"tree_str_and_tree_score_10pct",
-			[](Query& q) { q.Where(kGroupTreeStr, CondEq, std::string("g1")).Where(kScoreTree, CondGt, int(kMaxElements * 9 / 10)); },
+			[](Query& q) { q.Where(kGroupTreeStr, CondEq, "g1").Where(kScoreTree, CondGt, int(kMaxElements * 9 / 10)); },
 			25,
 			0,
 		},
 		{
 			"tree_str_pag_limit100_offset0",
-			[](Query& q) { q.Where(kGroupTreeStr, CondEq, std::string("g0")); },
+			[](Query& q) { q.Where(kGroupTreeStr, CondEq, "g0"); },
 			100,
 			0,
 			0.8f,
 		},
 		{
 			"tree_str_pag_limit500_offset50",
-			[](Query& q) { q.Where(kGroupTreeStr, CondEq, std::string("g0")); },
+			[](Query& q) { q.Where(kGroupTreeStr, CondEq, "g0"); },
 			500,
 			50,
 		},
 		{
 			"tree_str_pag_limit800_offset100",
-			[](Query& q) { q.Where(kGroupTreeStr, CondEq, std::string("g0")); },
+			[](Query& q) { q.Where(kGroupTreeStr, CondEq, "g0"); },
 			800,
 			100,
 		},
@@ -245,8 +246,9 @@ static std::vector<RecallScenario> scenarios(VectorMetric metric) {
 		{
 			"join_hash10pct_group0",
 			[](Query& q) {
-				const auto& ns = q.NsName();
-				q.Where(kHash10pct, CondEq, 0).InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query{ns}.Where(kGroupTreeInt, CondEq, 0));
+				const auto impl = Impl(q);
+				const auto& ns = impl.NsName();
+				q.Where(kHash10pct, CondEq, 0).InnerJoin(Query{ns}.Where(kGroupTreeInt, CondEq, 0), kFieldNameId, CondEq, kFieldNameId);
 			},
 			50,
 			0,
@@ -255,9 +257,10 @@ static std::vector<RecallScenario> scenarios(VectorMetric metric) {
 		{
 			"join_hash10pct_score_10pct",
 			[](Query& q) {
-				const auto& ns = q.NsName();
+				const auto impl = Impl(q);
+				const auto& ns = impl.NsName();
 				q.Where(kHash10pct, CondEq, 0)
-					.InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query{ns}.Where(kScoreTree, CondGt, int(kMaxElements * 9 / 10)));
+					.InnerJoin(Query{ns}.Where(kScoreTree, CondGt, int(kMaxElements * 9 / 10)), kFieldNameId, CondEq, kFieldNameId);
 			},
 			25,
 			0,
@@ -265,8 +268,9 @@ static std::vector<RecallScenario> scenarios(VectorMetric metric) {
 		{
 			"join_hash1pct_group0",
 			[](Query& q) {
-				const auto& ns = q.NsName();
-				q.Where(kHash1pct, CondEq, 0).InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query{ns}.Where(kGroupTreeInt, CondEq, 0));
+				const auto impl = Impl(q);
+				const auto& ns = impl.NsName();
+				q.Where(kHash1pct, CondEq, 0).InnerJoin(Query{ns}.Where(kGroupTreeInt, CondEq, 0), kFieldNameId, CondEq, kFieldNameId);
 			},
 			50,
 			0,
@@ -275,8 +279,9 @@ static std::vector<RecallScenario> scenarios(VectorMetric metric) {
 		{
 			"join_pag_limit20_offset5_hash10pct",
 			[](Query& q) {
-				const auto& ns = q.NsName();
-				q.Where(kHash10pct, CondEq, 0).InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query{ns}.Where(kGroupTreeInt, CondEq, 0));
+				const auto impl = Impl(q);
+				const auto& ns = impl.NsName();
+				q.Where(kHash10pct, CondEq, 0).InnerJoin(Query{ns}.Where(kGroupTreeInt, CondEq, 0), kFieldNameId, CondEq, kFieldNameId);
 			},
 			20,
 			5,
@@ -285,10 +290,11 @@ static std::vector<RecallScenario> scenarios(VectorMetric metric) {
 		{
 			"join_hash10pct_and_score_50pct",
 			[](Query& q) {
-				const auto& ns = q.NsName();
+				const auto impl = Impl(q);
+				const auto& ns = impl.NsName();
 				q.Where(kHash10pct, CondEq, 0)
 					.Where(kScoreTree, CondGt, int(kMaxElements / 2))
-					.InnerJoin(kFieldNameId, kFieldNameId, CondEq, Query{ns}.Where(kGroupTreeStr, CondEq, std::string("g0")));
+					.InnerJoin(Query{ns}.Where(kGroupTreeStr, CondEq, "g0"), kFieldNameId, CondEq, kFieldNameId);
 			},
 			50,
 			0,

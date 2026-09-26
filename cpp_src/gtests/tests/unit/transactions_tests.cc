@@ -44,19 +44,19 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 											  {55000, 130000, "third_writer"},
 											  {130000, 190000, "fourth_writer"}}};
 
-#if !defined(RX_WITH_STDLIB_DEBUG) && !defined(REINDEX_WITH_TSAN)
+#if !RX_WITH_SLOW_RUNTIME
 	const size_t smallPortion = 100;
 	const size_t mediumPortion = 1000;
 	const size_t bigPortion = 15000;
 	const size_t hugePortion = 30000;
 	const auto selectLimit = reindexer::IdType::Max().ToNumber();
-#else	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_TSAN)
+#else	// RX_WITH_SLOW_RUNTIME
 	const size_t smallPortion = 100;
 	const size_t mediumPortion = 1000;
 	const size_t bigPortion = 3000;
 	const size_t hugePortion = 10000;
 	const int selectLimit = 6000;
-#endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_TSAN)
+#endif	// RX_WITH_SLOW_RUNTIME
 
 	reindexer::condition_variable cond;
 	reindexer::mutex mtx;
@@ -166,9 +166,9 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_GT(expectedTotalItems.load(), hugePortion);
 		ASSERT_EQ(qr.Count(), expectedTotalItems.load());
-#if !defined(RX_WITH_STDLIB_DEBUG) && !defined(REINDEX_WITH_TSAN)
+#if !RX_WITH_SLOW_RUNTIME
 		ASSERT_EQ(qr.Count(), ranges.back().till);
-#endif	// !defined(RX_WITH_STDLIB_DEBUG) && !defined(REINDEX_WITH_TSAN)
+#endif	// !RX_WITH_SLOW_RUNTIME
 		for (auto it : qr) {
 			auto item = it.GetItem(false);
 			int id = static_cast<size_t>(item[kFieldId].As<int>());
@@ -244,7 +244,7 @@ TEST_F(TransactionApi, IndexesOptimizeTest) {
 #endif
 
 TEST_F(TransactionApi, ConcurrentTwoFloatVectorUpdateTest) {
-#if defined(REINDEX_WITH_TSAN) || defined(REINDEX_WITH_ASAN) || defined(_GLIBCXX_DEBUG)
+#if RX_WITH_SLOW_RUNTIME
 	static constexpr bool kIsRelease = false;
 #else
 	static constexpr bool kIsRelease = true;
@@ -329,7 +329,7 @@ TEST_F(TransactionApi, ConcurrentTwoFloatVectorUpdateTest) {
 		th.join();
 	}
 
-	auto qr = rt.Select(Query(default_namespace).Sort("id", false).SelectAllFields());
+	auto qr = rt.Select(Query(default_namespace).Sort("id", SortOrder::Asc).SelectAllFields());
 
 	ASSERT_EQ(qr.Count(), kDataSize);
 
@@ -349,6 +349,75 @@ TEST_F(TransactionApi, ConcurrentTwoFloatVectorUpdateTest) {
 		}
 		++id;
 	}
+}
+
+TEST_F(TransactionApi, TxPreceptsDoNotReuseSourceCJSON) {
+	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "TransactionApi/TxPreceptsCJSON");
+	rt.reindexer.reset();
+	std::ignore = reindexer::fs::RmDirAll(kStoragePath);
+	rt.reindexer = std::make_shared<Reindexer>();
+	rt.Connect("builtin://" + kStoragePath);
+
+	const std::string kNs = "tx_cjson_precepts";
+	rt.OpenNamespace(kNs);
+	// Non-indexed SERIAL: FromCJSON caches the source document, and precept evaluation must drop that cache
+	// (via ModifyField) so storage does not persist serial=0. Indexed precepts go through SetField(), which also drops it.
+	rt.DefineNamespaceDataset(
+		kNs, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"data", "hash", "string", IndexOpts(), 0}});
+
+	std::string cjson;
+	{
+		auto src = rt.NewItem(kNs);
+		ASSERT_TRUE(src.FromJSON(R"j({"id":1,"data":"with_precept","serial":0})j").ok());
+		cjson = src.GetCJSON(true);
+	}
+	{
+		auto item = rt.NewItem(kNs);
+		ASSERT_TRUE(item.FromCJSON(cjson).ok());
+		item.SetPrecepts({"serial=SERIAL()"});
+		auto tx = rt.NewTransaction(kNs);
+		ASSERT_TRUE(tx.Upsert(std::move(item)).ok());
+		std::ignore = rt.CommitTransaction(tx);
+	}
+
+	// Drops the in-memory payloads, so the check below reads whatever the commit has written into the storage
+	rt.CloseNamespace(kNs);
+	rt.OpenNamespace(kNs);
+
+	EXPECT_EQ(rt.Select(Query(kNs).Where("serial", CondEq, 1)).Count(), 1);
+}
+
+TEST_F(TransactionApi, TxQueryStepsSeePrecedingSteps) {
+	const std::string kNs = "tx_query_after_items";
+	rt.OpenNamespace(kNs);
+	rt.DefineNamespaceDataset(
+		kNs, {IndexDeclaration{"id", "tree", "int", IndexOpts().PK(), 0}, IndexDeclaration{"data", "tree", "string", IndexOpts(), 0}});
+
+	constexpr int kInitial = 100;
+	for (int i = 0; i < kInitial; ++i) {
+		rt.UpsertJSON(kNs, fmt::format(R"j({{"id":{},"data":"old"}})j", i));
+	}
+	// Sort orders have to be built for the sorted query step below to rely on them
+	rt.AwaitIndexOptimization(kNs);
+	// Warm up the query count cache
+	ASSERT_EQ(rt.Select(Query(kNs).CachedTotal().Limit(0)).TotalCount(), kInitial);
+
+	constexpr int kInserted = 3;
+	auto tx = rt.NewTransaction(kNs);
+	for (int i = kInitial; i < kInitial + kInserted; ++i) {
+		auto item = tx.NewItem();
+		ASSERT_TRUE(item.FromJSON(fmt::format(R"j({{"id":{},"data":"old"}})j", i)).ok());
+		ASSERT_TRUE(tx.Upsert(std::move(item)).ok());
+	}
+	// Sorted query step: its sort orders were invalidated by the item steps above
+	ASSERT_TRUE(tx.Modify(Query(kNs).Where("data", CondEq, "old").Sort("data", SortOrder::Asc).Set("data", "new")).ok());
+	// Second query step: this one runs over the state, invalidated by the query step above
+	ASSERT_TRUE(tx.Modify(Query(kNs).Where("id", CondEq, kInitial).Delete()).ok());
+	std::ignore = rt.CommitTransaction(tx);
+
+	constexpr int kExpected = kInitial + kInserted - 1;
+	EXPECT_EQ(rt.Select(Query(kNs).Where("data", CondEq, "new")).Count(), kExpected);
+	EXPECT_EQ(rt.Select(Query(kNs).CachedTotal().Limit(0)).TotalCount(), kExpected);
 }
 
 }  // namespace reindexer_tests

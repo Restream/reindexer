@@ -28,14 +28,22 @@ type TestEmbedItemIvf struct {
 	Vec [kTestFloatVectorDimension]float32 `json:"vec"`
 }
 
+type TestEmbedItemHNSWArray struct {
+	ID   int         `reindex:"id,,pk"`
+	Name string      `reindex:"name,text" json:"name"`
+	Vec  [][]float32 `json:"vec"`
+}
+
 const (
-	testHNWSEmbedNs = "test_embedding_hnws"
-	testIvfEmbedNs  = "test_embedding_ivf"
+	testHNWSEmbedNs      = "test_embedding_hnws"
+	testIvfEmbedNs       = "test_embedding_ivf"
+	testHNSWArrayEmbedNs = "test_embedding_hnsw_array"
 )
 
 func init() {
 	tnamespaces[testHNWSEmbedNs] = TestEmbedItemHNWS{}
 	tnamespaces[testIvfEmbedNs] = TestEmbedItemIvf{}
+	tnamespaces[testHNSWArrayEmbedNs] = TestEmbedItemHNSWArray{}
 }
 
 func newTestEmbedItemHNWS(id int) any {
@@ -184,6 +192,52 @@ func TestEmbedUpsertKnnIndex(t *testing.T) {
 		}
 	}
 
+}
+
+func TestEmbedUpdateArrayIndex(t *testing.T) {
+	setEmbeddersConfig(t)
+
+	embedderConfig := &bindings.EmbedderConfig{
+		URL:               "http://127.0.0.1:8000",
+		Fields:            []string{"name"},
+		CacheTag:          "HNSWArray",
+		EmbeddingStrategy: "always",
+		ConnectionPoolConfig: &bindings.EmbedderConnectionPoolConfig{
+			Connections:    1,
+			ConnectTimeout: 500,
+			ReadTimeout:    500,
+			WriteTimeout:   500,
+		},
+	}
+	indexDef := reindexer.IndexDef{
+		Name:      "vec",
+		JSONPaths: []string{"vec"},
+		IndexType: "hnsw",
+		FieldType: "float_vector",
+		IsArray:   true,
+		Config: reindexer.FloatVectorIndexOpts{
+			Metric:          "cosine",
+			Dimension:       kTestFloatVectorDimension,
+			M:               8,
+			EfConstruction:  100,
+			StartSize:       16,
+			EmbeddingConfig: &bindings.EmbeddingConfig{UpsertEmbedder: embedderConfig},
+		},
+	}
+	require.NoError(t, DB.AddIndex(testHNSWArrayEmbedNs, indexDef))
+
+	item := &TestEmbedItemHNSWArray{ID: 1, Name: "before update"}
+	require.NoError(t, DB.Upsert(testHNSWArrayEmbedNs, item))
+
+	item.Name = "after update"
+	_, err := DB.Update(testHNSWArrayEmbedNs, item)
+	require.NoError(t, err)
+
+	stored, found := DB.Query(testHNSWArrayEmbedNs).WhereInt("id", reindexer.EQ, 1).Get()
+	require.True(t, found)
+	result := stored.(*TestEmbedItemHNSWArray)
+	require.Len(t, result.Vec, 1)
+	require.Len(t, result.Vec[0], kTestFloatVectorDimension)
 }
 
 func TestEmbedQueryKnnIndex(t *testing.T) {

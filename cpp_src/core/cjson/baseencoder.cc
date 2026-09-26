@@ -13,6 +13,7 @@
 #include "core/queryresults/fields_filter.h"
 #include "core/type_consts.h"
 #include "csvbuilder.h"
+#include "encoderdatasources.h"
 #include "field_extractor_grouping.h"
 #include "jsonbuilder.h"
 #include "msgpackbuilder.h"
@@ -35,7 +36,19 @@ BaseEncoder<Builder>::BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsFi
 	: tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 template <typename Builder>
-void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, const h_vector<IAdditionalDatasource<Builder>*, 2>& dss) {
+void BaseEncoder<Builder>::AdditionalFields::Put(Builder& builder) const {
+	if constexpr (std::is_same_v<Builder, JsonBuilder>) {
+		if (rank) {
+			builder.Put("rank()", rank->Value());
+		}
+		if (shardId) {
+			builder.Put("#shard_id", *shardId);
+		}
+	}
+}
+
+template <typename Builder>
+void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, const Context& ctx) {
 	Serializer rdser(tuple);
 	builder.SetTagsMatcher(tagsMatcher_);
 	if constexpr (kWithTagsPathTracking) {
@@ -46,21 +59,17 @@ void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, cons
 	assertrx(begTag.Type() == TAG_OBJECT);
 	Builder objNode = builder.Object();
 	while (encode(nullptr, rdser, objNode, TagName::Empty()));
-	for (auto ds : dss) {
-		if (ds) {
-			if (const auto joinsDs = ds->GetJoinsDatasource()) {
-				const size_t joinedFieldsCount{joinsDs->GetJoinedFieldsCount()};
-				for (size_t i = 0; i < joinedFieldsCount; ++i) {
-					encodeJoinedItems(objNode, joinsDs, i);
-				}
-			}
-			ds->PutAdditionalFields(objNode);
+	if (ctx.joins) {
+		const size_t joinedFieldsCount{ctx.joins->GetFieldsCount()};
+		for (size_t i = 0; i < joinedFieldsCount; ++i) {
+			encodeJoinedItems(objNode, ctx.joins, i);
 		}
 	}
+	ctx.fields.Put(objNode);
 }
 
 template <typename Builder>
-void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const h_vector<IAdditionalDatasource<Builder>*, 2>& dss) {
+void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const Context& ctx) {
 	Serializer rdser(getPlTuple(pl));
 	if (rdser.Eof()) {
 		return;
@@ -76,21 +85,17 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const h_ve
 	assertrx(begTag.Type() == TAG_OBJECT);
 	Builder objNode = builder.Object();
 	while (encode(&pl, rdser, objNode, TagName::Empty()));
-	for (auto ds : dss) {
-		if (ds) {
-			if (const auto joinsDs = ds->GetJoinsDatasource()) {
-				const size_t joinedFieldsCount{joinsDs->GetJoinedFieldsCount()};
-				for (size_t joinedField = 0; joinedField < joinedFieldsCount; ++joinedField) {
-					encodeJoinedItems(objNode, joinsDs, joinedField);
-				}
-			}
-			ds->PutAdditionalFields(objNode);
+	if (ctx.joins) {
+		const size_t joinedFieldsCount{ctx.joins->GetFieldsCount()};
+		for (size_t joinedField = 0; joinedField < joinedFieldsCount; ++joinedField) {
+			encodeJoinedItems(objNode, ctx.joins, joinedField);
 		}
 	}
+	ctx.fields.Put(objNode);
 }
 
 template <typename Builder>
-const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEncoderDatasourceWithJoins<Builder>* ds) {
+const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IJoinsDatasource<Builder>* ds) {
 	tagsLengths_.clear();
 	Serializer rdser(getPlTuple(pl));
 	if (!rdser.Eof()) {
@@ -104,7 +109,7 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEnco
 		}
 
 		if (ds) {
-			const size_t joinedFieldsCount{ds->GetJoinedFieldsCount()};
+			const size_t joinedFieldsCount{ds->GetFieldsCount()};
 			for (size_t joinedField = 0; joinedField < joinedFieldsCount; ++joinedField) {
 				collectJoinedItemsTagsSizes(ds, joinedField);
 			}
@@ -117,34 +122,34 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEnco
 }
 
 template <typename Builder>
-void BaseEncoder<Builder>::collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins<Builder>* ds, size_t joinedField) {
-	const size_t itemsCount = ds->GetJoinedRowItemsCount(joinedField);
+void BaseEncoder<Builder>::collectJoinedItemsTagsSizes(IJoinsDatasource<Builder>* ds, size_t joinedField) {
+	const size_t itemsCount = ds->GetRowItemsCount(joinedField);
 	if (!itemsCount) {
 		return;
 	}
 
-	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(joinedField), &ds->GetJoinedItemFieldsFilter(joinedField));
+	BaseEncoder<Builder> subEnc(&ds->GetItemTagsMatcher(joinedField), &ds->GetItemFieldsFilter(joinedField));
 	for (size_t i = 0; i < itemsCount; ++i) {
-		ConstPayload pl(ds->GetJoinedItemPayload(joinedField, i));
+		ConstPayload pl(ds->GetItemPayload(joinedField, i));
 		std::ignore = subEnc.GetTagsMeasures(pl, nullptr);
 	}
 }
 
 template <typename Builder>
-void BaseEncoder<Builder>::encodeJoinedItems(Builder& builder, IEncoderDatasourceWithJoins<Builder>* ds, size_t joinedField) {
-	const size_t itemsCount = ds->GetJoinedRowItemsCount(joinedField);
+void BaseEncoder<Builder>::encodeJoinedItems(Builder& builder, IJoinsDatasource<Builder>* ds, size_t joinedField) {
+	const size_t itemsCount = ds->GetRowItemsCount(joinedField);
 	if (!itemsCount) {
 		return;
 	}
 
-	std::string nsTagName("joined_" + ds->GetJoinedItemNamespace(joinedField));
+	std::string nsTagName("joined_" + ds->GetItemNamespace(joinedField));
 	auto arrNode = builder.Array(nsTagName);
 
-	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(joinedField), &ds->GetJoinedItemFieldsFilter(joinedField));
+	BaseEncoder<Builder> subEnc(&ds->GetItemTagsMatcher(joinedField), &ds->GetItemFieldsFilter(joinedField));
 	for (size_t i = 0; i < itemsCount; ++i) {
-		ConstPayload pl(ds->GetJoinedItemPayload(joinedField, i));
-		auto nestedDatasources{ds->BuildJoinedFieldDatasources(joinedField, i)};
-		subEnc.Encode(pl, arrNode, nestedDatasources);
+		ConstPayload pl(ds->GetItemPayload(joinedField, i));
+		auto nestedContext{ds->BuildFieldJoinsDatasourceContext(joinedField, i)};
+		subEnc.Encode(pl, arrNode, nestedContext);
 	}
 }
 namespace {

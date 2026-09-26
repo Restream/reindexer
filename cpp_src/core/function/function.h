@@ -38,6 +38,9 @@ using FunctionVariant = std::variant<FlatArrayLen, Now, Serial>;
 struct ParsedFunction;
 
 class [[nodiscard]] Function {
+protected:
+	virtual ~Function() = default;
+
 public:
 	explicit Function(FunctionType type) : type_(type) {}
 
@@ -78,8 +81,6 @@ public:
 			}
 		}
 	}
-
-	virtual ~Function() = default;
 
 	Function(const Function&) = default;
 	Function& operator=(const Function&) = default;
@@ -223,9 +224,9 @@ std::string_view TypeToName(FunctionType type) noexcept;
 
 }  // namespace reindexer::functions
 
-namespace reindexer {
-namespace concepts {
+namespace reindexer::concepts {
+
 template <typename T>
-concept Function = std::derived_from<typename std::remove_cvref<T>::type, functions::Function>;
-}  // namespace concepts
-}  // namespace reindexer
+concept Function = OneOf<typename std::remove_cvref<T>::type, functions::FlatArrayLen, functions::Now, functions::Serial>;
+
+}  // namespace reindexer::concepts

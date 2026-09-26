@@ -1,21 +1,31 @@
+#include <limits>
+#include <optional>
 #include <string_view>
 #include <thread>
+#include "arithmetic_expression_precedence_cases.h"
 #include "core/cbinding/resultserializer.h"
-#include "core/cjson/ctag.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
+#include "core/enums.h"
 #include "core/namespace/asyncstorage.h"
+#include "core/namespace/namespacestat.h"
+#include "core/namespace/snapshot/snapshotrecord.h"
+#include "core/query/query_impl.h"
+#include "core/storage/storage_prefixes.h"
 #include "core/system_ns_names.h"
 #include "estl/fast_hash_set.h"
 #include "gmock/gmock.h"
 #include "gtests/tools.h"
 #include "ns_api.h"
+#include "reindexertestapi.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
+#include "tools/scope_guard.h"
 #include "tools/serilize/wrserializer.h"
 #include "tools/timetools.h"
 #include "vendor/gason/gason.h"
+#include "wal/waltracker.h"
 
 namespace reindexer_tests {
 
@@ -23,6 +33,10 @@ using QueryResults = ReindexerApi::QueryResults;
 using Item = ReindexerApi::Item;
 using Reindexer = ReindexerApi::Reindexer;
 using reindexer::IndexOpts;
+using reindexer::Variant;
+using reindexer::VariantArray;
+using reindexer::HasExpression_True;
+using reindexer::HasExpression_False;
 
 TEST_F(NsApi, TupleColumnSize) {
 	// Check, that -tuple index does not have column subindex
@@ -86,6 +100,25 @@ TEST_F(NsApi, IndexDrop) {
 	}
 
 	rt.DropIndex(default_namespace, "price");
+}
+
+TEST_F(NsApi, CantDropTupleIndex) {
+	// '-tuple' is a system index, always expected at position 0 - dropping it must be rejected, not silently corrupt the namespace
+	rt.OpenNamespace(default_namespace);
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0}});
+
+	auto err = rt.reindexer->DropIndex(default_namespace, reindexer::IndexDef{"-tuple"});
+	EXPECT_EQ(err.code(), errParams);
+	EXPECT_EQ(err.whatStr(), "Cannot remove index '-tuple': it's a system index");
+
+	// The namespace must remain fully usable after the rejected drop
+	Item item = NewItem(default_namespace);
+	item[idIdxName] = 1;
+	rt.Insert(default_namespace, item);
+	QueryResults qr;
+	auto selectErr = rt.reindexer->Select(Query(default_namespace), qr);
+	ASSERT_TRUE(selectErr.ok()) << selectErr.what();
+	EXPECT_EQ(qr.Count(), 1);
 }
 
 TEST_F(NsApi, AddTooManyIndexes) {
@@ -283,6 +316,157 @@ TEST_F(NsApi, UpdateIndex) try {
 }
 CATCH_AND_ASSERT
 
+static std::optional<reindexer::IndexDef> findIndexDef(const std::vector<reindexer::NamespaceDef>& nsDefs, std::string_view nsName,
+													   std::string_view indexName) {
+	for (const auto& nsDef : nsDefs) {
+		if (nsDef.name != nsName) {
+			continue;
+		}
+		for (const auto& idx : nsDef.indexes) {
+			if (idx.Name() == indexName) {
+				return idx;
+			}
+		}
+	}
+	return std::nullopt;
+}
+
+static void ExpectIndexDefsEqual(const reindexer::IndexDef& expected, const reindexer::IndexDef& actual) {
+	reindexer::WrSerializer expectedSer, actualSer;
+	expected.GetJSON(expectedSer);
+	actual.GetJSON(actualSer);
+	EXPECT_EQ(expectedSer.Slice(), actualSer.Slice());
+}
+
+// Index update is performed as 'drop + add', so the index must be restored if the 'add' phase has failed
+TEST_F(NsApi, UpdateIndexRollbackOnInvalidUuidValues) try {
+	constexpr std::string_view kIdxName = "str_idx";
+	rt.OpenNamespace(default_namespace);
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0}});
+	const reindexer::IndexDef strIdxDef{std::string(kIdxName), {std::string(kIdxName)}, "hash", "string", IndexOpts()};
+	rt.AddIndex(default_namespace, strIdxDef);
+
+	constexpr int kItemsCount = 10;
+	for (int i = 0; i < kItemsCount; ++i) {
+		rt.UpsertJSON(default_namespace, fmt::format(R"json({{"{}":{},"{}":"not_an_uuid_{}"}})json", idIdxName, i, kIdxName, i));
+	}
+
+	const auto idxBefore = findIndexDef(rt.EnumNamespaces(reindexer::EnumNamespacesOpts()), default_namespace, kIdxName);
+	ASSERT_TRUE(idxBefore.has_value());
+
+	const auto err = rt.reindexer->UpdateIndex(
+		default_namespace, reindexer::IndexDef{std::string(kIdxName), {std::string(kIdxName)}, "hash", "uuid", IndexOpts()});
+	ASSERT_FALSE(err.ok()) << "Expecting UUID conversion error";
+	EXPECT_THAT(err.what(), testing::HasSubstr("UUID"));
+
+	const auto idxAfter = findIndexDef(rt.EnumNamespaces(reindexer::EnumNamespacesOpts()), default_namespace, kIdxName);
+	ASSERT_TRUE(idxAfter.has_value()) << "Index '" << kIdxName << "' has disappeared after the failed update";
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access) both are checked with ASSERT_TRUE(...has_value()) above
+	ExpectIndexDefsEqual(*idxBefore, *idxAfter);
+
+	ASSERT_EQ(rt.Select(Query(default_namespace).Where(std::string(kIdxName), CondEq, "not_an_uuid_0")).Count(), 1);
+	ASSERT_EQ(rt.Select(Query(default_namespace)).Count(), kItemsCount);
+}
+CATCH_AND_ASSERT
+
+// Each new JSON-path is registered in the tags matcher as a mandatory index field name and is never removed from it,
+// so sooner or later the 'add' phase of the index update overflows the tags matcher. The index must survive this error
+TEST_F(NsApi, UpdateIndexRollbackOnTagsMatcherOverflow) try {
+	constexpr std::string_view kIdxName = "str_idx";
+	constexpr unsigned kMaxAttempts = 5000;
+	rt.OpenNamespace(default_namespace);
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0}});
+
+	auto indexDefWithJsonPath = [&](unsigned no) {
+		return reindexer::IndexDef{std::string(kIdxName), {fmt::format("jp_{}", no)}, "hash", "string", IndexOpts()};
+	};
+	rt.AddIndex(default_namespace, indexDefWithJsonPath(0));
+
+	Error err;
+	unsigned lastSuccessfulAttempt = 0;
+	for (unsigned attempt = 1; attempt < kMaxAttempts; ++attempt) {
+		err = rt.reindexer->UpdateIndex(default_namespace, indexDefWithJsonPath(attempt));
+		if (!err.ok()) {
+			break;
+		}
+		lastSuccessfulAttempt = attempt;
+	}
+	ASSERT_FALSE(err.ok()) << "Expecting tags matcher overflow after " << kMaxAttempts << " JSON-paths updates";
+	EXPECT_THAT(err.what(), testing::HasSubstr("Exceeded the maximum allowed number"));
+
+	const auto idxAfter = findIndexDef(rt.EnumNamespaces(reindexer::EnumNamespacesOpts()), default_namespace, kIdxName);
+	ASSERT_TRUE(idxAfter.has_value()) << "Index '" << kIdxName << "' has disappeared after the failed update";
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access) checked with ASSERT_TRUE(...has_value()) above
+	ExpectIndexDefsEqual(indexDefWithJsonPath(lastSuccessfulAttempt), *idxAfter);
+}
+CATCH_AND_ASSERT
+
+static reindexer::SnapshotRecord MakeIndexSnapshotRecord(reindexer::WALRecType type, const reindexer::IndexDef& indexDef) {
+	reindexer::WrSerializer json;
+	indexDef.GetJSON(json);
+	reindexer::PackedWALRecord packed;
+	packed.Pack(reindexer::WALRecord(type, json.Slice()));
+	return reindexer::SnapshotRecord{reindexer::lsn_t(), std::move(packed)};
+}
+
+// doAddIndex/doDropIndex/doUpdateIndex are the single entry point for both the direct client API and WAL/snapshot
+// replay (see SnapshotHandler::applyRealRecord), so a failed index update replayed from a snapshot chunk must leave
+// the namespace exactly as untouched as a failed direct UpdateIndex call does
+TEST_F(NsApi, ApplySnapshotChunkRollsBackFailedIndexUpdate) try {
+	constexpr std::string_view kIdxName = "str_idx";
+	rt.OpenNamespace(default_namespace);
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0}});
+	const reindexer::IndexDef strIdxDef{std::string(kIdxName), {std::string(kIdxName)}, "hash", "string", IndexOpts()};
+	rt.AddIndex(default_namespace, strIdxDef);
+
+	constexpr int kItemsCount = 10;
+	for (int i = 0; i < kItemsCount; ++i) {
+		rt.UpsertJSON(default_namespace, fmt::format(R"json({{"{}":{},"{}":"not_an_uuid_{}"}})json", idIdxName, i, kIdxName, i));
+	}
+
+	const auto idxBefore = findIndexDef(rt.EnumNamespaces(reindexer::EnumNamespacesOpts()), default_namespace, kIdxName);
+	ASSERT_TRUE(idxBefore.has_value());
+
+	reindexer::ReplicationStateV2 stateBefore;
+	ASSERT_TRUE(rt.reindexer->GetReplState(default_namespace, stateBefore).ok());
+
+	reindexer::SnapshotChunk chunk;
+	chunk.MarkWAL();
+	chunk.records.push_back(MakeIndexSnapshotRecord(
+		reindexer::WalIndexUpdate, reindexer::IndexDef{std::string(kIdxName), {std::string(kIdxName)}, "hash", "uuid", IndexOpts()}));
+
+	const auto err = rt.reindexer->ApplySnapshotChunk(default_namespace, chunk);
+	ASSERT_FALSE(err.ok()) << "Expecting UUID conversion error";
+	EXPECT_THAT(err.what(), testing::HasSubstr("UUID"));
+
+	const auto idxAfter = findIndexDef(rt.EnumNamespaces(reindexer::EnumNamespacesOpts()), default_namespace, kIdxName);
+	ASSERT_TRUE(idxAfter.has_value()) << "Index '" << kIdxName << "' has disappeared after the failed snapshot chunk";
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access) both are checked with ASSERT_TRUE(...has_value()) above
+	ExpectIndexDefsEqual(*idxBefore, *idxAfter);
+
+	reindexer::ReplicationStateV2 stateAfter;
+	ASSERT_TRUE(rt.reindexer->GetReplState(default_namespace, stateAfter).ok());
+	EXPECT_EQ(stateAfter.dataCount, stateBefore.dataCount);
+	EXPECT_EQ(stateAfter.checksum, stateBefore.checksum);
+	EXPECT_EQ(stateAfter.lastLsn, stateBefore.lastLsn);
+	EXPECT_EQ(stateAfter.nsVersion, stateBefore.nsVersion);
+
+	ASSERT_EQ(rt.Select(Query(default_namespace).Where(std::string(kIdxName), CondEq, "not_an_uuid_0")).Count(), 1);
+	ASSERT_EQ(rt.Select(Query(default_namespace)).Count(), kItemsCount);
+
+	// The namespace must still be fully usable: a subsequent successful replay of the same kind of record must go through
+	reindexer::SnapshotChunk okChunk;
+	okChunk.MarkWAL();
+	okChunk.records.push_back(MakeIndexSnapshotRecord(
+		reindexer::WalIndexUpdate, reindexer::IndexDef{std::string(kIdxName), {std::string(kIdxName)}, "tree", "string", IndexOpts()}));
+	ASSERT_TRUE(rt.reindexer->ApplySnapshotChunk(default_namespace, okChunk).ok());
+	const auto idxAfterOk = findIndexDef(rt.EnumNamespaces(reindexer::EnumNamespacesOpts()), default_namespace, kIdxName);
+	ASSERT_TRUE(idxAfterOk.has_value());
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access) checked with ASSERT_TRUE(...has_value()) above
+	EXPECT_EQ(idxAfterOk->IndexTypeStr(), "tree");
+}
+CATCH_AND_ASSERT
+
 TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 	rt.OpenNamespace(default_namespace);
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0}});
@@ -327,7 +511,7 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 		}
 	};
 
-	Query testQuery = Query(default_namespace, 0, 0, ModeAccurateTotal);
+	const auto testQuery = Query(default_namespace).Limit(0).ReqTotal();
 	const std::string querySql(testQuery.GetSQL(true));
 
 	auto performSimpleQuery = [&]() { auto qr = rt.Select(testQuery); };
@@ -919,9 +1103,10 @@ TEST_F(NsApi, ExtendArrayFromTopWithSql) {
 		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		VariantArray values = item["array_field"];
-		ASSERT_TRUE(values.size() == kElements * 2);
+		ASSERT_EQ(values.size(), kElements * 2);
 		for (int i = 0; i < kElements; ++i) {
-			ASSERT_TRUE(values[i].As<int>() == 88);
+			ASSERT_EQ(values[i].As<int>(), 88);
+			ASSERT_EQ(values[kElements + i].As<int>(), i + 1);
 		}
 	}
 }
@@ -1038,9 +1223,8 @@ TEST_F(NsApi, ExtendArrayWithExpressions) {
 	// 3. Extend array_field with expression via Query builder
 	Query updateQuery =
 		Query(default_namespace)
-			.Set("array_field",
-				 Variant(std::string("[88,88,88] || array_field || [99, 99, 99] || indexed_array_field || objects.more[1].array[4]")),
-				 true);
+			.Set("array_field", Variant("[88,88,88] || array_field || [99, 99, 99] || indexed_array_field || objects.more[1].array[4]"),
+				 HasExpression_True);
 	const auto qrUpdate = rt.UpdateQR(updateQuery);
 
 	constexpr int kElements = 3;
@@ -1100,7 +1284,7 @@ static void validateResults(const std::shared_ptr<reindexer::Reindexer>& reindex
 	}
 	// Check select results
 	QueryResults qrSelect;
-	const Query q = expectedValues.size() ? Query(ns).Where(std::string(field), CondAllSet, expectedValues) : baseQuery;
+	const Query q = expectedValues.size() ? Query(ns).Where(field, CondAllSet, expectedValues) : baseQuery;
 	err = reindexer->Select(q, qrSelect);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qrSelect.Count(), qr.Count());
@@ -1131,35 +1315,37 @@ TEST_F(NsApi, ExtendEmptyArrayWithExpressions) {
 	const Query kBaseQuery = Query(kEmptyArraysNs).Where("id", CondSet, {100, 105, 189, 113, 153});
 
 	{
-		const Query query = Query(kBaseQuery).Set("indexed_array_field", Variant("indexed_array_field || [99, 99, 99]"), true);
+		const Query query =
+			Query(kBaseQuery).Set("indexed_array_field", Variant("indexed_array_field || [99, 99, 99]"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[])",
 						"indexed_array_field", {Variant(99), Variant(99), Variant(99)}, "append value to the empty indexed array");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("indexed_array_field", Variant("indexed_array_field || []"), true);
+		const Query query = Query(kBaseQuery).Set("indexed_array_field", Variant("indexed_array_field || []"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[])",
 						"indexed_array_field", {Variant(99), Variant(99), Variant(99)}, "append empty array to the indexed array");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("non_indexed_array_field", Variant("non_indexed_array_field || [88, 88]"), true);
+		const Query query =
+			Query(kBaseQuery).Set("non_indexed_array_field", Variant("non_indexed_array_field || [88, 88]"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
 						R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[88,88])", "non_indexed_array_field",
 						{Variant(int64_t(88)), Variant(int64_t(88))}, "append value to the empty non-indexed array");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("non_indexed_array_field", Variant("non_indexed_array_field || []"), true);
+		const Query query = Query(kBaseQuery).Set("non_indexed_array_field", Variant("non_indexed_array_field || []"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
 						R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[88,88])", "non_indexed_array_field",
 						{Variant(int64_t(88)), Variant(int64_t(88))}, "append empty array to the non-indexed array");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("non_existing_field", Variant("non_existing_field || []"), true);
+		const Query query = Query(kBaseQuery).Set("non_existing_field", Variant("non_existing_field || []"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
 						R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[88,88],"non_existing_field":[])",
 						"non_existing_field", VariantArray().MarkArray(), "append empty array to the non-existing field");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("non_existing_field1", Variant("non_existing_field1 || [546]"), true);
+		const Query query = Query(kBaseQuery).Set("non_existing_field1", Variant("non_existing_field1 || [546]"), HasExpression_True);
 		validateResults(
 			rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
 			R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[88,88],"non_existing_field":[],"non_existing_field1":[546])",
@@ -1175,25 +1361,28 @@ TEST_F(NsApi, ArrayRemove) {
 
 	{
 		// remove items from empty indexed non array field
-		const Query query = Query(kBaseQuery).Set("id", Variant("array_remove(id, [1, 99])"), true);
+		const Query query = Query(kBaseQuery).Set("id", Variant("array_remove(id, [1, 99])"), HasExpression_True);
 		QueryResults qr;
 		const auto err = rt.reindexer->Update(query, qr);
 		ASSERT_FALSE(err.ok());
 		ASSERT_STREQ(err.what(), "Only an array field is expected as first parameter of command 'array_remove_once/array_remove'");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, [])"), true);
+		const Query query =
+			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, [])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[])",
 						"indexed_array_field", kEmptyArray, "remove empty array from empty indexed array");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, [1, 99]) || []"), true);
+		const Query query =
+			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, [1, 99]) || []"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[])",
 						"indexed_array_field", kEmptyArray, "remove all values from empty indexed array with append empty array");
 	}
 	{
-		const Query query =
-			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, [1, 2, 3, 99]) || [99, 99, 99]"), true);
+		const Query query = Query(kBaseQuery)
+								.Set("indexed_array_field", Variant("array_remove(indexed_array_field, [1, 2, 3, 99]) || [99, 99, 99]"),
+									 HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[])",
 						"indexed_array_field", {Variant(99), Variant(99), Variant(99)},
 						"remove non-used values from empty indexed array with append");
@@ -1201,26 +1390,28 @@ TEST_F(NsApi, ArrayRemove) {
 	{
 		const Query query =
 			Query(kBaseQuery)
-				.Set("indexed_array_field", Variant(std::string(R"(array_remove(indexed_array_field, ['test', '99']))")), true);
+				.Set("indexed_array_field", Variant(R"(array_remove(indexed_array_field, ['test', '99']))"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[])",
 						"indexed_array_field", kEmptyArray, "remove string values from numeric indexed array");
 	}
 	{
 		const Query query =
-			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, [1]) || [4, 3, 3]"), true);
+			Query(kBaseQuery)
+				.Set("indexed_array_field", Variant("array_remove(indexed_array_field, [1]) || [4, 3, 3]"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[4,3,3],"non_indexed_array_field":[])",
 						"indexed_array_field", {Variant(4), Variant(3), Variant(3)},
 						"remove all values from empty indexed array with append");
 	}
 	{
 		const Query query =
-			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, [2, 5, 3]) || []"), true);
+			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, [2, 5, 3]) || []"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[4],"non_indexed_array_field":[])",
 						"indexed_array_field", VariantArray{Variant(4)}.MarkArray(),
 						"remove used/non-used values from indexed array with append empty array");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, 4)"), true);
+		const Query query =
+			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, 4)"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[])",
 						"indexed_array_field", kEmptyArray, "remove items from indexed array by single value scalar");
 	}
@@ -1232,15 +1423,17 @@ TEST_F(NsApi, ArrayRemoveExtra) {
 	const Query kBaseQuery = Query(kEmptyArraysNs).Where("id", CondSet, {100, 105, 189, 113, 153});
 
 	{
-		const Query query = Query(kBaseQuery).Set("non_indexed_array_field", Variant("non_indexed_array_field || [99, 99, 99]"), true);
+		const Query query =
+			Query(kBaseQuery).Set("non_indexed_array_field", Variant("non_indexed_array_field || [99, 99, 99]"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[99,99,99])",
 						"non_indexed_array_field", {Variant(int64_t(99)), Variant(int64_t(99)), Variant(int64_t(99))},
 						"add array to empty non-indexed array");
 	}
 	{
-		const Query query = Query(kBaseQuery)
-								.Set("indexed_array_field",
-									 Variant("array_remove(indexed_array_field, indexed_array_field) || non_indexed_array_field"), true);
+		const Query query =
+			Query(kBaseQuery)
+				.Set("indexed_array_field", Variant("array_remove(indexed_array_field, indexed_array_field) || non_indexed_array_field"),
+					 HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
 						R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[99,99,99])", "indexed_array_field",
 						{Variant(99), Variant(99), Variant(99)},
@@ -1248,7 +1441,8 @@ TEST_F(NsApi, ArrayRemoveExtra) {
 	}
 	{
 		const Query query =
-			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove(indexed_array_field, indexed_array_field) || [1,2]"), true);
+			Query(kBaseQuery)
+				.Set("indexed_array_field", Variant("array_remove(indexed_array_field, indexed_array_field) || [1,2]"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
 						R"("indexed_array_field":[1,2],"non_indexed_array_field":[99,99,99])", "indexed_array_field",
 						{Variant(1), Variant(2)}, "remove from yourself indexed array field with append");
@@ -1257,7 +1451,8 @@ TEST_F(NsApi, ArrayRemoveExtra) {
 		const Query query =
 			Query(kBaseQuery)
 				.Set("indexed_array_field",
-					 Variant("array_remove(indexed_array_field, 1) || array_remove_once(non_indexed_array_field, 99) || [3]"), true);
+					 Variant("array_remove(indexed_array_field, 1) || array_remove_once(non_indexed_array_field, 99) || [3]"),
+					 HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
 						R"("indexed_array_field":[2,99,99,3],"non_indexed_array_field":[99,99,99])", "indexed_array_field",
 						{Variant(2), Variant(99), Variant(99), Variant(3)},
@@ -1273,52 +1468,56 @@ TEST_F(NsApi, ArrayRemoveOnce) {
 
 	{
 		// remove once value from empty indexed non array field
-		const Query query = Query(kBaseQuery).Set("id", Variant("array_remove_once(id, [99])"), true);
+		const Query query = Query(kBaseQuery).Set("id", Variant("array_remove_once(id, [99])"), HasExpression_True);
 		QueryResults qr;
 		const auto err = rt.reindexer->Update(query, qr);
 		ASSERT_FALSE(err.ok());
 		ASSERT_STREQ(err.what(), "Only an array field is expected as first parameter of command 'array_remove_once/array_remove'");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [])"), true);
+		const Query query =
+			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[])",
 						"indexed_array_field", kEmptyArray, "remove once empty array from empty indexed array");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [1, 99])"), true);
+		const Query query =
+			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [1, 99])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[])",
 						"indexed_array_field", kEmptyArray, "remove once values from empty indexed array");
 	}
 	{
-		const Query query =
-			Query(kBaseQuery)
-				.Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [1, 2, 3, 99]) || [99, 99, 99]"), true);
+		const Query query = Query(kBaseQuery)
+								.Set("indexed_array_field",
+									 Variant("array_remove_once(indexed_array_field, [1, 2, 3, 99]) || [99, 99, 99]"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[])",
 						"indexed_array_field", {Variant(99), Variant(99), Variant(99)},
 						"remove once non-used values from empty indexed array with append");
 	}
 	{
 		const Query query =
-			Query(kBaseQuery).Set("indexed_array_field", Variant(std::string(R"(array_remove_once(indexed_array_field, 'Boo'))")), true);
+			Query(kBaseQuery).Set("indexed_array_field", Variant(R"(array_remove_once(indexed_array_field, 'Boo'))"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[])",
 						"indexed_array_field", {Variant(99), Variant(99), Variant(99)},
 						"remove once string non-used values from numeric indexed array");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [])"), true);
+		const Query query =
+			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[])",
 						"indexed_array_field", {Variant(99), Variant(99), Variant(99)},
 						"remove once empty array from non empty indexed array");
 	}
 	{
 		const Query query =
-			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [1, 2, 3])"), true);
+			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [1, 2, 3])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[99,99,99],"non_indexed_array_field":[])",
 						"indexed_array_field", {Variant(99), Variant(99), Variant(99)}, "remove once non-used values from indexed array");
 	}
 	{
 		const Query query =
-			Query(kBaseQuery).Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [99, 99]) || []"), true);
+			Query(kBaseQuery)
+				.Set("indexed_array_field", Variant("array_remove_once(indexed_array_field, [99, 99]) || []"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[99],"non_indexed_array_field":[])",
 						"indexed_array_field", VariantArray{Variant(99)}.MarkArray(),
 						"remove one value twice from indexed array with duplicates and with append empty array");
@@ -1331,22 +1530,24 @@ TEST_F(NsApi, ArrayRemoveNonIndexed) {
 	const Query kBaseQuery = Query(kEmptyArraysNs).Where("id", CondSet, {100, 105, 189, 113, 153});
 
 	{
-		const Query query = Query(kBaseQuery).Set("non_indexed_array_field", Variant("non_indexed_array_field || [99, 99, 99]"), true);
+		const Query query =
+			Query(kBaseQuery).Set("non_indexed_array_field", Variant("non_indexed_array_field || [99, 99, 99]"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[99,99,99])",
 						"non_indexed_array_field", {Variant(int64_t(99)), Variant(int64_t(99)), Variant(int64_t(99))},
 						"add array to empty non-indexed array");
 	}
 	{
 		const Query query = Query(kBaseQuery)
-								.Set("non_indexed_array_field",
-									 Variant(std::string(R"(array_remove_once(non_indexed_array_field, '99') || [1, 2]))")), true);
+								.Set("non_indexed_array_field", Variant(R"(array_remove_once(non_indexed_array_field, '99') || [1, 2])"),
+									 HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs,
 						R"("indexed_array_field":[],"non_indexed_array_field":[99,99,1,2])", "non_indexed_array_field",
 						{Variant(int64_t(99)), Variant(int64_t(99)), Variant(int64_t(1)), Variant(int64_t(2))},
 						"remove value from non-indexed array with append array");
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("non_indexed_array_field", Variant("array_remove(non_indexed_array_field, [99])"), true);
+		const Query query =
+			Query(kBaseQuery).Set("non_indexed_array_field", Variant("array_remove(non_indexed_array_field, [99])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, kEmptyArraysNs, R"("indexed_array_field":[],"non_indexed_array_field":[1,2])",
 						"non_indexed_array_field", {Variant(int64_t(1)), Variant(int64_t(2))},
 						"remove with duplicates from non indexed array");
@@ -1367,92 +1568,99 @@ TEST_F(NsApi, ArrayRemoveSparseStrings) {
 				"str_t_field": ["11","22","33","33"],
 			})json";
 	rt.UpsertJSON(default_namespace, json);
+	ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET str_h_empty = [], str_t_empty = [] WHERE id = 1;").Count(), 1);
 
 	constexpr int resCount = 1;
 	const Query kBaseQuery = Query(default_namespace).Where("id", CondEq, {resCount});
 	{
-		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove_once(str_h_empty, [])"), true);
+		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove_once(str_h_empty, [])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["1","2","3","3"],"str_t_field":["11","22","33","33"],"str_h_empty":[])", "str_h_empty",
 						VariantArray().MarkArray(), "Step 1.1", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove_once([], str_h_empty)"), true);
+		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove_once([], str_h_empty)"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["1","2","3","3"],"str_t_field":["11","22","33","33"],"str_h_empty":[])", "str_h_empty",
 						VariantArray().MarkArray(), "Step 1.2", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove_once(str_h_empty, ['1'])"), true);
+		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove_once(str_h_empty, ['1'])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["1","2","3","3"],"str_t_field":["11","22","33","33"],"str_h_empty":[])", "str_h_empty",
 						VariantArray().MarkArray(), "Step 1.3", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove_once(str_h_empty, str_h_field)"), true);
+		const Query query =
+			Query(kBaseQuery).Set("str_h_empty", Variant("array_remove_once(str_h_empty, str_h_field)"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["1","2","3","3"],"str_t_field":["11","22","33","33"],"str_h_empty":[])", "str_h_empty",
 						VariantArray().MarkArray(), "Step 1.4", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_h_field", Variant("array_remove_once(str_h_field, str_h_empty)"), true);
+		const Query query =
+			Query(kBaseQuery).Set("str_h_field", Variant("array_remove_once(str_h_field, str_h_empty)"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["1","2","3","3"],"str_t_field":["11","22","33","33"],"str_h_empty":[])", "str_h_field",
 						{Variant("1"), Variant("2"), Variant("3"), Variant("3")}, "Step 1.5", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove(str_h_field, ['1','3'])"), true);
+		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove(str_h_field, ['1','3'])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["1","2","3","3"],"str_t_field":["11","22","33","33"],"str_h_empty":["2"])", "str_h_empty",
 						VariantArray{Variant("2")}.MarkArray(), "Step 1.6", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove(['1'], str_h_empty)"), true);
+		const Query query = Query(kBaseQuery).Set("str_h_empty", Variant("array_remove(['1'], str_h_empty)"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["1","2","3","3"],"str_t_field":["11","22","33","33"],"str_h_empty":["1"])", "str_h_empty",
 						VariantArray{Variant("1")}.MarkArray(), "Step 1.7", resCount);
 	}
 	{
 		const Query query =
-			Query(kBaseQuery).Set("str_h_field", Variant("array_remove(str_h_field, ['1','3','first']) || ['POCOMAXA']"), true);
+			Query(kBaseQuery)
+				.Set("str_h_field", Variant("array_remove(str_h_field, ['1','3','first']) || ['POCOMAXA']"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["2","POCOMAXA"],"str_t_field":["11","22","33","33"],"str_h_empty":["1"])", "str_h_field",
 						{Variant("2"), Variant("POCOMAXA")}, "Step 1.8", resCount);
 	}
 
 	{
-		const Query query = Query(kBaseQuery).Set("str_t_empty", Variant("array_remove_once(str_t_empty, [])"), true);
+		const Query query = Query(kBaseQuery).Set("str_t_empty", Variant("array_remove_once(str_t_empty, [])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["2","POCOMAXA"],"str_t_field":["11","22","33","33"],"str_h_empty":["1"],"str_t_empty":[])",
 						"str_t_empty", VariantArray().MarkArray(), "Step 2.1", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_t_empty", Variant("array_remove_once(str_t_empty, ['1'])"), true);
+		const Query query = Query(kBaseQuery).Set("str_t_empty", Variant("array_remove_once(str_t_empty, ['1'])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["2","POCOMAXA"],"str_t_field":["11","22","33","33"],"str_h_empty":["1"],"str_t_empty":[])",
 						"str_t_empty", VariantArray().MarkArray(), "Step 2.2", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_t_empty", Variant("array_remove_once(str_t_empty, str_t_field)"), true);
+		const Query query =
+			Query(kBaseQuery).Set("str_t_empty", Variant("array_remove_once(str_t_empty, str_t_field)"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["2","POCOMAXA"],"str_t_field":["11","22","33","33"],"str_h_empty":["1"],"str_t_empty":[])",
 						"str_t_empty", VariantArray().MarkArray(), "Step 2.3", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_t_empty", Variant("array_remove(str_t_empty, ['11','33','32'])"), true);
+		const Query query =
+			Query(kBaseQuery).Set("str_t_empty", Variant("array_remove(str_t_empty, ['11','33','32'])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["2","POCOMAXA"],"str_t_field":["11","22","33","33"],"str_h_empty":["1"],"str_t_empty":[])",
 						"str_t_empty", VariantArray().MarkArray(), "Step 2.4", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_t_empty", Variant("array_remove(['7'], str_t_empty)"), true);
+		const Query query = Query(kBaseQuery).Set("str_t_empty", Variant("array_remove(['7'], str_t_empty)"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["2","POCOMAXA"],"str_t_field":["11","22","33","33"],"str_h_empty":["1"],"str_t_empty":["7"])",
 						"str_t_empty", VariantArray{Variant("7")}.MarkArray(), "Step 2.5", resCount);
 	}
 	{
 		const Query query =
-			Query(kBaseQuery).Set("str_t_field", Variant("array_remove_once(str_t_field, ['11', '33',  'first']) || ['POCOMAXA']"), true);
+			Query(kBaseQuery)
+				.Set("str_t_field", Variant("array_remove_once(str_t_field, ['11', '33',  'first']) || ['POCOMAXA']"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("str_h_field":["2","POCOMAXA"],"str_t_field":["22","33","POCOMAXA"],"str_h_empty":["1"],"str_t_empty":["7"])",
 						"str_t_field", {Variant("22"), Variant("33"), Variant("POCOMAXA")}, "Step 2.6", resCount);
@@ -1460,7 +1668,8 @@ TEST_F(NsApi, ArrayRemoveSparseStrings) {
 
 	{
 		const Query query =
-			Query(kBaseQuery).Set("str_h_empty", Variant("array_remove_once(str_h_empty,   str_t_empty) || ['007','XXX']"), true);
+			Query(kBaseQuery)
+				.Set("str_h_empty", Variant("array_remove_once(str_h_empty,   str_t_empty) || ['007','XXX']"), HasExpression_True);
 		validateResults(
 			rt.reindexer, kBaseQuery, query, default_namespace,
 			R"("str_h_field":["2","POCOMAXA"],"str_t_field":["22","33","POCOMAXA"],"str_h_empty":["1","007","XXX"],"str_t_empty":["7"])",
@@ -1468,14 +1677,15 @@ TEST_F(NsApi, ArrayRemoveSparseStrings) {
 	}
 	{
 		const Query query =
-			Query(kBaseQuery).Set("str_t_field", Variant("[ '7', 'XXX' ]  ||  array_remove_once( str_t_field , str_h_field ) "), true);
+			Query(kBaseQuery)
+				.Set("str_t_field", Variant("[ '7', 'XXX' ]  ||  array_remove_once( str_t_field , str_h_field ) "), HasExpression_True);
 		validateResults(
 			rt.reindexer, kBaseQuery, query, default_namespace,
 			R"("str_h_field":["2","POCOMAXA"],"str_t_field":["7","XXX","22","33"],"str_h_empty":["1","007","XXX"],"str_t_empty":["7"])",
 			"str_t_field", {Variant("7"), Variant("XXX"), Variant("22"), Variant("33")}, "Step 3.2", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("str_t_field", Variant("array_remove_once( str_t_field , '22' \t) "), true);
+		const Query query = Query(kBaseQuery).Set("str_t_field", Variant("array_remove_once( str_t_field , '22' \t) "), HasExpression_True);
 		validateResults(
 			rt.reindexer, kBaseQuery, query, default_namespace,
 			R"("str_h_field":["2","POCOMAXA"],"str_t_field":["7","XXX","33"],"str_h_empty":["1","007","XXX"],"str_t_empty":["7"])",
@@ -1489,28 +1699,32 @@ TEST_F(NsApi, ArrayRemoveSparseDoubles) {
 											   IndexDeclaration{"double_field", "tree", "double", IndexOpts().Array().Sparse(), 0},
 											   IndexDeclaration{"double_empty", "tree", "double", IndexOpts().Array().Sparse(), 0}});
 	rt.UpsertJSON(default_namespace, R"json({"id": 1, "double_field": [1.11,2.22,3.33,3.33]})json");
+	ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET double_empty = [] WHERE id = 1;").Count(), 1);
 
 	constexpr int resCount = 1;
 	const Query kBaseQuery = Query(default_namespace).Where("id", CondEq, {resCount});
 	{
-		const Query query = Query(kBaseQuery).Set("double_empty", Variant("array_remove(double_empty, [])"), true);
+		const Query query = Query(kBaseQuery).Set("double_empty", Variant("array_remove(double_empty, [])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace, R"("double_field":[1.11,2.22,3.33,3.33],"double_empty":[])",
 						"double_empty", VariantArray{}.MarkArray(), "ArrayRemoveSparseDoubles Step 1.1", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("double_empty", Variant("array_remove_once(double_empty, double_field) || [0.07]"), true);
+		const Query query =
+			Query(kBaseQuery).Set("double_empty", Variant("array_remove_once(double_empty, double_field) || [0.07]"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace, R"("double_field":[1.11,2.22,3.33,3.33],"double_empty":[0.07])",
 						"double_empty", VariantArray{Variant(0.07)}.MarkArray(), "ArrayRemoveSparseDoubles Step 1.2", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("double_field", Variant("[7.77] || array_remove(double_field, double_empty)"), true);
+		const Query query =
+			Query(kBaseQuery).Set("double_field", Variant("[7.77] || array_remove(double_field, double_empty)"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace,
 						R"("double_field":[7.77,1.11,2.22,3.33,3.33],"double_empty":[0.07])", "double_field",
 						{Variant(7.77), Variant(1.11), Variant(2.22), Variant(3.33), Variant(3.33)}, "ArrayRemoveSparseDoubles Step 1.3",
 						resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("double_field", Variant("array_remove_once(double_field, [3.33,3.33,1.11,99])"), true);
+		const Query query =
+			Query(kBaseQuery).Set("double_field", Variant("array_remove_once(double_field, [3.33,3.33,1.11,99])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace, R"("double_field":[7.77,2.22],"double_empty":[0.07])",
 						"double_field", {Variant(7.77), Variant(2.22)}, "ArrayRemoveSparseDoubles Step 1.4", resCount);
 	}
@@ -1522,28 +1736,31 @@ TEST_F(NsApi, ArrayRemoveSparseBooleans) {
 											   IndexDeclaration{"bool_field", "-", "bool", IndexOpts().Array().Sparse(), 0},
 											   IndexDeclaration{"bool_empty", "-", "bool", IndexOpts().Array().Sparse(), 0}});
 	rt.UpsertJSON(default_namespace, R"json({"id": 1, "bool_field": [true,true,false,false]})json");
+	ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET bool_empty = [] WHERE id = 1;").Count(), 1);
 
 	constexpr int resCount = 1;
 	const Query kBaseQuery = Query(default_namespace).Where("id", CondEq, {resCount});
 	{
-		const Query query = Query(kBaseQuery).Set("bool_empty", Variant("array_remove(bool_empty, [])"), true);
+		const Query query = Query(kBaseQuery).Set("bool_empty", Variant("array_remove(bool_empty, [])"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace, R"("bool_field":[true,true,false,false],"bool_empty":[])",
 						"bool_empty", VariantArray().MarkArray(), "ArrayRemoveSparseBooleans Step 1.1", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("bool_empty", Variant("array_remove_once(bool_empty, bool_field) || [1]"), true);
+		const Query query =
+			Query(kBaseQuery).Set("bool_empty", Variant("array_remove_once(bool_empty, bool_field) || [1]"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace, R"("bool_field":[true,true,false,false],"bool_empty":[true])",
 						"bool_empty", VariantArray{Variant(true)}.MarkArray(), "ArrayRemoveSparseBooleans Step 1.2", resCount);
 	}
 	{
-		const Query query = Query(kBaseQuery).Set("bool_field", Variant("array_remove_once(bool_field, bool_empty)"), true);
+		const Query query = Query(kBaseQuery).Set("bool_field", Variant("array_remove_once(bool_field, bool_empty)"), HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace, R"("bool_field":[true,false,false],"bool_empty":[true])",
 						"bool_field", {Variant(true), Variant(false), Variant(false)}, "ArrayRemoveSparseBooleans Step 1.3", resCount);
 	}
 	{
 		const Query query =
 			Query(kBaseQuery)
-				.Set("bool_field", Variant("[true] || array_remove(bool_field, [false]) || array_remove_once(bool_empty, [0])"), true);
+				.Set("bool_field", Variant("[true] || array_remove(bool_field, [false]) || array_remove_once(bool_empty, [0])"),
+					 HasExpression_True);
 		validateResults(rt.reindexer, kBaseQuery, query, default_namespace, R"("bool_field":[true,true,true],"bool_empty":[true])",
 						"bool_field", {Variant(true), Variant(true), Variant(true)}, "ArrayRemoveSparseBooleans Step 1.4", resCount);
 	}
@@ -1572,7 +1789,8 @@ TEST_F(NsApi, ArrayRemoveSeveralJsonPathsField) {
 	}
 
 	const Query query =
-		Query(kBaseQuery).Set(multiPathArrayField, Variant(fmt::format("array_remove_once({}, ['99'])", multiPathArrayField)), true);
+		Query(kBaseQuery)
+			.Set(multiPathArrayField, Variant(fmt::format("array_remove_once({}, ['99'])", multiPathArrayField)), HasExpression_True);
 	QueryResults qr;
 	auto err = rt.reindexer->Update(query, qr);
 	ASSERT_FALSE(err.ok());
@@ -1811,7 +2029,7 @@ TEST_F(NsApi, UpdateHeterogeneousArray) {
 	constexpr std::string_view kEmptyArraysNs = "empty_namespace";
 	constexpr int resCount = 100;
 	CreateEmptyArraysNamespace(kEmptyArraysNs);
-	const Query kQueryDummy;
+	const Query kQueryDummy{"dummy"};
 
 	{
 		Query query = Query::FromSQL(R"(UPDATE empty_namespace SET non_indexed_array_field = [1, null])");
@@ -1934,7 +2152,7 @@ TEST_F(NsApi, UpdateObjectsArray3) {
 
 	// 3. Set all items of the object array to a new value via Query builder
 	Query updateQuery =
-		Query(default_namespace).SetObject("nested.nested_array[*]", Variant(std::string(R"({"ein":1,"zwei":2, "drei":3})")), false);
+		Query(default_namespace).SetObject("nested.nested_array[*]", Variant(R"({"ein":1,"zwei":2, "drei":3})"), HasExpression_False);
 	const auto qrUpdate = rt.UpdateQR(updateQuery);
 	ASSERT_GT(qrUpdate.Count(), 0);
 
@@ -1996,14 +2214,14 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		SCOPED_TRACE(fmt::format("Index type is '{}' ", index));
 		{
 			const auto description = "Update array field, nested into objects array with explicit index (1 element)";
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[0].field[4]", {777}, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[0].field[4]", {777}, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":[9,8,7,6,777]},{"field":11},{"field":[4,3,2,1,0]},{"field":[99]}]}])",
 							description);
 		}
 		{
 			const auto description = "Update array field, nested into objects array with explicit index (1 element, different position)";
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[2].field[3]", {8387}, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[2].field[3]", {8387}, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":[9,8,7,6,777]},{"field":11},{"field":[4,3,2,8387,0]},{"field":[99]}]}])",
 							description);
@@ -2011,7 +2229,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		{
 			const auto description = "Update array field, nested into objects array without explicit index with scalar type";
 			// Make sure, that internal field's type ('scalar') was not changed
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field", {537}, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field", {537}, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":[9,8,7,6,777]},{"field":537},{"field":[4,3,2,8387,0]},{"field":[99]}]}])",
 							description);
@@ -2019,7 +2237,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		{
 			const auto description = "Update scalar field, nested into objects array with explicit index with array type";
 			// Make sure, that internal field's type ('array') was not changed
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[3].field[0]", {999}, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[3].field[0]", {999}, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":[9,8,7,6,777]},{"field":537},{"field":[4,3,2,8387,0]},{"field":[999]}]}])",
 							description);
@@ -2028,7 +2246,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 			const auto description =
 				"Update array field, nested into objects array without explicit index. Change field type from array[1] to scalar";
 			// Make sure, that internal field's type (array of 1 element) was changed to scalar
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[3].field", {837}, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[3].field", {837}, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":[9,8,7,6,777]},{"field":537},{"field":[4,3,2,8387,0]},{"field":837}]}])",
 							description);
@@ -2037,7 +2255,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 			const auto description =
 				"Update array field, nested into objects array without explicit index. Change field type from array[4] to scalar";
 			// Make sure, that internal field's type (array of 4 elements) was changed to scalar
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[0].field", {2345}, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[0].field", {2345}, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":537},{"field":[4,3,2,8387,0]},{"field":837}]}])",
 							description);
@@ -2046,7 +2264,8 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 			const auto description =
 				"Update array field, nested into objects array without explicit index. Change field type from scalar to array[1]";
 			// Make sure, that internal field's type ('scalar') was changed to array
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field", VariantArray{Variant{1847}}.MarkArray(), false);
+			Query updateQuery =
+				Query(kBaseQuery).Set("objects[0].array[1].field", VariantArray{Variant{1847}}.MarkArray(), HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[1847]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
 							description);
@@ -2054,7 +2273,8 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		{
 			const auto description = "Update array field, nested into objects array without explicit index. Increase array size";
 			Query updateQuery =
-				Query(kBaseQuery).Set("objects[0].array[1].field", VariantArray{Variant{115}, Variant{1000}, Variant{501}}, false);
+				Query(kBaseQuery)
+					.Set("objects[0].array[1].field", VariantArray{Variant{115}, Variant{1000}, Variant{501}}, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[115,1000,501]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
 							description);
@@ -2062,7 +2282,8 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		{
 			const auto description =
 				"Update array field, nested into objects array without explicit index. Reduce array size (to multiple elements)";
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field", VariantArray{Variant{100}, Variant{999}}, false);
+			Query updateQuery =
+				Query(kBaseQuery).Set("objects[0].array[1].field", VariantArray{Variant{100}, Variant{999}}, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[100,999]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
 							description);
@@ -2070,14 +2291,16 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		{
 			const auto description =
 				"Update array field, nested into objects array without explicit index. Reduce array size (to single element)";
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field", VariantArray{Variant{150}}.MarkArray(), false);
+			Query updateQuery =
+				Query(kBaseQuery).Set("objects[0].array[1].field", VariantArray{Variant{150}}.MarkArray(), HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[150]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
 							description);
 		}
 		{
 			const auto description = "Attempt to set array-value(1 element) by explicit index";
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field[0]", VariantArray{Variant{199}}.MarkArray(), false);
+			Query updateQuery =
+				Query(kBaseQuery).Set("objects[0].array[1].field[0]", VariantArray{Variant{199}}.MarkArray(), HasExpression_False);
 			QueryResults qr;
 			err = rt.reindexer->Update(updateQuery, qr);
 			ASSERT_EQ(err.code(), errParams) << err.what();
@@ -2091,7 +2314,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		{
 			const auto description = "Attempt to set array-value(multiple elements) by explicit index";
 			VariantArray v{Variant{199}, Variant{200}, Variant{300}};
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field[0]", v, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field[0]", v, HasExpression_False);
 			QueryResults qr;
 			err = rt.reindexer->Update(updateQuery, qr);
 			ASSERT_EQ(err.code(), errParams) << err.what();
@@ -2104,7 +2327,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		{
 			const auto description = "Attempt to set array-value(1 element) by *-index";
 			VariantArray v{Variant{199}, Variant{200}, Variant{300}};
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field[*]", v, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field[*]", v, HasExpression_False);
 			QueryResults qr;
 			err = rt.reindexer->Update(updateQuery, qr);
 			ASSERT_EQ(err.code(), errParams) << err.what();
@@ -2117,7 +2340,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		{
 			const auto description = "Attempt to set array-value(multiple elements) by *-index";
 			VariantArray v{Variant{199}, Variant{200}, Variant{300}};
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field[*]", v, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field[*]", v, HasExpression_False);
 			QueryResults qr;
 			err = rt.reindexer->Update(updateQuery, qr);
 			ASSERT_EQ(err.code(), errParams) << err.what();
@@ -2129,7 +2352,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		}
 		{
 			const auto description = "Update array field, nested into objects array with *-index";
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[2].field[*]", {199}, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[2].field[*]", {199}, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[150]},{"field":[199,199,199,199,199]},{"field":837}]}])",
 							description);
@@ -2137,7 +2360,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		{
 			const auto description = "Attempt to update scalar value by *-index";
 			VariantArray v{Variant{199}, Variant{200}, Variant{300}};
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[0].field[*]", v, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[0].field[*]", v, HasExpression_False);
 			QueryResults qr;
 			err = rt.reindexer->Update(updateQuery, qr);
 			ASSERT_EQ(err.code(), errParams) << err.what();
@@ -2149,7 +2372,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		}
 		{
 			const auto description = "Update array field, nested into objects array without explicit index. Reduce array size to 0";
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field", VariantArray().MarkArray(), false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field", VariantArray().MarkArray(), HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[]},{"field":[199,199,199,199,199]},{"field":837}]}])",
 							description);
@@ -2157,7 +2380,7 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 		{
 			const auto description = "Update array field, nested into objects array without explicit index. Increase array size from 0";
 			VariantArray v{Variant{11199}, Variant{11200}, Variant{11300}};
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field", v, false);
+			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field", v, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
 			ValidateResults(
 				qr, R"("objects":[{"array":[{"field":2345},{"field":[11199,11200,11300]},{"field":[199,199,199,199,199]},{"field":837}]}])",
@@ -2286,7 +2509,7 @@ TEST_F(NsApi, UpdateWithObjectAndFieldsDuplication) {
 	}
 	{
 		// Check all the items
-		auto qr = rt.Select(Query(default_namespace).Sort("id", false));
+		auto qr = rt.Select(Query(default_namespace).Sort("id", SortOrder::Asc));
 		ASSERT_EQ(qr.Count(), 2);
 		unsigned i = 0;
 		for (auto it : qr) {
@@ -2296,14 +2519,13 @@ TEST_F(NsApi, UpdateWithObjectAndFieldsDuplication) {
 	}
 	{
 		// Check old indexed value (have to exist)
-		auto qr = rt.Select(Query(default_namespace).Where("nested", CondEq, std::string("index_str_3")));
+		auto qr = rt.Select(Query(default_namespace).Where("nested", CondEq, "index_str_3"));
 		ASSERT_EQ(qr.Count(), 1);
 		ASSERT_EQ(qr.begin().GetItem().GetJSON(), items[1]);
 	}
 	{
 		// Check new indexed values (have to not exist)
-		auto qr = rt.Select(
-			Query(default_namespace).Where("nested", CondSet, {std::string("index_str_3_modified"), std::string("index_str_5_modified")}));
+		auto qr = rt.Select(Query(default_namespace).Where("nested", CondSet, {"index_str_3_modified", "index_str_5_modified"}));
 		ASSERT_EQ(qr.Count(), 0);
 	}
 }
@@ -2344,7 +2566,7 @@ TEST_F(NsApi, UpdateOutOfBoundsArrayField) {
 		 .createQueryF = [&](const std::string& path) {
 			 return Query(default_namespace)
 				 .Where("id", CondEq, kTargetID)
-				 .SetObject(path, Variant(std::string(R"({"id":5,"name":"fifth", "prices":[3,5,5]})")), false);
+				 .SetObject(path, Variant(R"({"id":5,"name":"fifth", "prices":[3,5,5]})"), HasExpression_False);
 		 }}};
 
 	for (auto& c : cases) {
@@ -2788,10 +3010,7 @@ TEST_F(NsApi, TestUpdateObjectFieldWithScalar) {
 	AddUnindexedData();
 
 	// Prepare and execute Update query
-	Query q = Query(default_namespace)
-				  .Set("int_field", 7)
-				  .Set("extra", 8)
-				  .SetObject("nested2", Variant(std::string(R"({"bonus2":13,"extra2":"new"})")));
+	Query q = Query(default_namespace).Set("int_field", 7).Set("extra", 8).SetObject("nested2", Variant(R"({"bonus2":13,"extra2":"new"})"));
 	auto qr = rt.UpdateQR(q);
 	ASSERT_GT(qr.Count(), 0);
 
@@ -2970,43 +3189,501 @@ TEST_F(NsApi, TestUpdateFieldWithExpressions) {
 	}
 }
 
+TEST_F(NsApi, TestUpdateExpressionWithoutWhere) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	const auto parsed = Query::FromSQL("update test_namespace set int_field = int_field+1;");
+	const auto parsedImpl = Impl(parsed);
+	ASSERT_EQ(parsedImpl.UpdateFields().size(), 1);
+	EXPECT_TRUE(parsedImpl.UpdateFields()[0].IsExpression());
+	EXPECT_EQ(parsedImpl.UpdateFields()[0].Values().front().As<std::string>(), "int_field+1");
+	EXPECT_EQ(parsedImpl.Entries().Size(), 0);
+
+	auto qr = rt.ExecSQL("update test_namespace set int_field = int_field+1;");
+	ASSERT_EQ(qr.Count(), 1000);
+	int i = 0;
+	for (auto& it : qr) {
+		Item item(it.GetItem(false));
+		ASSERT_EQ(item[intField].As<int>(), i + 1) << i;
+		++i;
+	}
+}
+
+TEST_F(NsApi, TestUpdateArithmeticExpressionPrecedence) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	for (const auto& test : kArithmeticPrecedenceCases) {
+		if (!test.updateSqlSafe) {
+			continue;
+		}
+		const auto expression = ExpandArithmeticPrecedenceExpr(test.expr, "int_field");
+		ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET int_field = 8 WHERE id = 0;").Count(), 1) << expression;
+
+		auto qr = rt.ExecSQL("UPDATE test_namespace SET int_field = " + expression + " WHERE id = 0;");
+		ASSERT_EQ(qr.Count(), 1) << expression;
+		Item item{qr.begin().GetItem(false)};
+		ASSERT_EQ(item[intField].As<int>(), static_cast<int>(test.expected)) << expression;
+	}
+}
+
+TEST_F(NsApi, TestUpdateDivisionByZero) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	QueryResults qr;
+	auto err = rt.reindexer->Update(Query::FromSQL("UPDATE test_namespace SET int_field = int_field/0 WHERE id = 0"), qr);
+	ASSERT_FALSE(err.ok());
+	EXPECT_THAT(err.what(), ::testing::HasSubstr("Division by zero"));
+}
+
+TEST_F(NsApi, TestUpdateNullArithmeticRejected) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	for (const std::string_view expression :
+		 {"non_existing_field+1", R"("null"+1)", R"(-"null")", "-non_existing_field", R"(1-"null")", R"("null"-1)"}) {
+		ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET int_field = 42 WHERE id = 0;").Count(), 1);
+		QueryResults qr;
+		auto err = rt.reindexer->Update(
+			Query{default_namespace}.Where(idIdxName, CondEq, 0).Set(intField, Variant{std::string{expression}}, HasExpression_True), qr);
+		ASSERT_EQ(err.code(), errParams) << expression << ": " << err.what();
+		EXPECT_THAT(err.what(), ::testing::HasSubstr("Unable to use array and null values outside of the arrays concatenation"))
+			<< expression;
+
+		auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
+		auto item = selected.begin().GetItem(false);
+		ASSERT_EQ(item[intField].As<int>(), 42) << expression;
+	}
+}
+
+TEST_F(NsApi, TestUpdateEmptySparseArithmeticRejected) {
+	DefineDefaultNamespace();
+
+	Item item = NewItem(default_namespace);
+	item[idIdxName] = 0;
+	item[intField] = 42;
+	item[stringField] = "0";
+	item[boolField] = false;
+	item[doubleField] = 0.0;
+	item[indexedArrayField] = RandIntVector(1, 0, 1);
+	Upsert(default_namespace, item);
+
+	QueryResults qr;
+	const auto err = rt.reindexer->Update(
+		Query{default_namespace}.Where(idIdxName, CondEq, 0).Set(intField, Variant{sparseField + " * 2"}, HasExpression_True), qr);
+	ASSERT_EQ(err.code(), errParams) << err.what();
+	EXPECT_THAT(err.what(), ::testing::HasSubstr("Unable to use array and null values outside of the arrays concatenation"));
+
+	auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
+	auto after = selected.begin().GetItem(false);
+	ASSERT_EQ(after[intField].As<int>(), 42);
+}
+
+TEST_F(NsApi, TestUpdateEmptyJsonPathFieldsRejected) {
+	rt.OpenNamespace(default_namespace);
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0},
+											   IndexDeclaration{"sparse_idx", "hash", "int", IndexOpts().Sparse(), 0},
+											   IndexDeclaration{"sparse_arr", "hash", "int", IndexOpts().Array().Sparse(), 0}});
+
+	rt.UpsertJSON(default_namespace, R"j({"id":0,"sparse_idx":null,"sparse_arr":null,"plain":null,"plain_arr":null})j");
+	rt.UpsertJSON(default_namespace, R"j({"id":1,"sparse_arr":[],"plain_arr":[]})j");
+	rt.UpsertJSON(default_namespace, R"j({"id":2})j");
+
+	const auto expectRejected = [this](int id, std::string_view expression, std::string_view message) {
+		QueryResults qr;
+		const auto err = rt.reindexer->Update(
+			Query{default_namespace}.Where(idIdxName, CondEq, id).Set("field", Variant{std::string{expression}}, HasExpression_True), qr);
+		ASSERT_EQ(err.code(), errParams) << "id=" << id << " " << expression << ": " << err.what();
+		EXPECT_THAT(err.what(), ::testing::HasSubstr(message)) << "id=" << id << " " << expression;
+		auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, id));
+		auto item = selected.begin().GetItem(false);
+		EXPECT_THAT(item.GetJSON(), ::testing::Not(::testing::HasSubstr("\"field\""))) << "id=" << id << " " << expression;
+	};
+
+	for (const int id : {0, 2}) {
+		expectRejected(id, "sparse_idx * 2", "Unable to use array and null values outside of the arrays concatenation");
+		expectRejected(id, "plain * 2", "Unable to use array and null values outside of the arrays concatenation");
+	}
+	const auto expectEmptyArray = [this](int id, std::string_view expression) {
+		QueryResults qr;
+		const auto err = rt.reindexer->Update(
+			Query{default_namespace}.Where(idIdxName, CondEq, id).Set("field", Variant{std::string{expression}}, HasExpression_True), qr);
+		ASSERT_TRUE(err.ok()) << "id=" << id << " " << expression << ": " << err.what();
+		auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, id));
+		auto item = selected.begin().GetItem(false);
+		EXPECT_THAT(item.GetJSON(), ::testing::HasSubstr("\"field\":[]")) << "id=" << id << " " << expression;
+	};
+	for (const int id : {0, 1, 2}) {
+		expectEmptyArray(id, "array_remove(sparse_arr, 1)");
+		expectEmptyArray(id, "array_remove(plain_arr, 1)");
+		expectEmptyArray(id, "array_remove(nonexist, 1)");
+		expectEmptyArray(id, "array_remove_once(sparse_arr, 1)");
+	}
+}
+
+TEST_F(NsApi, TestUpdateNonexistFieldExpressions) {
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"arr", "hash", "int", IndexOpts().Array()});
+	rt.UpsertJSON(default_namespace, R"({"id":10,"arr":[1,2,3]})");
+
+	{
+		QueryResults qr;
+		const auto err = rt.reindexer->Update(Query::FromSQL("UPDATE test_namespace SET id = nonexist-2"), qr);
+		ASSERT_EQ(err.code(), errParams) << err.what();
+		EXPECT_THAT(err.what(), ::testing::HasSubstr("Unable to use array and null values outside of the arrays concatenation"));
+		auto selected = rt.Select(Query{default_namespace}.Where("id", CondEq, 10));
+		auto item = selected.begin().GetItem(false);
+		EXPECT_EQ(item["id"].As<int>(), 10);
+	}
+	{
+		auto qr = rt.ExecSQL("UPDATE test_namespace SET arr = nonexist||arr");
+		ASSERT_EQ(qr.Count(), 1);
+		const VariantArray arr = qr.begin().GetItem(false)["arr"];
+		ASSERT_EQ(arr.size(), 3);
+		EXPECT_EQ(arr[0].As<int>(), 1);
+		EXPECT_EQ(arr[1].As<int>(), 2);
+		EXPECT_EQ(arr[2].As<int>(), 3);
+	}
+	{
+		auto qr = rt.ExecSQL("UPDATE test_namespace SET arr = array_remove(nonexist, 1)");
+		ASSERT_EQ(qr.Count(), 1);
+		const VariantArray arr = qr.begin().GetItem(false)["arr"];
+		EXPECT_TRUE(arr.empty());
+		EXPECT_TRUE(arr.IsArrayValue());
+	}
+}
+
+TEST_F(NsApi, TestUpdateCompositeIndexExpressionRejected) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+	rt.AddIndex(default_namespace, reindexer::IndexDef{"comp_single", {intField}, "hash", "composite", IndexOpts()});
+	rt.AddIndex(default_namespace, reindexer::IndexDef{"comp_idx", {intField, stringField}, "hash", "composite", IndexOpts()});
+	rt.AddIndex(default_namespace, reindexer::IndexDef{"comp_array", {idIdxName, intField}, "hash", "composite", IndexOpts().Array()});
+
+	ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET int_field = 42 WHERE id = 0;").Count(), 1);
+
+	for (const std::string_view name : {"comp_single", "comp_idx", "comp_array"}) {
+		for (const std::string_view expression :
+			 {fmt::format("{} * 2", name), fmt::format("{} || {}", name, name), fmt::format("array_remove({}, 1)", name)}) {
+			QueryResults qr;
+			auto err = rt.reindexer->Update(
+				Query{default_namespace}.Where(idIdxName, CondEq, 0).Set(intField, Variant{expression}, HasExpression_True), qr);
+			ASSERT_EQ(err.code(), errParams) << expression << ": " << err.what();
+			EXPECT_THAT(err.what(), ::testing::HasSubstr("Only integral type non-array fields are supported")) << expression;
+
+			auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
+			auto item = selected.begin().GetItem(false);
+			ASSERT_EQ(item[intField].As<int>(), 42) << expression;
+		}
+	}
+
+	for (const std::string_view expression : {"comp_array || comp_array", "comp_idx || comp_array", "comp_array || [1]"}) {
+		QueryResults qr;
+		auto err = rt.reindexer->Update(
+			Query{default_namespace}.Where(idIdxName, CondEq, 0).Set("field", Variant{std::string{expression}}, HasExpression_True), qr);
+		ASSERT_EQ(err.code(), errParams) << expression << ": " << err.what();
+		EXPECT_THAT(err.what(), ::testing::HasSubstr("Only integral type non-array fields are supported")) << expression;
+
+		qr = QueryResults();
+		err = rt.reindexer->ExecSQL(fmt::format("UPDATE test_namespace SET field = {} WHERE id = 0", expression), qr);
+		ASSERT_EQ(err.code(), errParams) << "SQL " << expression << ": " << err.what();
+		EXPECT_THAT(err.what(), ::testing::HasSubstr("Only integral type non-array fields are supported")) << "SQL " << expression;
+
+		auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
+		auto item = selected.begin().GetItem(false);
+		EXPECT_THAT(item.GetJSON(), ::testing::Not(::testing::HasSubstr("\"field\""))) << expression;
+	}
+}
+
+TEST_F(NsApi, TestUpdateIntegerOverflow) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	for (const std::string_view expression : {"9223372036854775807+1", "9223372036854775807*1000", "-9223372036854775807-2",
+											  "(-9223372036854775807-1)*-1", "-(-9223372036854775807-1)"}) {
+		ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET int_field = 42 WHERE id = 0;").Count(), 1);
+
+		QueryResults qr;
+		auto err = rt.reindexer->Update(
+			Query{default_namespace}.Where(idIdxName, CondEq, 0).Set(intField, Variant{std::string{expression}}, HasExpression_True), qr);
+		ASSERT_EQ(err.code(), errLogic) << expression << ": " << err.what();
+		EXPECT_THAT(err.what(), ::testing::HasSubstr("Integer overflow")) << expression;
+
+		auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
+		auto item = selected.begin().GetItem(false);
+		ASSERT_EQ(item[intField].As<int>(), 42) << expression;
+	}
+}
+
+TEST_F(NsApi, TestUpdateExpressionSyntaxErrors) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	for (const std::string_view expression : {"1)", "1 unexpected", "(1+2", "unknown_func()", "[foo]"}) {
+		ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET int_field = 42 WHERE id = 0;").Count(), 1);
+
+		QueryResults qr;
+		auto err = rt.reindexer->Update(
+			Query{default_namespace}.Where(idIdxName, CondEq, 0).Set(intField, Variant{std::string{expression}}, HasExpression_True), qr);
+		ASSERT_EQ(err.code(), errParams) << expression << ": " << err.what();
+
+		auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
+		auto item = selected.begin().GetItem(false);
+		ASSERT_EQ(item[intField].As<int>(), 42) << expression;
+	}
+
+	for (const auto& [expression, message] : std::initializer_list<std::pair<std::string_view, std::string_view>>{
+			 {"indexed_array_field | [1]", "Unexpected token in expression: '|'"},
+			 {"|| []", "Unexpected token in expression: '||'"},
+			 {"indexed_array_field ||| []", "Unexpected token in expression: '|'"},
+			 {"indexed_array_field || || []", "Unexpected token in expression: '||'"},
+			 {"serialfail()", "Function 'serialfail' is not supported"},
+			 {"(indexed_array_field || [1]) * 2", "Unable to mix arrays concatenation and arithmetic operations. Got token: '*'"},
+		 }) {
+		QueryResults qr;
+		auto err = rt.reindexer->Update(
+			Query{default_namespace}.Where(idIdxName, CondEq, 0).Set(intField, Variant{std::string{expression}}, HasExpression_True), qr);
+		ASSERT_EQ(err.code(), errParams) << expression << ": " << err.what();
+		EXPECT_THAT(err.what(), ::testing::HasSubstr(message)) << expression;
+	}
+}
+
+TEST_F(NsApi, TestUpdateExpressionTypeErrors) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	for (const std::string& expression : {stringField + "+1", std::string{"'2'+1"}, emptyField + "+1"}) {
+		ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET int_field = 42 WHERE id = 0;").Count(), 1);
+
+		QueryResults qr;
+		auto err = rt.reindexer->Update(
+			Query{default_namespace}.Where(idIdxName, CondEq, 0).Set(intField, Variant{std::string{expression}}, HasExpression_True), qr);
+		ASSERT_EQ(err.code(), errParams) << expression << ": " << err.what();
+
+		auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
+		auto item = selected.begin().GetItem(false);
+		ASSERT_EQ(item[intField].As<int>(), 42) << expression;
+	}
+}
+
+TEST_F(NsApi, TestUpdateExpressionFunctions) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	auto qr = rt.ExecSQL(
+		"UPDATE test_namespace SET int_field = flat_array_len(indexed_array_field)+1, "
+		"extra = SERIAL()+1, nested.timeField = NOW(sec), string_field = serial() WHERE id = 0;");
+	ASSERT_EQ(qr.Count(), 1);
+	Item item{qr.begin().GetItem(false)};
+	ASSERT_EQ(item[intField].As<int>(), 11);
+	ASSERT_EQ(item["extra"].As<int>(), 2);
+	ASSERT_EQ(item[stringField].As<std::string>(), "1");
+	const auto nowDelta = reindexer::getTimeNow(reindexer::TimeUnit::sec) - item["nested.timeField"].As<int64_t>();
+	EXPECT_GE(nowDelta, 0);
+	EXPECT_LE(nowDelta, 1);
+
+	QueryResults errors;
+	const auto err = rt.reindexer->Update(
+		Query{default_namespace}.Where(idIdxName, CondEq, 0).Set(intField, Variant{"serial(unused)"}, HasExpression_True), errors);
+	EXPECT_EQ(err.code(), errParams) << err.what();
+	EXPECT_THAT(err.what(), ::testing::HasSubstr("'serial' expects 0 arguments"));
+}
+
+TEST_F(NsApi, TestUpdateExpressionMixArrayAndScalar) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET int_field = 42 WHERE id = 0;").Count(), 1);
+
+	for (const auto& [field, expression] : std::initializer_list<std::pair<std::string_view, std::string_view>>{
+			 {intField, "indexed_array_field + 1"},
+			 {indexedArrayField, "indexed_array_field || 1"},
+			 {indexedArrayField, "2 + 3 || [4]"},
+			 {indexedArrayField, "[1] || [2] + 3"},
+		 }) {
+		auto beforeQr = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
+		const std::string before{beforeQr.begin().GetItem(false).GetJSON()};
+		QueryResults qr;
+		auto err = rt.reindexer->Update(Query{default_namespace}
+											.Where(idIdxName, CondEq, 0)
+											.Set(std::string{field}, Variant{std::string{expression}}, HasExpression_True),
+										qr);
+		ASSERT_FALSE(err.ok()) << expression << ": " << err.what();
+		EXPECT_THAT(err.what(),
+					::testing::AnyOf(::testing::HasSubstr("Unable to mix arrays concatenation and arithmetic operations"),
+									 ::testing::HasSubstr("Unable to use scalar values in the arrays concatenation expressions"),
+									 ::testing::HasSubstr("Unable to use array and null values outside of the arrays concatenation")))
+			<< expression;
+
+		auto afterQr = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
+		const std::string after{afterQr.begin().GetItem(false).GetJSON()};
+		ASSERT_EQ(after, before) << expression;
+	}
+}
+
+TEST_F(NsApi, TestUpdateExpressionConcatScalarNamesOperand) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	for (const auto& [expression, token] : std::initializer_list<std::pair<std::string_view, std::string_view>>{
+			 {"indexed_array_field || 1", "1"},
+			 {"1 || indexed_array_field", "1"},
+			 {"int_field || indexed_array_field", "int_field"},
+			 {"indexed_array_field || null", "null"},
+			 {"indexed_array_field || now(sec)", "now(sec)"},
+			 {"indexed_array_field || now('nsec')", "now('nsec')"},
+			 {"indexed_array_field || flat_array_len(indexed_array_field)", "flat_array_len(indexed_array_field)"},
+			 {R"(indexed_array_field || flat_array_len("indexed_array_field"))", R"(flat_array_len("indexed_array_field"))"},
+		 }) {
+		QueryResults qr;
+		const auto err = rt.reindexer->Update(Query{default_namespace}
+												  .Where(idIdxName, CondEq, 0)
+												  .Set(indexedArrayField, Variant{std::string{expression}}, HasExpression_True),
+											  qr);
+		ASSERT_EQ(err.code(), errParams) << expression << ": " << err.what();
+		EXPECT_THAT(err.what(),
+					::testing::HasSubstr("Unable to use scalar values in the arrays concatenation expressions: " + std::string{token}))
+			<< expression;
+	}
+}
+
+TEST_F(NsApi, TestUpdateExpressionNullArrayLiteral) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	QueryResults qr;
+	auto err = rt.reindexer->Update(
+		Query{default_namespace}.Where(idIdxName, CondEq, 0).Set("array_field", Variant{std::string{"[null]||[]"}}, HasExpression_True),
+		qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+	VariantArray values = qr.begin().GetItem(false)["array_field"];
+	ASSERT_EQ(values.size(), 1);
+	EXPECT_TRUE(values.front().IsNullValue());
+}
+
+TEST_F(NsApi, TestUpdateExpressionSingleElementArrayArithmeticRejected) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	ASSERT_EQ(rt.ExecSQL("UPDATE test_namespace SET indexed_array_field = [41], array_field = [10] WHERE id = 0;").Count(), 1);
+	for (const auto& expr : {"indexed_array_field+1", "1+indexed_array_field", "array_field+1", "1+array_field", "-indexed_array_field"}) {
+		QueryResults qr;
+		auto err = rt.reindexer->Update(
+			Query{default_namespace}.Where(idIdxName, CondEq, 0).Set(intField, Variant{std::string{expr}}, HasExpression_True), qr);
+		ASSERT_EQ(err.code(), errParams) << expr << ": " << err.what();
+		EXPECT_THAT(err.what(), ::testing::HasSubstr("Unable to use array and null values outside of the arrays concatenation")) << expr;
+	}
+}
+
+TEST_F(NsApi, TestUpdateExpressionNestedArrayIndex) {
+	const auto run = [this](bool sparse) {
+		const std::string ns = sparse ? "nested_expr_sparse" : "nested_expr";
+		rt.OpenNamespace(ns);
+		rt.AddIndex(ns, {"id", "hash", "int", IndexOpts().PK()});
+		auto opts = IndexOpts().Array();
+		if (sparse) {
+			std::ignore = opts.Sparse();
+		}
+		rt.AddIndex(ns, {"nested_idx", reindexer::JsonPaths{"nested.field1"}, "hash", "int64", opts});
+		rt.UpsertJSON(ns, R"({"id":0,"nested":[{"field1":10,"field2":1},{"field1":20,"field2":2},{"field1":30,"field2":3}]})");
+
+		auto qr = rt.ExecSQL(fmt::format("UPDATE {} SET nested[0].field1 = nested[0].field1+5+nested[2].field2 WHERE id = 0", ns));
+		ASSERT_EQ(qr.Count(), 1) << ns;
+		EXPECT_EQ(qr.begin().GetItem(false)["nested[0].field1"].As<int64_t>(), 18) << ns;
+
+		qr = rt.ExecSQL(fmt::format("UPDATE {} SET nested[1].field1 = nested[1].field1*10+nested[2].field2 WHERE id = 0", ns));
+		ASSERT_EQ(qr.Count(), 1) << ns;
+		EXPECT_EQ(qr.begin().GetItem(false)["nested[1].field1"].As<int64_t>(), 203) << ns;
+	};
+	run(false);
+	run(true);
+}
+
+TEST_F(NsApi, TestUpdateExpressionNestedArraySerial) {
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"nested_idx", reindexer::JsonPaths{"nested.field1"}, "hash", "string", IndexOpts().Array()});
+	rt.UpsertJSON(default_namespace, R"({"id":0,"nested":[{"field1":"a"},{"field1":"b"},{"field1":"c"}]})");
+
+	auto qr = rt.ExecSQL("UPDATE test_namespace SET nested[0].field1 = serial() WHERE id = 0");
+	ASSERT_EQ(qr.Count(), 1);
+	EXPECT_EQ(qr.begin().GetItem(false)["nested[0].field1"].As<std::string>(), "1");
+}
+
+TEST_F(NsApi, TestUpdateExpressionKeywordFieldNames) {
+	rt.OpenNamespace(default_namespace);
+	DefineNamespaceDataset(
+		default_namespace,
+		{IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"true", "hash", "int", IndexOpts(), 0},
+		 IndexDeclaration{"false", "hash", "int", IndexOpts(), 0}, IndexDeclaration{"null", "hash", "int", IndexOpts(), 0},
+		 IndexDeclaration{"array_remove", "hash", "int", IndexOpts(), 0}, IndexDeclaration{"result", "hash", "int", IndexOpts(), 0}});
+	Item item = NewItem(default_namespace);
+	item[idIdxName] = 0;
+	item["true"] = 1;
+	item["false"] = 2;
+	item["null"] = 3;
+	item["array_remove"] = 4;
+	item["result"] = 0;
+	Upsert(default_namespace, item);
+
+	auto qr = rt.ExecSQL(R"(UPDATE test_namespace SET result = "true"+"false"+"null"+array_remove WHERE id = 0;)");
+	ASSERT_EQ(qr.Count(), 1);
+	EXPECT_EQ(qr.begin().GetItem(false)["result"].As<int>(), 10);
+}
+
 static void checkQueryDsl(const Query& src) {
-	const std::string dsl = src.GetJSON();
+	reindexer::ConstQueryImpl srcImpl = Impl(src);
+	const std::string dsl = srcImpl.GetJSON();
 	Query dst;
 	EXPECT_NO_THROW(dst = Query::FromJSON(dsl));
+	reindexer::ConstQueryImpl dstImpl = Impl(dst);
 	bool objectValues = false;
-	if (src.UpdateFields().size() > 0) {
-		EXPECT_TRUE(src.UpdateFields().size() == dst.UpdateFields().size());
-		for (size_t i = 0; i < src.UpdateFields().size(); ++i) {
-			if (src.UpdateFields()[i].Mode() == FieldModeSetJson) {
-				ASSERT_EQ(src.UpdateFields()[i].Values().size(), 1);
-				EXPECT_TRUE(src.UpdateFields()[i].Values().front().Type().Is<reindexer::KeyValueType::String>());
-				ASSERT_EQ(dst.UpdateFields()[i].Values().size(), 1);
-				EXPECT_TRUE(dst.UpdateFields()[i].Values().front().Type().Is<reindexer::KeyValueType::String>());
+	if (srcImpl.UpdateFields().size() > 0) {
+		EXPECT_TRUE(srcImpl.UpdateFields().size() == dstImpl.UpdateFields().size());
+		for (size_t i = 0; i < srcImpl.UpdateFields().size(); ++i) {
+			if (srcImpl.UpdateFields()[i].Mode() == FieldModeSetJson) {
+				ASSERT_EQ(srcImpl.UpdateFields()[i].Values().size(), 1);
+				EXPECT_TRUE(srcImpl.UpdateFields()[i].Values().front().Type().Is<reindexer::KeyValueType::String>());
+				ASSERT_EQ(dstImpl.UpdateFields()[i].Values().size(), 1);
+				EXPECT_TRUE(dstImpl.UpdateFields()[i].Values().front().Type().Is<reindexer::KeyValueType::String>());
 				reindexer::WrSerializer wrser1;
-				reindexer::prettyPrintJSON(std::string_view(src.UpdateFields()[i].Values().front()), wrser1);
+				reindexer::prettyPrintJSON(std::string_view(srcImpl.UpdateFields()[i].Values().front()), wrser1);
 				reindexer::WrSerializer wrser2;
-				reindexer::prettyPrintJSON(std::string_view(dst.UpdateFields()[i].Values().front()), wrser2);
+				reindexer::prettyPrintJSON(std::string_view(dstImpl.UpdateFields()[i].Values().front()), wrser2);
 				EXPECT_EQ(wrser1.Slice(), wrser2.Slice());
 				objectValues = true;
 			}
 		}
 	}
 	if (objectValues) {
-		EXPECT_EQ(src.Entries(), dst.Entries());
-		EXPECT_EQ(src.aggregations_, dst.aggregations_);
-		EXPECT_EQ(src.NsName(), dst.NsName());
-		EXPECT_EQ(src.GetSortingEntries(), dst.GetSortingEntries());
-		EXPECT_EQ(src.CalcTotal(), dst.CalcTotal());
-		EXPECT_EQ(src.Offset(), dst.Offset());
-		EXPECT_EQ(src.Limit(), dst.Limit());
-		EXPECT_EQ(src.GetDebugLevel(), dst.GetDebugLevel());
-		EXPECT_EQ(src.GetStrictMode(), dst.GetStrictMode());
-		EXPECT_EQ(src.ForcedSortOrder(), dst.ForcedSortOrder());
-		EXPECT_EQ(src.SelectFilters(), dst.SelectFilters());
-		EXPECT_EQ(src.selectFunctions_, dst.selectFunctions_);
-		EXPECT_EQ(src.GetJoinQueries(), dst.GetJoinQueries());
-		EXPECT_EQ(src.GetMergeQueries(), dst.GetMergeQueries());
+		EXPECT_EQ(srcImpl.Entries(), dstImpl.Entries());
+		EXPECT_EQ(srcImpl.Aggregations(), dstImpl.Aggregations());
+		EXPECT_EQ(srcImpl.NsName(), dstImpl.NsName());
+		EXPECT_EQ(srcImpl.GetSortingEntries(), dstImpl.GetSortingEntries());
+		EXPECT_EQ(srcImpl.CalcTotal(), dstImpl.CalcTotal());
+		EXPECT_EQ(srcImpl.Offset(), dstImpl.Offset());
+		EXPECT_EQ(srcImpl.Limit(), dstImpl.Limit());
+		EXPECT_EQ(srcImpl.DebugLevel(), dstImpl.DebugLevel());
+		EXPECT_EQ(srcImpl.GetStrictMode(), dstImpl.GetStrictMode());
+		EXPECT_EQ(srcImpl.ForcedSortOrder(), dstImpl.ForcedSortOrder());
+		EXPECT_EQ(srcImpl.SelectFilters(), dstImpl.SelectFilters());
+		EXPECT_EQ(srcImpl.SelectFunctions(), dstImpl.SelectFunctions());
+		ASSERT_EQ(srcImpl.JoinQueries().size(), dstImpl.JoinQueries().size());
+		for (size_t i = 0; i < srcImpl.JoinQueries().size(); ++i) {
+			EXPECT_EQ(srcImpl.JoinQueries()[i], dstImpl.JoinQueries()[i]);
+			EXPECT_EQ(JoinedImpl(srcImpl.JoinQueries()[i]).GetJoinType(), JoinedImpl(dstImpl.JoinQueries()[i]).GetJoinType());
+			EXPECT_EQ(JoinedImpl(srcImpl.JoinQueries()[i]).JoinEntries(), JoinedImpl(dstImpl.JoinQueries()[i]).JoinEntries());
+		}
+		ASSERT_EQ(srcImpl.MergeQueries().size(), dstImpl.MergeQueries().size());
+		for (size_t i = 0; i < srcImpl.MergeQueries().size(); ++i) {
+			EXPECT_EQ(srcImpl.MergeQueries()[i], dstImpl.MergeQueries()[i]);
+			EXPECT_EQ(JoinedImpl(srcImpl.MergeQueries()[i]).GetJoinType(), JoinedImpl(dstImpl.MergeQueries()[i]).GetJoinType());
+			EXPECT_EQ(JoinedImpl(srcImpl.MergeQueries()[i]).JoinEntries(), JoinedImpl(dstImpl.MergeQueries()[i]).JoinEntries());
+		}
 	} else {
 		EXPECT_EQ(dst, src);
 	}
@@ -3053,7 +3730,7 @@ TEST_F(NsApi, TestModifyQueriesSqlEncoder) {
 
 	{
 		// Check from #674
-		Query q = Query::FromSQL(
+		auto q = Query::FromSQL(
 			"explain select id, name, count(*) from ns where (a = 100 and b = 10 equal_position(a,b)) or (c < 10 and d = 77 "
 			"equal_position(c,d)) inner join (select * from ns2 where not a == 0) on ns.id == ns2.id order by id limit 100 offset 10");
 		q.Merge(Query("ns3"));
@@ -3445,7 +4122,7 @@ TEST_F(NsApi, CompositeUpdateWithJSON) {
 
 	qr = rt.Select(Query(default_namespace).Where(kCompositeIdxName, CondEq, {VariantArray::Create({10})}));
 	EXPECT_EQ(qr.Count(), 0) << qr.ToLocalQr().Dump();
-	qr = rt.Select(Query(default_namespace).Where(kCompositeIdxName, CondEq, {VariantArray::Create({5})}).Sort(idIdxName, false));
+	qr = rt.Select(Query(default_namespace).Where(kCompositeIdxName, CondEq, {VariantArray::Create({5})}).Sort(idIdxName, SortOrder::Asc));
 	ASSERT_EQ(qr.Count(), 2) << qr.ToLocalQr().Dump();
 	ser.Reset();
 	err = qr.begin().GetJSON(ser, false);
@@ -3514,14 +4191,14 @@ TEST_F(NsApi, SparseComparatorConversion) {
 	rt.UpsertJSON(default_namespace, R"j({"id":3}")j");
 	rt.UpsertJSON(default_namespace, R"j({"id":4, "sparse_field":"50"})j");
 
-	auto qr = rt.Select(reindexer::Query(default_namespace).Where("sparse_field", CondLt, "100").Sort("id", false));
+	auto qr = rt.Select(reindexer::Query(default_namespace).Where("sparse_field", CondLt, "100").Sort("id", SortOrder::Asc));
 	// TODO: Sort("sparse_field", false)) does not works here #2039
 	auto results = rt.GetSerializedQrItems(qr);
 	ASSERT_EQ(results.size(), 2);
 	EXPECT_EQ(results[0], R"j({"id":1,"sparse_field":"99"})j");
 	EXPECT_EQ(results[1], R"j({"id":4,"sparse_field":"50"})j");
 
-	qr = rt.Select(reindexer::Query(default_namespace).Where("sparse_field", CondGe, "100").Sort("sparse_field", false));
+	qr = rt.Select(reindexer::Query(default_namespace).Where("sparse_field", CondGe, "100").Sort("sparse_field", SortOrder::Asc));
 	results = rt.GetSerializedQrItems(qr);
 	ASSERT_EQ(results.size(), 1);
 	EXPECT_EQ(results[0], R"j({"id":0,"sparse_field":"100"})j");
@@ -3820,6 +4497,57 @@ TEST(AsyncStorage, ConsistReadWriteRemoveTest) {
 	for (size_t i = 0; i < limit; ++i) {
 		read(i);
 	}
+}
+
+TEST(WALTracker, ResetDropsQueuedWalKeysBeforeClose) {
+	using namespace reindexer;
+
+	AsyncStorage storage;
+	const auto kStoragePath = fs::JoinPath(fs::GetTempDir(), "WALTracker.ResetDropsQueuedWalKeysBeforeClose/");
+	std::ignore = fs::RmDirAll(kStoragePath);
+	auto err = storage.Open(datastorage::StorageType::LevelDB, {}, kStoragePath, StorageOpts{}.CreateIfMissing());
+	ASSERT_TRUE(err.ok()) << err.what();
+	auto storageGuard = MakeScopeGuard([&storage, &kStoragePath] {
+		storage.Close();
+		std::ignore = fs::RmDirAll(kStoragePath);
+	});
+
+	auto countWalKeys = [&storage]() {
+		StorageOpts opts;
+		opts.FillCache(false);
+		auto dbIter = storage.GetCursor(opts);
+		size_t n = 0;
+		for (dbIter->Seek(kStorageWALPrefix);
+			 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF\xFF\xFF\xFF")) < 0;
+			 dbIter->Next()) {
+			++n;
+		}
+		return n;
+	};
+
+	constexpr int64_t kWalSize = 1000;
+	WALTracker wal(kWalSize);
+	wal.Init(kWalSize, std::numeric_limits<int64_t>::max(), -1, storage);
+
+	for (int i = 0; i < 3; ++i) {
+		std::ignore = wal.Add(WALRecord(WalPutMeta, "flushed", std::to_string(i), false), lsn_t());
+	}
+	storage.Flush(StorageFlushOpts{});
+	ASSERT_EQ(countWalKeys(), 3);
+
+	for (int i = 0; i < 3; ++i) {
+		std::ignore = wal.Add(WALRecord(WalPutMeta, "dest-only", "stale", false), lsn_t());
+	}
+	ASSERT_EQ(countWalKeys(), 3) << "queued WAL writes must not be flushed into the storage before Reset";
+	ASSERT_EQ(wal.size(), 6);
+
+	wal.Reset();
+	ASSERT_EQ(wal.size(), 0);
+	ASSERT_EQ(countWalKeys(), 0);
+
+	// CloseStorage Flush would persist leftover async deletes/writes. Keys must already be gone.
+	storage.Flush(StorageFlushOpts{});
+	ASSERT_EQ(countWalKeys(), 0);
 }
 
 }  // namespace reindexer_tests

@@ -152,46 +152,12 @@ class [[nodiscard]] FTConfig {
 public:
 	FTConfig(size_t fieldsCount);
 
-	uint32_t mergeLimit = 20000;
-	std::vector<std::string> stemmers = {"en", "ru"};
-	bool enableTermsConcat = true;
-	bool enableTermsSplit = true;
-	bool enableTranslit = true;
-	enum class [[nodiscard]] KbLayoutMode { Disable, Enable, Heuristic } kbLayoutMode = KbLayoutMode::Heuristic;
-	bool enableNumbersSearch = false;
-
-	StopWordsSetT stopWords;
-	TermsBoostMapT termsBoost;
-
 	struct [[nodiscard]] Synonym {
 		std::vector<std::string> tokens;
 		std::vector<std::string> alternatives;
 		bool operator==(const Synonym& other) const { return tokens == other.tokens && alternatives == other.alternatives; }
 		bool operator!=(const Synonym& other) const { return !(*this == other); }
 	};
-	std::vector<Synonym> synonyms;
-
-	int logLevel = 0;
-
-	SplitOptions splitOptions;
-
-	FTRankingConfig rankingConfig;
-
-	double distanceBoost = 1.0;
-	double distanceWeight = 0.5;
-	double fullMatchBoost = 1.1;
-	// Relevancy step of partial match: relevancy = kFullMatchProc - partialMatchDecrease * (non matched symbols) / (matched symbols)
-	// For example: partialMatchDecrease: 15, word in index 'terminator', pattern 'termin'. matched: 6 symbols, unmatched: 4. relevancy =
-	// 100 - (15*4)/6 = 80
-	int partialMatchDecrease = 15;
-	int minRank = 5;
-
-	int maxTypos = 2;
-	int maxExtraLetters = 2;
-	int maxMissingLetters = 2;
-	uint8_t maxTypoLen = 15;
-	int maxTypoDistance = 0;
-	int maxSymbolPermutationDistance = 1;
 
 	struct [[nodiscard]] Bm25Config {
 		enum class [[nodiscard]] Bm25Type { classic, rx, wordCount };
@@ -202,17 +168,47 @@ public:
 		void parse(const gason::JsonNode& root);
 	};
 
-	Bm25Config bm25Config;
+	enum class [[nodiscard]] KbLayoutMode { Disable, Enable, Heuristic };
+	enum class [[nodiscard]] Splitter { Fast, MMSegCN };
+	enum class [[nodiscard]] Optimization { CPU, Memory };
 
+	double distanceBoost = 1.0;
+	double distanceWeight = 0.5;
+	double fullMatchBoost = 1.1;
 	double summationRanksByFieldsRatio = 0.0;
+	double deletedDocsOptimizationThreshold = 0.2;
+	std::vector<std::string> stemmers = {"en", "ru"};
+	std::vector<Synonym> synonyms;
+	Bm25Config bm25Config;
+	TermsBoostMapT termsBoost;
+	StopWordsSetT stopWords;
+	SplitOptions splitOptions;
+	h_vector<FTFieldConfig, 8> fieldsCfg;
+	uint32_t mergeLimit = 20000;
+	KbLayoutMode kbLayoutMode = KbLayoutMode::Heuristic;
+	int logLevel = 0;
+	// Relevancy step of partial match: relevancy = kFullMatchProc - partialMatchDecrease * (non matched symbols) / (matched symbols)
+	// For example: partialMatchDecrease: 15, word in index 'terminator', pattern 'termin'. matched: 6 symbols, unmatched: 4. relevancy =
+	// 100 - (15*4)/6 = 80
+	int partialMatchDecrease = 15;
+	int minRank = 5;
+	int maxTypos = 2;
+	int maxExtraLetters = 2;
+	int maxMissingLetters = 2;
+	int maxTypoDistance = 0;
+	int maxSymbolPermutationDistance = 1;
 	int maxAreasInDoc = 5;
 	int maxTotalAreasToCache = -1;
-
-	enum class [[nodiscard]] Splitter { Fast, MMSegCN } splitterType = Splitter::Fast;
-
-	h_vector<FTFieldConfig, 8> fieldsCfg;
-	enum class [[nodiscard]] Optimization { CPU, Memory } optimization = Optimization::Memory;
+	Splitter splitterType = Splitter::Fast;
+	Optimization optimization = Optimization::Memory;
+	FTRankingConfig rankingConfig;
+	bool enableTermsConcat = true;
+	bool enableTermsSplit = true;
+	bool enableTranslit = true;
+	bool enableNumbersSearch = false;
+	uint8_t maxTypoLen = 15;
 	bool enablePreselectBeforeFt = false;
+
 	int MaxTyposInWord() const noexcept { return (maxTypos / 2) + (maxTypos % 2); }
 	unsigned MaxExtraLetters() const noexcept { return maxExtraLetters >= 0 ? unsigned(maxExtraLetters) : std::numeric_limits<int>::max(); }
 	unsigned MaxMissingLetters() const noexcept {

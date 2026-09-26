@@ -2,14 +2,19 @@
 #include <sstream>
 #include "core/embedding/embedder.h"
 #include "core/embedding/embedderscache.h"
+#include "core/embedding/protocol/iembed_protocol.h"
 #include "core/index/index.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/uuid.h"
 #include "payloadfieldvalue.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
 namespace {
+constexpr std::string_view kFormatText("text");
+constexpr std::string_view kFormatJson("json");
+
 EmbedderConfig::Strategy convert(FloatVectorIndexOpts::EmbedderOpts::Strategy strategy) noexcept {
 	switch (strategy) {
 		case FloatVectorIndexOpts::EmbedderOpts::Strategy::Always:
@@ -22,26 +27,55 @@ EmbedderConfig::Strategy convert(FloatVectorIndexOpts::EmbedderOpts::Strategy st
 	return {};
 }
 
+EmbedderConfig::Protocol convert(FloatVectorIndexOpts::EmbedderOpts::Protocol protocol) noexcept {
+	switch (protocol) {
+		case FloatVectorIndexOpts::EmbedderOpts::Protocol::Rx:
+			return EmbedderConfig::Protocol::Rx;
+		case FloatVectorIndexOpts::EmbedderOpts::Protocol::OpenAI:
+			return EmbedderConfig::Protocol::OpenAI;
+	}
+	return {};
+}
+
+EmbedderConfig::FieldsFormat convert(FloatVectorIndexOpts::EmbedderOpts::FieldsFormat format) noexcept {
+	switch (format) {
+		case FloatVectorIndexOpts::EmbedderOpts::FieldsFormat::Join:
+			return EmbedderConfig::FieldsFormat::Join;
+		case FloatVectorIndexOpts::EmbedderOpts::FieldsFormat::Stringify:
+			return EmbedderConfig::FieldsFormat::Stringify;
+	}
+	return {};
+}
+
 template <class T>
 std::shared_ptr<T> createEmbedder(std::string_view nsName, std::string_view idxName,
 								  const std::optional<FloatVectorIndexOpts::EmbedderOpts>& cfg,
-								  const std::shared_ptr<EmbeddersCache>& embeddersCache, bool enablePerfStat) {
+								  const std::shared_ptr<EmbeddersCache>& embeddersCache, bool enablePerfStat, std::string_view format) {
 	if (!cfg.has_value()) {
 		return {};
 	}
 
 	const auto& opts = cfg.value();
-	EmbedderConfig embedderCfg{CacheTag{opts.cacheTag}, opts.fields, convert(opts.strategy)};
+	const auto embedderName = opts.name.empty() ? std::string{nsName} + "_" + ToLower(idxName) : ToLower(opts.name);
+	EmbedderConfig embedderCfg{.tag = CacheTag{opts.cacheTag},
+							   .fields = opts.fields,
+							   .protocol = convert(opts.protocol),
+							   .strategy = convert(opts.strategy),
+							   .fieldsFormat = convert(opts.fieldsFormat),
+							   .model = opts.model};
+
+	auto endpoint = embedding::GetEmbedProtocol(embedderCfg.protocol).ResolveEndpoint(opts.endpointUrl, embedderName, format);
+
 	PoolConfig poolCfg{opts.pool.connections,
-					   opts.endpointUrl,
+					   std::move(endpoint.baseUrl),
 					   opts.pool.connect_timeout_ms,
 					   opts.pool.read_timeout_ms,
 					   opts.pool.write_timeout_ms,
 					   CircuitBreakerConfig{opts.pool.circuit_breaker.threshold, opts.pool.circuit_breaker.threshold_timeout_ms,
 											opts.pool.circuit_breaker.cooldown_ms}};
-	const auto embedderName = opts.name.empty() ? std::string{nsName} + "_" + ToLower(idxName) : ToLower(opts.name);
 	embeddersCache->IncludeTag(opts.cacheTag);
-	return std::make_shared<T>(embedderName, idxName, std::move(embedderCfg), std::move(poolCfg), embeddersCache, enablePerfStat);
+	return std::make_shared<T>(embedderName, idxName, std::move(endpoint.path), std::move(embedderCfg), std::move(poolCfg), embeddersCache,
+							   enablePerfStat);
 }
 
 }  // namespace
@@ -99,8 +133,10 @@ void PayloadFieldType::createEmbedders(std::string_view nsName, const std::optio
 		return;
 	}
 	const auto& cfg = embeddingOpts.value();
-	upsertEmbedder_ = createEmbedder<const reindexer::UpsertEmbedder>(nsName, name_, cfg.upsertEmbedder, embeddersCache, enablePerfStat);
-	queryEmbedder_ = createEmbedder<const reindexer::QueryEmbedder>(nsName, name_, cfg.queryEmbedder, embeddersCache, enablePerfStat);
+	upsertEmbedder_ =
+		createEmbedder<const reindexer::UpsertEmbedder>(nsName, name_, cfg.upsertEmbedder, embeddersCache, enablePerfStat, kFormatJson);
+	queryEmbedder_ =
+		createEmbedder<const reindexer::QueryEmbedder>(nsName, name_, cfg.queryEmbedder, embeddersCache, enablePerfStat, kFormatText);
 }
 
 }  // namespace reindexer

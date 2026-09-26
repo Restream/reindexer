@@ -9,9 +9,9 @@
 #include "core/nsselecter/joins/items_processor_mock.h"
 #include "core/payload/payloadiface.h"
 #include "core/query/expression/expression.h"
+#include "core/query/query_impl.h"
 #include "core/type_consts.h"
 #include "estl/algorithm.h"
-#include "query.h"
 #include "tools/serilize/wrserializer.h"
 #include "tools/string_regexp_functions.h"
 
@@ -19,7 +19,7 @@ namespace reindexer {
 
 namespace {
 void checkSubqueryCondition(CondType cond) {
-	if (cond == CondAny || cond == CondEmpty || cond == CondKnn) {
+	if (cond == CondAny || cond == CondEmpty || cond == CondKnn) [[unlikely]] {
 		throw Error{errQueryExec, "Condition {} with field and subquery", CondTypeToStr(cond)};
 	}
 }
@@ -30,16 +30,16 @@ template <typename JS>
 std::string JoinQueryEntry::Dump(std::span<JS> joinItemsProcessors) const {
 	WrSerializer ser;
 	const auto& js = joinItemsProcessors[joinIndex];
-	const auto& q = js.JoinQuery();
-	ser << js.Type() << " (" << q.GetSQL() << ") ON ";
+	const auto q = js.JoinQuery();
+	ser << js.Type() << " (" << (*q).GetSQL() << ") ON ";
 	ser << '(';
-	for (const auto& jqe : q.joinEntries_) {
-		if (&jqe != &q.joinEntries_.front()) {
+	for (const auto& jqe : q.JoinEntries()) {
+		if (&jqe != &q.JoinEntries().front()) {
 			ser << ' ' << jqe.Operation() << ' ';
 		} else {
 			assertrx(jqe.Operation() == OpAnd);
 		}
-		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << joins::InvertJoinCondition(jqe.Condition()) << ' '
+		ser << q.RightNsName() << '.' << jqe.RightFieldName() << ' ' << joins::InvertJoinCondition(jqe.Condition()) << ' '
 			<< jqe.LeftFieldName();
 	}
 	ser << ')';
@@ -54,13 +54,13 @@ template <typename JS>
 std::string JoinQueryEntry::DumpOnCondition(std::span<JS> joinItemsProcessors) const {
 	WrSerializer ser;
 	const auto& js = joinItemsProcessors[joinIndex];
-	const auto& q = js.JoinQuery();
+	const auto q = js.JoinQuery();
 	ser << js.Type() << " ON (";
-	for (const auto& jqe : q.joinEntries_) {
-		if (&jqe != &q.joinEntries_.front()) {
+	for (const auto& jqe : q.JoinEntries()) {
+		if (&jqe != &q.JoinEntries().front()) {
 			ser << ' ' << jqe.Operation() << ' ';
 		}
-		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << joins::InvertJoinCondition(jqe.Condition()) << ' '
+		ser << q.RightNsName() << '.' << jqe.RightFieldName() << ' ' << joins::InvertJoinCondition(jqe.Condition()) << ' '
 			<< jqe.LeftFieldName();
 	}
 	ser << ')';
@@ -303,6 +303,20 @@ bool QueryEntry::TryUpdateInplace(VariantArray& newValues) noexcept {
 	return false;
 }
 
+void FunctionEntry::verify() const {
+	const auto checkWalField = [](std::string_view fieldName) {
+		if (fieldName == kLsnIndexName) [[unlikely]] {
+			throw Error{errQueryExec, "WAL conditions are supported only as QueryEntry"};
+		}
+	};
+	if (HasComparisonField()) {
+		checkWalField(comparisonField_.FieldName());
+	}
+	for (const auto& fieldName : Function().FieldNames()) {
+		checkWalField(fieldName);
+	}
+}
+
 const functions::Function& FunctionEntry::Function() const& {
 	return std::visit([](const auto& f) -> const functions::Function& { return f; }, function_);
 }
@@ -361,6 +375,79 @@ std::string QueryFunctionEntry::DumpBrief() const {
 	return std::string{ser.Slice()};
 }
 
+void QueryArithmeticEntry::checkCondition(CondType cond) const {
+	switch (cond) {
+		case CondEq:
+		case CondLt:
+		case CondLe:
+		case CondGt:
+		case CondGe:
+		case CondSet:
+		case CondAllSet:
+			break;
+		case CondRange:
+			if (rightKind_ != RightKind::Values || values_.size() != 2) [[unlikely]] {
+				throw Error(errParams, "Condition {} for a WHERE arithmetic expression requires exactly two literal values",
+							CondTypeToStrShort(cond));
+			}
+			if (values_[0].IsNullValue() || values_[1].IsNullValue()) [[unlikely]] {
+				throw Error(errParams, "Condition {} can't have null argument", CondTypeToStrShort(cond));
+			}
+			break;
+		case CondAny:
+		[[unlikely]]
+		case CondEmpty:
+		[[unlikely]]
+		case CondLike:
+		[[unlikely]]
+		case CondDWithin:
+		[[unlikely]]
+		case CondKnn:
+			[[unlikely]] throw Error(errQueryExec, "Condition {} is not supported by arithmetic expressions in WHERE",
+									 CondTypeToStrShort(cond));
+	}
+}
+
+std::string QueryArithmeticEntry::Dump() const {
+	WrSerializer ser;
+	if (leftKind_ == LeftKind::Field) {
+		ser << leftField_.FieldName();
+	} else {
+		ser << leftExpr_.Dump();
+	}
+	ser << ' ' << CondTypeToStrShort(condition_) << ' ';
+	switch (rightKind_) {
+		case RightKind::Values: {
+			const bool severalValues = (values_.size() > 1);
+			if (severalValues) {
+				ser << '(';
+			}
+			for (auto& v : values_) {
+				if (&v != &*values_.begin()) {
+					ser << ',';
+				}
+				v.Type().EvaluateOneOf(overloaded{
+					[&](KeyValueType::String) { ser << '\'' << v.As<std::string>() << '\''; },
+					[&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
+					[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+										KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+										KeyValueType::Undefined, KeyValueType::FloatVector> auto) { ser << v.As<std::string>(); }});
+			}
+			if (severalValues) {
+				ser << ')';
+			}
+			break;
+		}
+		case RightKind::Field:
+			ser << rightField_.FieldName();
+			break;
+		case RightKind::Arithmetic:
+			ser << rightExpr_.Dump();
+			break;
+	}
+	return std::string{ser.Slice()};
+}
+
 std::string SubQueryFunctionEntry::Dump(const std::vector<Query>& subQueries) const {
 	WrSerializer ser;
 	ser << FunctionEntry::Dump();
@@ -368,14 +455,14 @@ std::string SubQueryFunctionEntry::Dump(const std::vector<Query>& subQueries) co
 	return std::string{ser.Slice()};
 }
 
-void SubQueryFunctionEntry::checkCondition(CondType condition) const { checkSubqueryCondition(condition); }
+void SubQueryFunctionEntry::verify() const { checkSubqueryCondition(condition_); }
 
 AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, SortingEntries&& sort, unsigned limit, unsigned offset)
 	: type_(type), fields_(std::move(fields)), sortingEntries_{std::move(sort)}, limit_(limit), offset_(offset) {
 	switch (type_) {
 		case AggDistinct:
 		case AggFacet:
-			if (fields_.empty()) {
+			if (fields_.empty()) [[unlikely]] {
 				throw Error(errQueryExec, "Empty set of fields for aggregation {}", AggTypeToStr(type_));
 			}
 			break;
@@ -384,18 +471,23 @@ AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, 
 		case AggMax:
 		case AggSum:
 		case AggAvg:
-			if (fields_.size() != 1) {
+			if (fields_.size() != 1) [[unlikely]] {
 				throw Error{errQueryExec, "For aggregation {} is available exactly one field", AggTypeToStr(type_)};
 			}
 			break;
 		case AggCount:
 		case AggCountCached:
-			if (!fields_.empty()) {
+			if (!fields_.empty()) [[unlikely]] {
 				throw Error(errQueryExec, "Not empty set of fields for aggregation {}", AggTypeToStr(type_));
 			}
 			break;
 		case AggUnknown:
-			throw Error{errQueryExec, "Unknown aggregation type"};
+		[[unlikely]]
+		default:
+			[[unlikely]] throw Error{errQueryExec, "Unknown aggregation type"};
+	}
+	if (std::any_of(fields_.begin(), fields_.end(), [](const auto& f) { return strEmpty(f); })) [[unlikely]] {
+		throw Error(errQueryExec, "Empty field name for aggregation {}", AggTypeToStr(type_));
 	}
 	switch (type_) {
 		case AggDistinct:
@@ -405,36 +497,38 @@ AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1>&& fields, 
 		case AggAvg:
 		case AggCount:
 		case AggCountCached:
-			if (limit_ != QueryEntry::kDefaultLimit || offset_ != QueryEntry::kDefaultOffset) {
+			if (limit_ != QueryEntry::kDefaultLimit || offset_ != QueryEntry::kDefaultOffset) [[unlikely]] {
 				throw Error(errQueryExec, "Limit or offset are not available for aggregation {}", AggTypeToStr(type_));
 			}
-			if (!sortingEntries_.empty()) {
+			if (!sortingEntries_.empty()) [[unlikely]] {
 				throw Error(errQueryExec, "Sort is not available for aggregation {}", AggTypeToStr(type_));
 			}
 			break;
-		case AggUnknown:
-			throw Error{errQueryExec, "Unknown aggregation type"};
 		case AggFacet:
 			break;
+		case AggUnknown:
+		[[unlikely]]
+		default:
+			[[unlikely]] throw Error{errQueryExec, "Unknown aggregation type"};
 	}
 }
 
 void AggregateEntry::AddSortingEntry(SortingEntry&& sorting) {
-	if (type_ != AggFacet) {
+	if (type_ != AggFacet) [[unlikely]] {
 		throw Error(errQueryExec, "Sort is not available for aggregation {}", AggTypeToStr(type_));
 	}
 	sortingEntries_.emplace_back(std::move(sorting));
 }
 
 void AggregateEntry::SetLimit(unsigned l) {
-	if (type_ != AggFacet) {
+	if (type_ != AggFacet) [[unlikely]] {
 		throw Error(errQueryExec, "Limit or offset are not available for aggregation {}", AggTypeToStr(type_));
 	}
 	limit_ = l;
 }
 
 void AggregateEntry::SetOffset(unsigned o) {
-	if (type_ != AggFacet) {
+	if (type_ != AggFacet) [[unlikely]] {
 		throw Error(errQueryExec, "Limit or offset are not available for aggregation {}", AggTypeToStr(type_));
 	}
 	offset_ = o;
@@ -446,9 +540,29 @@ std::string BetweenFieldsQueryEntry::Dump() const {
 	return std::string{ser.Slice()};
 }
 
-void BetweenFieldsQueryEntry::checkCondition(CondType cond) const {
-	if (cond == CondAny || cond == CondEmpty || cond == CondDWithin || cond == CondKnn) {
-		throw Error{errLogic, "Condition '{}' is inapplicable between two fields", CondTypeToStr(cond)};
+void BetweenFieldsQueryEntry::verify() const {
+	switch (condition_) {
+		case CondAny:
+		[[unlikely]]
+		case CondEmpty:
+		[[unlikely]]
+		case CondDWithin:
+		[[unlikely]]
+		case CondKnn:
+			[[unlikely]] throw Error{errLogic, "Condition '{}' is not supported in between fields condition", CondTypeToStr(condition_)};
+		case CondEq:
+		case CondLt:
+		case CondLe:
+		case CondGt:
+		case CondGe:
+		case CondRange:
+		case CondSet:
+		case CondAllSet:
+		case CondLike:
+			break;
+	}
+	if (leftField_.FieldName() == kLsnIndexName || rightField_.FieldName() == kLsnIndexName) [[unlikely]] {
+		throw Error{errQueryExec, "Can't use '{}' in between fields condition", kLsnIndexName};
 	}
 }
 
@@ -486,7 +600,7 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 				ser.PutVarUint(op);
 				{
 					const auto sizePosSaver = ser.StartVString();
-					subQueries.at(sqe.QueryIndex()).Serialize(ser, Normal, queryFormat);
+					Impl(subQueries.at(sqe.QueryIndex())).Serialize(ser, Normal, queryFormat);
 				}
 				serialize(sqe.Condition(), sqe.Values(), ser);
 			},
@@ -497,7 +611,7 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 				ser.PutVarUint(sqe.Condition());
 				{
 					const auto sizePosSaver = ser.StartVString();
-					subQueries.at(sqe.QueryIndex()).Serialize(ser, Normal, queryFormat);
+					Impl(subQueries.at(sqe.QueryIndex())).Serialize(ser, Normal, queryFormat);
 				}
 			},
 			[&ser, op, &subQueries, queryFormat](const SubQueryFunctionEntry& sqe) {
@@ -529,6 +643,27 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer&
 					ser.PutVarUint(op);
 					ser.PutVarUint(entry.Condition());
 					expressions::Values{entry.Values()}.Serialize(ser);
+				}
+			},
+			[&](const QueryArithmeticEntry& entry) {
+				ser.PutVarUint(QueryExpressions);
+				if (entry.GetLeftKind() == QueryArithmeticEntry::LeftKind::Field) {
+					expressions::Field{entry.LeftField().FieldName()}.Serialize(ser);
+				} else {
+					entry.LeftExpr().Serialize(ser);
+				}
+				ser.PutVarUint(op);
+				ser.PutVarUint(entry.Condition());
+				switch (entry.GetRightKind()) {
+					case QueryArithmeticEntry::RightKind::Values:
+						expressions::Values{entry.Values()}.Serialize(ser);
+						break;
+					case QueryArithmeticEntry::RightKind::Field:
+						expressions::Field{entry.RightField().FieldName()}.Serialize(ser);
+						break;
+					case QueryArithmeticEntry::RightKind::Arithmetic:
+						entry.RightExpr().Serialize(ser);
+						break;
 				}
 			},
 			[&](const QueryEntriesBracket&) {
@@ -591,23 +726,23 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 		} else if (!result) {
 			break;
 		}
-		const bool lastResult =
-			it->Visit([] RX_PRE_LMBD_ALWAYS_INLINE(
-						  const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, JoinQueryEntry, SubQueryFunctionEntry> auto&)
-						  RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; },
-					  [&it, &pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket&) RX_POST_LMBD_ALWAYS_INLINE {
-						  return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl);
-					  },
-					  [&pl] RX_PRE_LMBD_ALWAYS_INLINE(
+		const bool lastResult = it->Visit(
+			[] RX_PRE_LMBD_ALWAYS_INLINE(
+				const concepts::OneOf<SubQueryEntry, SubQueryFieldEntry, JoinQueryEntry, SubQueryFunctionEntry> auto&)
+				RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; },
+			[&it, &pl] RX_PRE_LMBD_ALWAYS_INLINE(const QueryEntriesBracket&) RX_POST_LMBD_ALWAYS_INLINE {
+				return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl);
+			},
+			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(
 						  const QueryEntry& qe) RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
-					  [] RX_PRE_LMBD_ALWAYS_INLINE(const QueryFunctionEntry&) -> bool { throw_as_assert; },
-					  [&pl] RX_PRE_LMBD_ALWAYS_INLINE(
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const QueryFunctionEntry&) -> bool { throw_as_assert; }, [] RX_PRE_LMBD_ALWAYS_INLINE(const QueryArithmeticEntry&) -> bool { throw_as_assert; },
+			[&pl] RX_PRE_LMBD_ALWAYS_INLINE(
 						  const BetweenFieldsQueryEntry& qe) RX_POST_LMBD_ALWAYS_INLINE { return checkIfSatisfyCondition(qe, pl); },
-					  [] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
-					  [] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
-					  [] RX_PRE_LMBD_ALWAYS_INLINE(const MultiDistinctQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
-					  [] RX_PRE_LMBD_ALWAYS_INLINE(const KnnQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; }  // TODO
-			);
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysFalse&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return false; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const AlwaysTrue&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const MultiDistinctQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE noexcept { return true; },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const KnnQueryEntry&) RX_POST_LMBD_ALWAYS_INLINE -> bool { throw_as_assert; }	 // TODO
+		);
 		result = (lastResult != (it->operation == OpNot));
 	}
 	return result;
@@ -745,7 +880,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 			return true;
 		case CondLike:
 			for (const auto& v : lValues) {
-				if (!v.Type().Is<KeyValueType::String>()) {
+				if (!v.Type().Is<KeyValueType::String>()) [[unlikely]] {
 					throw Error(errLogic, "Condition LIKE must be applied to data of string type, but {} was provided", v.Type().Name());
 				}
 				if (matchLikePattern(std::string_view(v), std::string_view(rValues[0]))) {
@@ -766,7 +901,7 @@ bool QueryEntries::CheckIfSatisfyCondition(const VariantArray& lValues, CondType
 			return DWithin(static_cast<Point>(lValues), point, distance);
 		}
 		case CondKnn:
-			throw_as_assert;
+			[[unlikely]] throw_as_assert;
 	}
 	return false;
 }
@@ -1149,7 +1284,7 @@ std::string QueryJoinEntry::DumpCondition(const JS& joinItemsProcessor, bool nee
 	if (needOp) {
 		ser << ' ' << op_ << ' ';
 	}
-	ser << q.NsName() << '.' << RightFieldName() << ' ' << joins::InvertJoinCondition(condition_) << ' ' << LeftFieldName();
+	ser << q.RightNsName() << '.' << RightFieldName() << ' ' << joins::InvertJoinCondition(condition_) << ' ' << LeftFieldName();
 	return std::string{ser.Slice()};
 }
 template std::string QueryJoinEntry::DumpCondition(const joins::ItemsProcessor&, bool) const;
@@ -1194,7 +1329,12 @@ std::string SubQueryFieldEntry::Dump(const std::vector<Query>& subQueries) const
 	return ss.str();
 }
 
-void SubQueryFieldEntry::checkCondition(CondType cond) const { checkSubqueryCondition(cond); }
+void SubQueryFieldEntry::verify() const {
+	checkSubqueryCondition(condition_);
+	if (field_ == kLsnIndexName) [[unlikely]] {
+		throw Error{errQueryExec, "WAL conditions are not supported with subquery"};
+	}
+}
 
 template <typename JS>
 void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, std::span<JS> joinItemsProcessors,
@@ -1220,6 +1360,7 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 				ser << ")\n";
 			},
 			[&ser](const QueryEntry& qe) { ser << qe.Dump() << '\n'; }, [&ser](const QueryFunctionEntry& qe) { ser << qe.Dump() << '\n'; },
+			[&ser](const QueryArithmeticEntry& qe) { ser << qe.Dump() << '\n'; },
 			[&joinItemsProcessors, &ser](const JoinQueryEntry& jqe) { ser << jqe.Dump(joinItemsProcessors) << '\n'; },
 			[&ser](const BetweenFieldsQueryEntry& qe) { ser << qe.Dump() << '\n'; }, [&ser](const AlwaysFalse&) { ser << "AlwaysFalse\n"; },
 			[&ser](const AlwaysTrue&) { ser << "AlwaysTrue\n"; }, [&ser](const MultiDistinctQueryEntry& qe) { ser << qe.Dump() << "\n"; },

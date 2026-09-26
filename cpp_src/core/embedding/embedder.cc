@@ -1,6 +1,7 @@
 #include "embedder.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "core/embedding/embedderscache.h"
 #include "core/embedding/httpconnector.h"
@@ -11,10 +12,6 @@
 namespace reindexer {
 
 namespace {
-constexpr std::string_view kFormatText("text");
-constexpr std::string_view kFormatJson("json");
-constexpr std::string_view kServerPathFormat("/api/v1/embedder/{}/produce?format={}");
-
 EmbedderCircuitBreaker::Config makeCircuitBreakerConfig(const CircuitBreakerConfig& cfg) noexcept {
 	return EmbedderCircuitBreaker::Config{
 		.threshold = cfg.threshold,
@@ -24,11 +21,11 @@ EmbedderCircuitBreaker::Config makeCircuitBreakerConfig(const CircuitBreakerConf
 }
 }  // namespace
 
-EmbedderBase::EmbedderBase(std::string_view name, std::string_view format, std::string_view fieldName, EmbedderConfig&& config,
+EmbedderBase::EmbedderBase(std::string_view name, std::string_view fieldName, std::string serverPath, EmbedderConfig&& config,
 						   PoolConfig&& poolConfig, const std::shared_ptr<EmbeddersCache>& cache)
 	: name_{name},
 	  fieldName_{fieldName},
-	  serverPath_{fmt::format(kServerPathFormat, name, format)},
+	  serverPath_{std::move(serverPath)},
 	  cache_{cache},
 	  config_{std::move(config)},
 	  circuitBreaker_{makeCircuitBreakerConfig(poolConfig.circuit_breaker)} {
@@ -46,11 +43,11 @@ EmbedderPerfStat EmbedderBase::GetPerfStat(std::string_view tag) const {
 	stat.totalQueriesCount = statistic_.totalQueriesCount.load(std::memory_order_relaxed);
 	stat.totalEmbedDocumentsCount = statistic_.totalEmbedDocumentsCount.load(std::memory_order_relaxed);
 	stat.lastSecQps = statEmbedderTimes.lastSecHitCount;
-	stat.lastSecDps = statistic_.embedderDps.Get();
+	stat.lastSecDps = static_cast<unsigned>(std::lround(statistic_.embedderDps.Get()));
 	stat.totalErrorsCount = statistic_.totalErrorsCount.load(std::memory_order_relaxed);
 	stat.lastSecErrorsCount = statLastSecErrorsCount.lastSecHitCount;
 	stat.connInUse = pool_->ConnectionInUse();
-	stat.lastSecAvgConnInUse = statistic_.avgConnInUse.Get();
+	stat.lastSecAvgConnInUse = static_cast<unsigned>(std::lround(statistic_.avgConnInUse.Get()));
 	stat.totalAvgLatencyUs = statEmbedderTimes.totalAvgTimeUs;
 	stat.lastSecAvgLatencyUs = statEmbedderTimes.lastSecAvgTimeUs;
 	stat.maxLatencyUs = statEmbedderTimes.maxTimeUs;
@@ -139,7 +136,7 @@ void EmbedderBase::calculate(const RdxContext& ctx, const embedding::Adapter& sr
 	permit.ReportSuccess();
 
 	logFmt(LogTrace, "Embedding data: {}", response.content);
-	auto error = embedding::Adapter::VectorsFromJSON(response.content, products);
+	auto error = embedding::Adapter::VectorsFromJSON(response.content, config_.protocol, products);
 	if (!error.ok()) {
 		throw error;
 	}
@@ -149,9 +146,10 @@ void EmbedderBase::calculate(const RdxContext& ctx, const embedding::Adapter& sr
 	}
 }
 
-UpsertEmbedder::UpsertEmbedder(std::string_view name, std::string_view fieldName, EmbedderConfig&& config, PoolConfig&& poolConfig,
-							   const std::shared_ptr<EmbeddersCache>& cache, bool enablePerfStat)
-	: EmbedderBase(name, kFormatJson, fieldName, std::move(config), std::move(poolConfig), cache), enablePerfStat_(enablePerfStat) {}
+UpsertEmbedder::UpsertEmbedder(std::string_view name, std::string_view fieldName, std::string serverPath, EmbedderConfig&& config,
+							   PoolConfig&& poolConfig, const std::shared_ptr<EmbeddersCache>& cache, bool enablePerfStat)
+	: EmbedderBase(name, fieldName, std::move(serverPath), std::move(config), std::move(poolConfig), cache),
+	  enablePerfStat_(enablePerfStat) {}
 
 bool UpsertEmbedder::IsAuxiliaryField(std::string_view fieldName) const noexcept {
 	return std::ranges::find(config_.fields, fieldName) != config_.fields.end();
@@ -171,7 +169,7 @@ void UpsertEmbedder::Calculate(const RdxContext& ctx, std::span<const std::vecto
 	try {
 		assertrx_dbg(!sources.empty());
 		checkFields(sources);
-		embedding::Adapter srcAdapter(sources);
+		embedding::Adapter srcAdapter(sources, config_.protocol, config_.fieldsFormat, config_.model);
 		calculate(ctx, srcAdapter, tmStart, enablePerfStat, products);
 		statistic_.lastStatus.store(true, std::memory_order_relaxed);
 	} catch (const std::exception& e) {
@@ -200,9 +198,10 @@ void UpsertEmbedder::checkFields(std::span<const std::vector<std::pair<std::stri
 	}
 }
 
-QueryEmbedder::QueryEmbedder(std::string_view name, std::string_view fieldName, EmbedderConfig&& config, PoolConfig&& poolConfig,
-							 const std::shared_ptr<EmbeddersCache>& cache, bool enablePerfStat)
-	: EmbedderBase(name, kFormatText, fieldName, std::move(config), std::move(poolConfig), cache), enablePerfStat_(enablePerfStat) {}
+QueryEmbedder::QueryEmbedder(std::string_view name, std::string_view fieldName, std::string serverPath, EmbedderConfig&& config,
+							 PoolConfig&& poolConfig, const std::shared_ptr<EmbeddersCache>& cache, bool enablePerfStat)
+	: EmbedderBase(name, fieldName, std::move(serverPath), std::move(config), std::move(poolConfig), cache),
+	  enablePerfStat_(enablePerfStat) {}
 
 void QueryEmbedder::Calculate(const RdxContext& ctx, const std::string& text, embedding::ValueT& products) const {
 	const bool enablePerfStat = enablePerfStat_.load(std::memory_order_relaxed);
@@ -215,7 +214,7 @@ void QueryEmbedder::Calculate(const RdxContext& ctx, const std::string& text, em
 	}
 
 	try {
-		embedding::Adapter srcAdapter(text);
+		embedding::Adapter srcAdapter(text, config_.protocol, config_.model);
 		calculate(ctx, srcAdapter, tmStart, enablePerfStat, products);
 		statistic_.lastStatus.store(true, std::memory_order_relaxed);
 	} catch (const std::exception& e) {

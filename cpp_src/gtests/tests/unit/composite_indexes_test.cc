@@ -9,6 +9,8 @@ using QueryResults = ReindexerApi::QueryResults;
 using Item = ReindexerApi::Item;
 using Reindexer = ReindexerApi::Reindexer;
 using reindexer::IndexOpts;
+using reindexer::Variant;
+using reindexer::VariantArray;
 
 TEST_F(CompositeIndexesApi, CompositeIndexesAddTest) {
 	addCompositeIndex({kFieldNameBookid, kFieldNameBookid2}, CompositeIndexHash, IndexOpts().PK());
@@ -51,7 +53,7 @@ TEST_F(CompositeIndexesApi, AddIndexWithExistingCompositeIndex) {
 
 static void selectAll(reindexer::Reindexer* reindexer, const std::string& ns) {
 	QueryResults qr;
-	Error err = reindexer->Select(Query(ns, 0, 1000, ModeAccurateTotal), qr);
+	Error err = reindexer->Select(Query(ns).Limit(1000).ReqTotal(), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto it : qr) {

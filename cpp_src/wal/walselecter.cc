@@ -2,48 +2,29 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/id_type.h"
 #include "core/namespace/namespaceimpl.h"
+#include "core/namespace/system_index_names.h"
 #include "core/nsselecter/selectctx.h"
+#include "core/query/query_impl.h"
 #include "core/queryresults/fields_filter.h"
 #include "core/queryresults/localqueryresults.h"
-#include "tools/semversion.h"
 
 namespace reindexer {
-
-const SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
 
 WALSelecter::WALSelecter(const NamespaceImpl* ns, bool allowTxWithoutBegining) : ns_(ns), allowTxWithoutBegining_(allowTxWithoutBegining) {}
 
 void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool snapshot) {
-	using namespace std::string_view_literals;
-	const Query& q = params.query;
+	ConstQueryImpl q = params.query;
 	int count = q.Limit();
 	int start = q.Offset();
 	result.totalCount = 0;
 
 	if (!q.IsWALQuery()) {
-		throw Error(errLogic, "Query to WAL should contain only 1 condition '#lsn > number'");
+		throw Error(errLogic, "Query to WAL should contain condition '{} > number' or '{} is not null'", kLsnIndexName, kLsnIndexName);
 	}
 
-	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsFilter(q.SelectFilters(), *ns_), ns_->schema_, ns_->incarnationTag_);
+	result.addNSContext(ns_->payloadType(), ns_->tagsMatcher(), FieldsFilter(q.SelectFilters(), *ns_), ns_->schema_, ns_->incarnationTag_);
 
-	int lsnIdx = -1;
-	int versionIdx = -1;
-	for (size_t i = 0; i < q.Entries().Size(); ++i) {
-		q.Entries().Visit(
-			i,
-			[&lsnIdx, &versionIdx, i](const QueryEntry& qe) {
-				if ("#lsn"sv == qe.FieldName()) {
-					lsnIdx = i;
-				} else if ("#slave_version"sv == qe.FieldName()) {
-					versionIdx = i;
-				} else {
-					throw Error(errLogic, "Unexpected index in WAL select query: {}", qe.FieldName());
-				}
-			},
-			[&q](const auto&) { throw Error(errLogic, "Unexpected WAL select query: {}", q.GetSQL()); });
-	}
-	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.Entries().Get<QueryEntry>(versionIdx).Values()[0].As<std::string>());
-	auto& lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
+	const auto& lsnEntry = q.Entries().Get<QueryEntry>(0);
 	if (lsnEntry.Values().size() == 1 && (lsnEntry.Condition() == CondGt || lsnEntry.Condition() == CondGe)) {
 		lsn_t fromLSN = lsn_t(std::min(lsnEntry.Values()[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
 		if (fromLSN.isEmpty()) {
@@ -100,16 +81,6 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 					break;
 				case WalInitTransaction:
 				case WalCommitTransaction:
-					if (!snapshot) {
-						if (versionIdx < 0) {
-							break;
-						}
-						if (q.Entries().Get<QueryEntry>(versionIdx).Condition() != CondEq ||
-							slaveVersion < kMinUnknownReplSupportRxVersion) {
-							break;
-						}
-					}
-					// fall-through
 				case WalIndexAdd:
 				case WalIndexDrop:
 				case WalIndexUpdate:
@@ -118,9 +89,6 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 				case WalUpdateQuery:
 				case WalItemModify:
 				case WalSetSchema:
-					if (!snapshot && rec.type == WalSetSchema && slaveVersion < kMinUnknownReplSupportRxVersion) {
-						break;
-					}
 					if (start) {
 						start--;
 					} else if (count) {
@@ -151,8 +119,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 			}
 		}
 	} else if (lsnEntry.Condition() == CondAny) {
-		bool enableSpecialRecords = snapshot || !(slaveVersion < kMinUnknownReplSupportRxVersion);
-		if (start == 0 && enableSpecialRecords) {
+		if (start == 0) {
 			auto addSpRecord = [&result](const WALRecord& wrec) {
 				PackedWALRecord wr;
 				wr.Pack(wrec);
@@ -160,7 +127,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 				val.SetLSN(lsn_t());
 				result.AddItemRef(IdType::NotSet(), std::move(val), 0, true);
 			};
-			for (unsigned int i = 1; i < ns_->indexes_.size(); i++) {
+			for (unsigned int i = 1; i < ns_->indexes().size(); i++) {
 				auto indexDef = ns_->getIndexDefinition(i);
 				WrSerializer ser;
 				indexDef.GetJSON(ser);
@@ -194,7 +161,7 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 			result.totalCount++;
 		}
 	} else {
-		throw Error(errLogic, "Query to WAL should contain condition '#lsn > number' or '#lsn is not null'");
+		throw Error(errLogic, "Query to WAL should contain condition '{} > number' or '{} is not null'", kLsnIndexName, kLsnIndexName);
 	}
 	if (params.floatVectorsHolder) {
 		const FieldsFilter fieldsFilter{q.SelectFilters(), *ns_};

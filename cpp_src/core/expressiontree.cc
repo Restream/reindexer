@@ -75,12 +75,12 @@ public:
 
 	using InvalidEntries = TypesPack<SubQueryEntry, SubQueryFieldEntry, SubQueryFunctionEntry>;
 	using SkippingEntries = TypesPack<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue, KnnQueryEntry,
-									  MultiDistinctQueryEntry, QueryFunctionEntry>;
+									  MultiDistinctQueryEntry, QueryFunctionEntry, QueryArithmeticEntry>;
 	using MergingEntry = QueryEntry;
 
 	MergeResult Merge(QueryEntry& entry, uint16_t dst, uint16_t src, std::optional<OpType> nextOp, Changed) {
 		if (entry.IsFieldIndexed() && !entry.ForcedSortOptEntry()) {
-			const Index& index = *qPreproc_.ns_.indexes_[entry.IndexNo()];
+			const Index& index = *qPreproc_.ns_.indexes()[entry.IndexNo()];
 			if (index.IsFulltext() || index.IsFloatVector()) {
 				return MergeResult::NotMerged;
 			}
@@ -103,7 +103,7 @@ public:
 					const auto orderedFlag = index.IsOrdered() ? MergeOrdered::Yes : MergeOrdered::No;
 					const auto mergeRes =
 						IsComposite(index.Type())
-							? qPreproc_.mergeQueryEntries<ValuesType::Composite>(iidxRef - 1, src, orderedFlag, qPreproc_.ns_.payloadType_,
+							? qPreproc_.mergeQueryEntries<ValuesType::Composite>(iidxRef - 1, src, orderedFlag, qPreproc_.ns_.payloadType(),
 																				 index.Fields())
 							: qPreproc_.mergeQueryEntries<ValuesType::Scalar>(iidxRef - 1, src, orderedFlag, indexOpts.collateOpts_);
 					if (mergeRes == MergeResult::Annihilated) {

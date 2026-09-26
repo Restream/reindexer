@@ -1,3 +1,5 @@
+#include <type_traits>
+#include <utility>
 #include "core/ft/bm25.h"
 #include "core/id_type.h"
 #include "core/rdxcontext.h"
@@ -14,16 +16,18 @@ constexpr size_t kUseBinarySearchBorder = 8;
 // bm25Norm = (1 - bm25Weight) + bm25 * bm25Boost * bm25Weight
 // See fulltext_ranking.md#score-of-one-subterm-occurrence, fulltext.md#field-selection,
 // fulltext.md#basic-document-ranking-algorithms
-template <typename Calculator, bool UseBinarySearch, typename DocsStatsGetter>
-std::pair<float, uint8_t> calcTermRankImpl(const FtDslOpts& termOpts, Calculator bm25Calc, const IdRelType& relid, TermRankInfo& termInf,
-										   const FTConfig* cfg, const DocsStatsGetter& docsStatsGetter) {
+template <typename Calculator, bool UseBinarySearch, typename OccurenceT, typename DocsStatsGetter>
+std::pair<float, uint8_t> calcTermRankImpl(const FtDslOpts& termOpts, Calculator bm25Calc, OccurenceT&& relid, uint32_t vdocId,
+										   TermRankInfo& termInf, const FTConfig* cfg, const DocsStatsGetter& docsStatsGetter) {
+	assertrx_dbg(vdocId != kEmptyVDocId);
+
 	uint8_t fieldWithMaxRank = 0;
 
 	h_vector<float, 4> ranksInFields;
 	bool needToSumWinner = false;
 
 	const bool needSumRanks = cfg->summationRanksByFieldsRatio > 0.0;
-	const auto& positions = relid.Pos();
+	const auto& positions = OccurencePositions(relid);
 
 	for (size_t idx = 0; idx < positions.size();) {
 		const unsigned f = positions[idx].field();
@@ -49,7 +53,7 @@ std::pair<float, uint8_t> calcTermRankImpl(const FtDslOpts& termOpts, Calculator
 		auto& fldCfg = cfg->fieldsCfg[f];
 		const size_t fieldEnd = idx;
 		const size_t wordsInField = fieldEnd - fieldBegin;
-		const float bm25 = bm25Calc.Get(wordsInField, docsStatsGetter.NumWordsInField(relid.Id(), f), docsStatsGetter.AvgWordsCount(f));
+		const float bm25 = bm25Calc.Get(wordsInField, docsStatsGetter.NumWordsInField(vdocId, f), docsStatsGetter.AvgWordsCount(f));
 		const float normBm25Tmp = FTFieldConfig::bound(bm25, fldCfg.bm25Weight, fldCfg.bm25Boost);
 		termInf.positionRank = fldCfg.calcPositionRank(positions[fieldBegin].pos());
 		termInf.termLenBoost = FTFieldConfig::bound(termOpts.termLenBoost, fldCfg.termLenWeight, fldCfg.termLenBoost);
@@ -84,19 +88,54 @@ std::pair<float, uint8_t> calcTermRankImpl(const FtDslOpts& termOpts, Calculator
 	return {termInf.termRank, fieldWithMaxRank};
 }
 
-template <typename Calculator, typename DocsStatsGetter>
-std::pair<float, uint8_t> calcTermRank(const FtDslOpts& termOpts, Calculator bm25Calc, const IdRelType& relid, TermRankInfo& termInf,
-									   const FTConfig* cfg, const DocsStatsGetter& docsStatsGetter) {
-	if (relid.Pos().size() >= kUseBinarySearchBorder) {
-		return calcTermRankImpl<Calculator, true>(termOpts, bm25Calc, relid, termInf, cfg, docsStatsGetter);
+template <typename Calculator, typename OccurenceT, typename DocsStatsGetter>
+std::pair<float, uint8_t> calcTermRankSimple(const FtDslOpts& termOpts, Calculator bm25Calc, const OccurenceT& relid, uint32_t vdocId,
+											 TermRankInfo& termInf, const FTConfig* cfg, const DocsStatsGetter& docsStatsGetter) {
+	assertrx_dbg(vdocId != kEmptyVDocId);
+	assertrx_dbg(relid.IsSimple());
+
+	const PosType hit = relid.PeekSimplePos();
+	const unsigned f = hit.field();
+	assertrx(f < cfg->fieldsCfg.size());
+	assertrx(f < termOpts.fieldsOpts.size());
+
+	if (reindexer::fp::IsZero(termOpts.fieldsOpts[f].boost)) {
+		assertrx_dbg(termOpts.boost >= 0.0 && termInf.proc >= 0.0);
+		termInf.termRank = 0.0f;
+		return {0.0f, 0};
+	}
+
+	auto& fldCfg = cfg->fieldsCfg[f];
+	const float bm25 = bm25Calc.Get(1, docsStatsGetter.NumWordsInField(vdocId, f), docsStatsGetter.AvgWordsCount(f));
+	const float normBm25Tmp = FTFieldConfig::bound(bm25, fldCfg.bm25Weight, fldCfg.bm25Boost);
+	termInf.positionRank = fldCfg.calcPositionRank(hit.pos());
+	termInf.termLenBoost = FTFieldConfig::bound(termOpts.termLenBoost, fldCfg.termLenWeight, fldCfg.termLenBoost);
+	termInf.termRank = termOpts.fieldsOpts[f].boost * normBm25Tmp * termInf.termLenBoost * termInf.positionRank;
+	termInf.bm25Norm = normBm25Tmp;
+
+	assertrx_dbg(termOpts.boost >= 0.0 && termInf.proc >= 0.0);
+	termInf.termRank = termOpts.boost * termInf.proc * termInf.termRank;
+	return {termInf.termRank, uint8_t(f)};
+}
+
+template <typename Calculator, typename OccurenceT, typename DocsStatsGetter>
+std::pair<float, uint8_t> calcTermRank(const FtDslOpts& termOpts, Calculator bm25Calc, OccurenceT&& relid, uint32_t vdocId,
+									   TermRankInfo& termInf, const FTConfig* cfg, const DocsStatsGetter& docsStatsGetter) {
+	if (relid.IsSimple()) {
+		return calcTermRankSimple(termOpts, bm25Calc, relid, vdocId, termInf, cfg, docsStatsGetter);
+	}
+	if (OccurenceSize(relid) >= kUseBinarySearchBorder) {
+		return calcTermRankImpl<Calculator, true>(termOpts, bm25Calc, std::forward<OccurenceT>(relid), vdocId, termInf, cfg,
+												  docsStatsGetter);
 	} else {
-		return calcTermRankImpl<Calculator, false>(termOpts, bm25Calc, relid, termInf, cfg, docsStatsGetter);
+		return calcTermRankImpl<Calculator, false>(termOpts, bm25Calc, std::forward<OccurenceT>(relid), vdocId, termInf, cfg,
+												   docsStatsGetter);
 	}
 }
 
-template <bool UseBinarySearch>
-inline bool checkFieldsRelevanceImpl(const IdRelType& relid, const FtDslOpts& termOpts) {
-	const auto& positions = relid.Pos();
+template <bool UseBinarySearch, typename OccurenceT>
+inline bool checkFieldsRelevanceImpl(OccurenceT&& relid, const FtDslOpts& termOpts) {
+	const auto& positions = OccurencePositions(relid);
 
 	for (size_t idx = 0; idx < positions.size();) {
 		const unsigned f = positions[idx].field();
@@ -120,18 +159,24 @@ inline bool checkFieldsRelevanceImpl(const IdRelType& relid, const FtDslOpts& te
 	return false;
 }
 
-inline bool checkFieldsRelevance(const IdRelType& relid, const FtDslOpts& termOpts) {
-	if (relid.Pos().size() >= kUseBinarySearchBorder) {
+template <typename OccurenceT>
+inline bool checkFieldsRelevance(OccurenceT&& relid, const FtDslOpts& termOpts) {
+	if (relid.IsSimple()) {
+		const unsigned f = relid.PeekSimplePos().field();
+		assertrx(f < termOpts.fieldsOpts.size());
+		return !reindexer::fp::IsZero(termOpts.fieldsOpts[f].boost);
+	}
+	if (OccurenceSize(relid) >= kUseBinarySearchBorder) {
 		return checkFieldsRelevanceImpl<true>(relid, termOpts);
 	} else {
 		return checkFieldsRelevanceImpl<false>(relid, termOpts);
 	}
 }
 
-template <bool UseBinarySearch>
-inline float maxFieldsBoostImpl(const IdRelType& relid, const FtDslOpts& termOpts) {
+template <bool UseBinarySearch, typename OccurenceT>
+inline float maxFieldsBoostImpl(OccurenceT&& relid, const FtDslOpts& termOpts) {
 	float res = 0.0;
-	const auto& positions = relid.Pos();
+	const auto& positions = OccurencePositions(relid);
 
 	for (size_t idx = 0; idx < positions.size();) {
 		const unsigned f = positions[idx].field();
@@ -153,8 +198,14 @@ inline float maxFieldsBoostImpl(const IdRelType& relid, const FtDslOpts& termOpt
 	return res;
 }
 
-inline float maxFieldsBoost(const IdRelType& relid, const FtDslOpts& termOpts) {
-	if (relid.Pos().size() >= kUseBinarySearchBorder) {
+template <typename OccurenceT>
+inline float maxFieldsBoost(OccurenceT&& relid, const FtDslOpts& termOpts) {
+	if (relid.IsSimple()) {
+		const unsigned f = relid.PeekSimplePos().field();
+		assertrx(f < termOpts.fieldsOpts.size());
+		return termOpts.fieldsOpts[f].boost;
+	}
+	if (OccurenceSize(relid) >= kUseBinarySearchBorder) {
 		return maxFieldsBoostImpl<true>(relid, termOpts);
 	} else {
 		return maxFieldsBoostImpl<false>(relid, termOpts);
@@ -166,32 +217,37 @@ inline float maxFieldsBoost(const IdRelType& relid, const FtDslOpts& termOpts) {
 // See fulltext.md#phrase-search, fulltext_ranking.md#multi-term-and-phrase-queries
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
 template <typename Bm25T, typename DocsStatsGetter>
-void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResults<IdCont>& term, bool isFirstTerm,
+void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResults<IdCont>& term, bool isFirstTerm, unsigned distance,
+																		const h_vector<FtDslFieldOpts, 8>& fieldsOpts,
 																		const DocsStatsGetter& docsStatsGetter) {
+	FtDslOpts termOpts = term.Opts();
+	termOpts.fieldsOpts = fieldsOpts;
 	// loop on subterm (word, translit, stemmer,...)
 	for (SubtermResults<IdCont>& subterm : term) {
+		termOpts.termLenBoost = subterm.TermLenBoost();
 		if (!inTransaction_) {
 			ThrowOnCancel(ctx_);
 		}
 
-		// first doc is always empty, so number of unempty docs always equal to totalNumDocs_ - 1
-		Bm25Calculator<Bm25T> bm25(totalNumDocs_ - 1, subterm.Occurences().size(), cfg_->bm25Config.bm25k1, cfg_->bm25Config.bm25b);
+		Bm25Calculator<Bm25T> bm25(docsStatsGetter.NumLiveDocs(), subterm.Occurences().size(), cfg_->bm25Config.bm25k1,
+								   cfg_->bm25Config.bm25b);
 
 		for (auto&& occurence : subterm.Occurences()) {
 			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(occurence), const IdRelType&>) ||
-							  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(occurence), IdRelType&>),
+							  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(occurence), IdRelTypePacked&>),
 						  "Expecting occurence is movable for packed vector and not movable for simple vector");
 
-			const index_t docId = occurence.Id();
-			if (docId > maxDocId_) {
-				break;
+			const index_t vdocId = occurence.VdocId();
+			if (vdocId >= totalNumDocs_ || !preselectedDocs_[vdocId]) {
+				continue;
 			}
-
-			if (!preselectedDocs_[docId]) {
+			if (docsStatsGetter.IsDeleted(occurence)) {
 				continue;
 			}
 
-			if (idoffsets_[docId] == maxMergedDocs_ && (!isFirstTerm || NumDocsMerged() >= maxMergedDocs_)) {
+			const MergeOffsetT mdIdx = idoffsets_[vdocId];
+			const bool added = mdIdx != kNotInMerge;
+			if (!added && (!isFirstTerm || NumDocsMerged() >= maxMergedDocs_)) {
 				continue;
 			}
 
@@ -200,37 +256,38 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 			termInf.proc = subterm.Proc();
 			termInf.pattern = subterm.Pattern();
 
-			auto [termRank, field] = calcTermRank(term.Opts(), bm25, occurence, termInf, cfg_, docsStatsGetter);
+			auto [termRank, field] = calcTermRank(termOpts, bm25, occurence, vdocId, termInf, cfg_, docsStatsGetter);
 			if (reindexer::fp::IsZero(termRank)) {
 				continue;
 			}
 
 			if (cfg_->logLevel >= LogTrace) [[unlikely]] {
-				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subterm.Pattern(), bm25.GetIDF(), term.Opts().termLenBoost);
+				logFmt(LogInfo, "Pattern {}, idf {}, termLenBoost {}", subterm.Pattern(), bm25.GetIDF(), termOpts.termLenBoost);
 			}
 
 			if (isFirstTerm) {
-				if (idoffsets_[docId] < maxMergedDocs_) {
-					auto& md = GetMergeData(idoffsets_[docId]);
-					auto& mdExt = GetMergeDataExtended(idoffsets_[docId]);
+				if (added) {
+					auto& md = GetMergeData(mdIdx);
+					auto& mdExt = GetMergeDataExtended(mdIdx);
 					if (termRank > mdExt.rank) {
 						mdExt.rank = termRank;
 						md.proc = termRank;
 					}
-					mergeDataExtended_[idoffsets_[docId]].AddPositions(occurence.Pos(), term.Pattern(), termInf);
+					auto positions = TakeOccurencePos(occurence);
+					mergeDataExtended_[mdIdx].AddPositions(positions, term.Pattern(), termInf);
 					continue;
 				}
 
-				InfoType info{.id = IdType::FromNumber(docId), .proc = termRank, .field = field};
+				InfoType info{.id = IdType::FromNumber(vdocId), .proc = termRank, .field = field};
 				mergeData_.emplace_back(std::move(info));
-				PositionsVector positions;
-				InitFrom(std::move(occurence.Pos()), positions);
+				auto positions = TakeOccurencePos(occurence);
 				mergeDataExtended_.emplace_back(std::move(positions), termRank, term.Pattern(), termInf);
-				idoffsets_[docId] = mergeData_.size() - 1;
+				idoffsets_[vdocId] = MergeOffsetT(mergeData_.size() - 1);
 			} else {
-				auto& md = GetMergeData(idoffsets_[docId]);
-				auto& mdExt = GetMergeDataExtended(idoffsets_[docId]);
-				const int minDist = mdExt.MergeWithDist(occurence.Pos(), term.Distance(), term.Pattern(), termInf);
+				auto& md = GetMergeData(mdIdx);
+				auto& mdExt = GetMergeDataExtended(mdIdx);
+				auto positions = TakeOccurencePos(occurence);
+				const int minDist = mdExt.MergeWithDist(positions, distance, term.Pattern(), termInf);
 
 				if (mdExt.nextPhrasePositions.empty()) {
 					continue;
@@ -275,8 +332,6 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingA
 			nextTermDocs_.reset();
 		}
 
-		index_t maxTermDocId = 0;
-
 		for (SubtermResults<IdCont>& subterm : phrase.Term(i)) {
 			if (!inTransaction_) {
 				ThrowOnCancel(ctx_);
@@ -284,27 +339,24 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingA
 
 			auto& occurences = subterm.Occurences();
 			for (auto&& occurence : occurences) {
-				const index_t docId = occurence.Id();
-				if (docId > maxDocId_) {
-					break;
+				const index_t vdocId = occurence.VdocId();
+				if (vdocId >= totalNumDocs_) {
+					continue;
 				}
-
-				maxTermDocId = std::max(maxTermDocId, docId);
-				// check removed only on final stage
-				if (i + 1 == phrase.NumTerms() && preselectedDocs_[docId] && docsStatsGetter.DocRemoved(docId)) {
+				if (docsStatsGetter.IsDeleted(occurence)) {
 					continue;
 				}
 
-				nextTermDocs_.set(docId);
+				nextTermDocs_.set(vdocId);
 			}
 		}
-
-		maxDocId_ = std::min(maxDocId_, maxTermDocId);
 
 		preselectedDocs_ &= nextTermDocs_;
 	}
 
-	std::ignore = preselectedDocs_.Exclude(docsExcluded_);
+	if (docsExcluded_.size() != 0) {
+		std::ignore = preselectedDocs_.Exclude(docsExcluded_);
+	}
 }
 
 template <typename IdCont, typename MergeDataType, typename MergeOffsetT>
@@ -315,7 +367,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::Merge(PhraseResults<IdCo
 
 	for (size_t i = 0; i < phrase.NumTerms(); ++i) {
 		bool isFirstTerm = (i == 0);
-		mergePhraseTerm<Bm25T>(phrase.Term(i), isFirstTerm, docsStatsGetter);
+		mergePhraseTerm<Bm25T>(phrase.Term(i), isFirstTerm, phrase.Distance(), phrase.FieldsOpts(), docsStatsGetter);
 	}
 }
 

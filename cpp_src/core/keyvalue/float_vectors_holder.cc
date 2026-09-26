@@ -89,8 +89,8 @@ void FloatVectorsHolderMap::updatePayload(const NamespaceImpl& ns, const FloatVe
 		const auto id = itemRef.Id();
 		if (id.IsValid()) {
 			itemRef.Value().Clone();
-			Payload payload{ns.payloadType_, itemRef.Value()};
-			checkPayloadVectorField(payload, ConstPayload{ns.payloadType_, ns.items_[id]}, index);
+			Payload payload{ns.payloadType(), itemRef.Value()};
+			checkPayloadVectorField(payload, ConstPayload{ns.payloadType(), ns.items_[id]}, index);
 			const auto count = payload.GetFieldLen(index.ptField);
 			assertrx_throw(idx + count <= vectors.size());
 			for (unsigned i = 0; i < count; ++i) {
@@ -152,7 +152,7 @@ void FloatVectorsHolderMap::add(const NamespaceImpl& ns, const FloatVectorIndexI
 		ItemRef& itemRef = it.GetItemRef();
 		const auto id = itemRef.Id();
 		if (id.IsValid()) {
-			ConstPayload payload{ns.payloadType_, ns.items_[id]};
+			ConstPayload payload{ns.payloadType(), ns.items_[id]};
 			for (unsigned i = 0, count = payload.GetFieldLen(index.ptField); i < count; ++i) {
 				ids.emplace_back(id, i);
 			}

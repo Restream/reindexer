@@ -1,5 +1,6 @@
 #include "transaction.h"
 #include "core/item.h"
+#include "core/query/query_impl.h"
 #include "tools/logger.h"
 #include "transactionimpl.h"
 
@@ -46,7 +47,7 @@ Error Transaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) noexcept 
 
 Error Transaction::Modify(Query&& query, lsn_t lsn) noexcept {
 	try {
-		query.VerifyForUpdateTransaction();
+		Impl(query).VerifyForUpdateTransaction();
 		if (impl_) {
 			impl_->Modify(std::move(query), lsn);
 			return {};

@@ -28,20 +28,26 @@ public:
 	template <typename _F2>
 	// NOLINTNEXTLINE (bugprone-forwarding-reference-overload)
 	ScopeGuard(_F2&& onDestruct) noexcept : onDestruct_(std::forward<_F2>(onDestruct)) {}
-	~ScopeGuard() noexcept(false) {
+	// Non-noexcept callbacks may throw here when not unwinding; that is intentional.
+	// NOLINTNEXTLINE(bugprone-exception-escape)
+	~ScopeGuard() noexcept(noexcept(onDestruct_())) {
 		if (disabled_) {
 			return;
 		}
-		if (stackUnwining_()) {
-			try {
-				onDestruct_();
-				// NOLINTBEGIN(bugprone-empty-catch)
-			} catch (...) {
-				// Exception must be ignored during stack unwinding
-			}
-			// NOLINTEND(bugprone-empty-catch)
-		} else {
+		if constexpr (noexcept(onDestruct_())) {
 			onDestruct_();
+		} else {
+			if (stackUnwining_()) {
+				try {
+					onDestruct_();
+					// NOLINTBEGIN(bugprone-empty-catch)
+				} catch (...) {
+					// Exception must be ignored during stack unwinding
+				}
+				// NOLINTEND(bugprone-empty-catch)
+			} else {
+				onDestruct_();
+			}
 		}
 	}
 	void Disable() noexcept { disabled_ = true; }

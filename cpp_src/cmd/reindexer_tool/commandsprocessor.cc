@@ -1,9 +1,11 @@
 #include "commandsprocessor.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <iomanip>
 #include <limits>
 #include <optional>
+#include <string>
 #include <thread>
 
 #include "client/reindexer.h"
@@ -47,7 +49,6 @@ const std::string kBenchNamespace = "rxtool_bench";
 const std::string kBenchIndex = "id";
 const std::string kDumpModePrefix = "-- __dump_mode:";
 const std::string kChecksumPrefix = "-- __checksum:";
-const std::string kDumpingNamespacePrefix = "-- Dumping namespace";
 const std::string kHeadCommandPrefix = "--";
 
 const std::string kChecksumMismatchMessage = "Dump checksum mismatch";
@@ -191,14 +192,6 @@ private:
 	size_t numProcessors_ = 0;
 };
 
-static std::string_view removeQuotes(std::string_view str) {
-	if (str.size() > 1 && str.front() == '\'' && str.back() == '\'') {
-		return str.substr(1, str.size() - 2);
-	}
-
-	return str;
-}
-
 class [[nodiscard]] DumpFileIndex {
 public:
 	Error Indexate(const std::string& filename, const StringsSetT& selectedNamespaces, bool showProgress = true) noexcept {
@@ -265,32 +258,35 @@ public:
 					continue;
 				}
 
-				if (reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kDumpingNamespacePrefix, command)) {
-					LineParser parser(command);
-					std::ignore = parser.NextToken();
-					std::ignore = parser.NextToken();
-					std::ignore = parser.NextToken();
-					std::string_view nsName = removeQuotes(parser.NextToken());
+				if (reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kHeadCommandPrefix, command)) {
+					if (nsDumps_.empty()) {
+						headCommands_.emplace_back(std::move(command), lineNum);
+					}
+					updateProgress();
+					continue;
+				}
 
-					if (nsName.empty()) {
+				LineParser parser(command);
+				const std::string_view commandName = parser.NextToken();
+				const std::string_view subCommand = parser.NextToken();
+				if (iequals(commandName, "\\namespaces") && iequals(subCommand, "add")) {
+					currentNamespace = reindexer::unescapeString(parser.NextToken());
+					if (currentNamespace.empty()) {
 						return Error(errLogic, "Incorrect namespace name in dump file command: {}", command);
 					}
-
-					currentNamespace = nsName;
-					lastNamespaceSelected = selectedNamespaces.empty() || selectedNamespaces.find(nsName) != selectedNamespaces.end();
-
+					lastNamespaceSelected =
+						selectedNamespaces.empty() || selectedNamespaces.find(currentNamespace) != selectedNamespaces.end();
 					nsDumps_.emplace_back(currentNamespace);
+					appendCommandToChecksum(checksum, command);
+					if (lastNamespaceSelected) {
+						nsDumps_.back().ProcessCommand(std::move(command), lineNum, commandPos);
+					}
 					updateProgress();
 					continue;
 				}
 
 				if (nsDumps_.empty()) {
-					if (!reindexer::checkIfStartsWith<reindexer::CaseSensitive::Yes>(kHeadCommandPrefix, command)) {
-						return Error(errLogic, "Can't parse dump file : unknown head command {}", command);
-					}
-					headCommands_.emplace_back(std::move(command), lineNum);
-					updateProgress();
-					continue;
+					return Error(errLogic, "Can't parse dump file : unknown head command {}", command);
 				}
 
 				appendCommandToChecksum(checksum, command);
@@ -663,12 +659,12 @@ Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std:
 			const auto inputFileSize = fileSize(inFileName_);
 			DumpFileIndex dumpFileIdx;
 			if (Error err = dumpFileIdx.Indexate(inFileName_, selectedNamespaces_, !noProgressMeter_); !err.ok()) {
-				printError(err);
 				if (!selectedNamespaces_.empty()) {
+					printError(err);
 					printWarning("Can not parse file sequentially because of selected namespaces set, ending...");
 					return err;
 				}
-				printWarning("Input file does not look like a dump file, file will be parsed sequentially");
+				printWarning(fmt::format("Input file does not look like a dump file ({}), file will be parsed sequentially", err.what()));
 				fromFile(infile, inputFileSize);
 				return errOK;
 			}
@@ -1098,7 +1094,8 @@ Error CommandsProcessor<DBInterface>::dryRunDumpFile() noexcept {
 				continue;
 			}
 			typename DBInterface::QueryResultsT results;
-			if (Error err = db().Select(Query(nsName).Limit(1), results); !err.ok()) {
+			const auto q = Query(nsName).Limit(1);
+			if (Error err = db().Select(q, results); !err.ok()) {
 				errors.emplace_back(0, fmt::format("Unable to check namespace '{}' emptiness: {}", nsName, err.what()));
 			} else if (results.Count() > 0) {
 				nonEmptyExistingDumpNamespaces.emplace_back(nsName);
@@ -1268,35 +1265,66 @@ Error CommandsProcessor<DBInterface>::interactive() noexcept {
 	} CATCH_AND_RETURN;
 }
 
+static std::string jsonSnippetOneLine(std::string_view json, size_t maxLen = 256) {
+	std::string out;
+	out.reserve(std::min(json.size(), maxLen));
+	for (char c : json) {
+		if (out.size() >= maxLen) {
+			out.append("...");
+			break;
+		}
+		out.push_back((c == '\n' || c == '\r' || c == '\t') ? ' ' : c);
+	}
+	return out;
+}
+
 template <typename DBInterface>
-bool CommandsProcessor<DBInterface>::isHavingReplicationConfig(WrSerializer& wser, std::string_view type) {
+bool CommandsProcessor<DBInterface>::isHavingReplicationConfig(WrSerializer& wser, std::string_view type, std::string& details) {
 	try {
-		Query q;
 		typename DBInterface::QueryResultsT results(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 
 		auto err = db().Select(Query(reindexer::kReplicationStatsNamespace).Where("type", CondEq, type), results);
 		if (!err.ok()) {
-			throw err;
+			details = fmt::format("error '{}'", err.what());
+			return false;
 		}
 
-		if (results.Count() == 1) {
-			wser.Reset();
-			err = results.begin().GetJSON(wser, false);
-			if (!err.ok()) {
-				throw err;
-			}
-
-			gason::JsonParser parser;
-			auto root = parser.Parse(reindexer::giftStr(wser.Slice()));
-			const auto& nodesArray = root["nodes"];
-			if (gason::begin(nodesArray) != gason::end(nodesArray)) {
-				return true;
-			}
+		const auto count = results.Count();
+		if (count != 1) {
+			details = fmt::format("{} rows", count);
+			return false;
 		}
-	} catch (const gason::Exception&) {
-		std::cerr << "Gason exception" << std::endl;
+
+		wser.Reset();
+		err = results.begin().GetJSON(wser, false);
+		if (!err.ok()) {
+			details = fmt::format("1 row, GetJSON error '{}'", err.what());
+			return false;
+		}
+
+		gason::JsonParser parser;
+		auto root = parser.Parse(reindexer::giftStr(wser.Slice()));
+		const auto& nodesField = root["nodes"];
+		if (nodesField.isEmpty()) {
+			details = fmt::format("1 row, nodes missing, json='{}'", jsonSnippetOneLine(wser.Slice()));
+			return false;
+		}
+		if (!nodesField.isArray()) {
+			details = fmt::format("1 row, nodes is {}, json='{}'", gason::JsonTagToTypeStr(nodesField.value.getTag()),
+								  jsonSnippetOneLine(wser.Slice()));
+			return false;
+		}
+
+		size_t nodesCount = 0;
+		for (auto it = gason::begin(nodesField); it != gason::end(nodesField); ++it) {
+			++nodesCount;
+		}
+		details = fmt::format("1 row, {} node{}", nodesCount, nodesCount == 1 ? "" : "s");
+		return nodesCount > 0;
+	} catch (const gason::Exception& ex) {
+		details = fmt::format("json parse error '{}', json='{}'", ex.what(), jsonSnippetOneLine(wser.Slice()));
 	} catch (const Error& err) {
-		std::cerr << "Error ex: " << err.what() << std::endl;
+		details = fmt::format("error '{}'", err.what());
 	}
 	return false;
 }
@@ -1305,10 +1333,19 @@ template <typename DBInterface>
 bool CommandsProcessor<DBInterface>::isHavingReplicationConfig() {
 	using namespace std::string_view_literals;
 	if (uri_.db().empty()) {
+		output_() << "Replication config detection: db is empty; skip_config=no" << std::endl;
 		return false;
 	}
 	WrSerializer wser;
-	return isHavingReplicationConfig(wser, "cluster"sv) || isHavingReplicationConfig(wser, "async"sv);
+	std::string clusterDetails;
+	std::string asyncDetails;
+	const bool cluster = isHavingReplicationConfig(wser, "cluster"sv, clusterDetails);
+	const bool async = isHavingReplicationConfig(wser, "async"sv, asyncDetails);
+	const bool skip = cluster || async;
+	output_() << fmt::format("Replication config detection: db='{}'; cluster: {}; async: {}; skip_config={}", uri_.db(), clusterDetails,
+							 asyncDetails, skip ? "yes" : "no")
+			  << std::endl;
+	return skip;
 }
 
 template <typename DBInterface>
@@ -1992,7 +2029,7 @@ Error CommandsProcessor<DBInterface>::parallelUpsertCommands(const std::vector<s
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandUpdateSQL(std::string_view command) {
 	typename DBInterface::QueryResultsT results;
-	Query q = Query::FromSQL(command);
+	auto q = Query::FromSQL(command);
 	throwIfError(db().Update(q, results));
 	output_() << "Updated " << results.Count() << " documents" << std::endl;
 }
@@ -2013,7 +2050,7 @@ void CommandsProcessor<DBInterface>::commandDelete(std::string_view command) {
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::commandDeleteSQL(std::string_view command) {
 	typename DBInterface::QueryResultsT results;
-	Query q = Query::FromSQL(command);
+	auto q = Query::FromSQL(command);
 	throwIfError(db().Delete(q, results));
 	output_() << "Deleted " << results.Count() << " documents" << std::endl;
 }
@@ -2523,7 +2560,7 @@ void CommandsProcessor<reindexer::client::Reindexer>::bench(unsigned int numThre
 	}
 
 	std::vector<reindexer::client::Reindexer::QueryResultsT> results(kMaxParallelOps);
-	std::vector<Query> queries(kMaxParallelOps);
+	std::vector<Query> queries(kMaxParallelOps, Query{kBenchNamespace});
 	WaitGroup<reindexer::client::Reindexer> wg;
 	auto cleanup = reindexer::MakeScopeGuard([&wg]() { wg.Wait(); });
 
@@ -2559,8 +2596,7 @@ void CommandsProcessor<reindexer::Reindexer>::bench(unsigned int numThreads, int
 
 	auto worker = [&]() {
 		for (; ((count & 0x3FF) == 0) || reindexer::system_clock_w::now_coarse() < deadline; count++) {
-			Query q(kBenchNamespace);
-			q.Where(kBenchIndex, CondEq, count % kBenchItemsCount);
+			const auto q = Query(kBenchNamespace).Where(kBenchIndex, CondEq, count % kBenchItemsCount);
 			auto results = new typename reindexer::Reindexer::QueryResultsT;
 
 			const auto err = db().WithCompletion([results, &errCount](const Error& err) {

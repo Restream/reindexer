@@ -4,7 +4,6 @@
 #include <span>
 #include <string>
 #include <vector>
-#include "core/payload/payload_checksum.h"
 #include "namespacename.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
@@ -30,9 +29,12 @@ struct [[nodiscard]] EmbedderStatus {
 
 struct [[nodiscard]] TextIndexStats {
 	void GetJSON(JsonBuilder& builder) const;
+	// Live virtual documents (present in the dedup set).
 	size_t totalVdocs = 0;
+	// Removed slots waiting for reuse (free list).
 	size_t removedVdocs = 0;
-	size_t vdocsCompactions = 0;
+	// Permanently retired slots that cannot be reused (e.g. version exhausted).
+	size_t deadVdocs = 0;
 };
 
 struct [[nodiscard]] IndexMemStat {
@@ -98,28 +100,6 @@ struct [[nodiscard]] ClusterOperationStatus {
 	Role role = Role::None;
 };
 
-class [[nodiscard]] ReplicationDataHash {
-public:
-	void Set(PayloadChecksum h) noexcept {
-		hashV1 = h.hashV1;
-		hashV2 = h.hashV2;
-	}
-	void operator^=(PayloadChecksum h) noexcept {
-		hashV1 ^= h.hashV1;
-		if (!hashV2.has_value()) {
-			hashV2.emplace(0);
-		}
-		hashV2 = (*hashV2) ^ h.hashV2;
-	}
-	void GetJSON(JsonBuilder& builder) const;
-	void FromJSON(const gason::JsonNode& root);
-	bool IsEqualByAnyVersionTo(const ReplicationDataHash& o) const noexcept;
-	bool IsEqualByAnyVersionTo(PayloadChecksum o) const noexcept;
-
-	uint64_t hashV1 = 0;  // Deprecated. TODO: Remove somewhere around v5.18.0. Issue #2417
-	std::optional<uint64_t> hashV2 = 0;
-};
-
 struct [[nodiscard]] ReplicationState {
 	enum class [[nodiscard]] Status { None, Idle, Error, Fatal, Syncing };
 
@@ -132,7 +112,7 @@ struct [[nodiscard]] ReplicationState {
 	// updated from WAL when querying the structure
 	lsn_t lastLsn;
 	// Data hash
-	ReplicationDataHash dataHash;
+	uint64_t checksum = 0;
 	// Data count
 	int dataCount = 0;
 	// Data updated
@@ -156,7 +136,7 @@ struct [[nodiscard]] ReplicationStateV2 {
 	// LSN of last change
 	// updated from WAL when querying the structure
 	lsn_t lastLsn;
-	ReplicationDataHash dataHash;
+	uint64_t checksum = 0;
 	uint64_t dataCount = 0;
 	lsn_t nsVersion;
 	//
@@ -298,13 +278,15 @@ struct [[nodiscard]] EmbedderPerfStat {
 
 struct [[nodiscard]] IndexPerfStat {
 	IndexPerfStat() = default;
-	IndexPerfStat(const std::string& n, PerfStat&& s, PerfStat&& c) : name(n), selects(std::move(s)), commits(std::move(c)) {}
+	IndexPerfStat(const std::string& n, PerfStat&& s, PerfStat&& c, PerfStat&& cl = {})
+		: name(n), selects(std::move(s)), commits(std::move(c)), cleans(std::move(cl)) {}
 
 	void GetJSON(JsonBuilder& builder) const;
 
 	std::string name;
 	PerfStat selects;
 	PerfStat commits;
+	PerfStat cleans;
 	LRUCachePerfStat cache;
 
 	std::optional<EmbedderPerfStat> upsertEmbedder;

@@ -7,7 +7,7 @@
 namespace reindexer {
 
 template <typename JoinPreSelCtx>
-struct [[nodiscard]] SelectAndPreSelectCtx;
+struct SelectAndPreSelectCtx;
 
 using MainSelectCtx = SelectAndPreSelectCtx<void>;
 using JoinSelectCtx = SelectAndPreSelectCtx<joins::PreSelectExecuteCtx>;

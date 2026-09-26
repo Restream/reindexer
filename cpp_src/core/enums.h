@@ -88,6 +88,9 @@ BOOL_ENUM(WithTagsMatcher)
 BOOL_ENUM(Pretty)
 BOOL_ENUM(PhraseTerm)
 BOOL_ENUM(WasCanceled)
+BOOL_ENUM(HasExpression)
+BOOL_ENUM(ReverseNsOrder)
+BOOL_ENUM(IsWalQuery)
 
 #undef BOOL_ENUM
 
@@ -138,3 +141,5 @@ private:
 };
 
 }  // namespace reindexer
+
+enum class [[nodiscard]] SortOrder : bool { Asc = false, Desc = true };

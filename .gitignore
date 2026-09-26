@@ -1,6 +1,7 @@
 .idea/
 .vscode/
 .cursor/
+.claude/
 reindexer.cbp
 reindexer.iml
 .DS_Store

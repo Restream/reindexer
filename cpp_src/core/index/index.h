@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <limits>
 #include <vector>
 #include "core/definitions/indexdef.h"
@@ -8,6 +9,7 @@
 #include "core/index/keyentry.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/namespacestat.h"
+#include "core/namespace/ns_ft_func_interface.h"
 #include "core/nsselecter/ranks_holder.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
@@ -21,6 +23,7 @@ class RdxContext;
 class StringsHolder;
 struct NamespaceCacheConfigData;
 class FtFunction;
+enum class [[nodiscard]] IndexOptimization : int8_t { Partial, Full };
 
 // Logical — copy-tx: snapshot idx_map, skip sortOrders_/pkSortedIds_/isBuilt_ (rebuilt on copy)
 // Snapshot — preserve sorted optimizer state. Has to be used under exclusive lock, when background optimization is idle
@@ -28,10 +31,13 @@ enum class [[nodiscard]] IndexCloneKind { Logical, Snapshot };
 
 class [[nodiscard]] Index {
 	struct [[nodiscard]] SelectFuncCtx {
-		SelectFuncCtx(FtFunction& func, RanksHolder::Ptr& r, int idxNo) noexcept : selectFunc{func}, ranks{r}, indexNo{idxNo} {}
+		SelectFuncCtx(FtFunction& func, RanksHolder::Ptr& r, int idxNo, NsFtFuncInterface n) noexcept
+			: selectFunc{func}, ranks{r}, indexNo{idxNo}, nm{n} {}
 		FtFunction& selectFunc;
 		RanksHolder::Ptr& ranks;
 		int indexNo;
+		// Index does not own the namespace, so the interface is only valid within the select call
+		NsFtFuncInterface nm;
 	};
 
 public:
@@ -92,6 +98,9 @@ public:
 	}
 	// NOLINTEND(*-unnecessary-value-param)
 	virtual WasCanceled Commit(const index::ICancelable&) = 0;
+	/// Whether background Clean() has useful work. Used to avoid spawning clean workers when none are needed.
+	virtual bool NeedsClean() const noexcept { return false; }
+	virtual void Clean(const index::ICancelable&, bool /*enablePerfCounters*/) {}
 	virtual void CommitFulltext() {}
 	virtual WasCanceled MakeSortOrders(index::IUpdateSortedContext&, const index::ICancelable&) { return WasCanceled_False; }
 
@@ -144,10 +153,6 @@ public:
 	void SetFields(FieldsSet&& fields) { fields_ = std::move(fields); }
 	SortType SortId() const noexcept { return sortId_; }
 	virtual void SetSortedIdxCount(unsigned sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
-	virtual FtMergeStatuses GetFtMergeStatuses(const RdxContext&) {
-		assertrx(0);
-		std::abort();
-	}
 	virtual reindexer::FtPreselectT FtPreselect(const RdxContext&) {
 		assertrx(0);
 		std::abort();
@@ -156,6 +161,7 @@ public:
 
 	PerfStatCounterMT& GetSelectPerfCounter() { return selectPerfCounter_; }
 	PerfStatCounterMT& GetCommitPerfCounter() { return commitPerfCounter_; }
+	PerfStatCounterMT& GetCleanPerfCounter() { return cleanPerfCounter_; }
 
 	virtual IndexPerfStat GetIndexPerfStat();
 	virtual void ResetIndexPerfStat();
@@ -195,6 +201,7 @@ protected:
 	// Perfstat counter
 	PerfStatCounterMT commitPerfCounter_;
 	PerfStatCounterMT selectPerfCounter_;
+	PerfStatCounterMT cleanPerfCounter_;
 	KeyValueType keyType_ = KeyValueType::Undefined{};
 	KeyValueType selectKeyType_ = KeyValueType::Undefined{};
 	// Count of sorted indexes in namespace to reserve additional space in idsets

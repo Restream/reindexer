@@ -38,6 +38,11 @@ void KbLayout::PrepareEnLayout() {
 	for (int i = 0; i < ruAlphabetSize; ++i) {
 		setEnLayout(ru_layout_[i], i + ruLettersStartUTF16);
 	}
+	setEnLayout(u'{', u'\u0445');  // х
+	setEnLayout(u'}', u'\u044A');  // ъ
+	setEnLayout(u':', u'\u0436');  // ж
+	setEnLayout(u'<', u'\u0431');  // б
+	setEnLayout(u'>', u'\u044E');  // ю
 }
 
 void KbLayout::PrepareRuLayout() {

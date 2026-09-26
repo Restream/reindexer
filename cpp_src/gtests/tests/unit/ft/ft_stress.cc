@@ -177,8 +177,15 @@ TEST_P(FTStressApi, Unique) {
 	std::vector<std::string> data;
 	std::set<size_t> check;
 	std::set<std::string> checks;
+#ifdef REINDEX_WITH_TSAN
+	constexpr int kDocs = 200;
+	constexpr int kRecheckEvery = 10;
+#else	// !REINDEX_WITH_TSAN
+	constexpr int kDocs = 1000;
+	constexpr int kRecheckEvery = 5;
+#endif	// !REINDEX_WITH_TSAN
 
-	for (int i = 0; i < 1000; ++i) {
+	for (int i = 0; i < kDocs; ++i) {
 		bool inserted = false;
 		size_t n;
 		std::string s;
@@ -202,7 +209,7 @@ TEST_P(FTStressApi, Unique) {
 
 	for (size_t i = 0; i < data.size(); i++) {
 		Add(data[i], data[i]);
-		if (i % 5 == 0) {
+		if (i % kRecheckEvery == 0) {
 			for (size_t j = 0; j < i; j++) {
 				if (i == 40 && j == 26) {
 					int a = 3;	// NOLINT(*unused-but-set-variable) This code is just to load CPU by non-rx stuff

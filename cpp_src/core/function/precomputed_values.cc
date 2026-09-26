@@ -27,6 +27,13 @@ std::optional<Variant> PrecomputedValues::Get(const FunctionVariant& function) c
 					  function);
 }
 
+std::optional<int64_t> PrecomputedValues::GetNowNsec() const {
+	if (auto value = get(FunctionNow); value.has_value()) {
+		return value->As<int64_t>();
+	}
+	return std::nullopt;
+}
+
 std::optional<Variant> PrecomputedValues::get(FunctionType type) const {
 	auto it = values_.find(type);
 	if (it != values_.end()) {

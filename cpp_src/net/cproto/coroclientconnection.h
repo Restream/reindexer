@@ -58,6 +58,16 @@ protected:
 constexpr int64_t kShardingParallelExecutionBit = int64_t{1} << 62;
 constexpr int64_t kShardingFlagsMask = int64_t{0x7FFFFFFF} << 32;
 
+// Connection-local scratch is not recycled; drop allocations above this watermark after use.
+constexpr size_t kMaxKeptScratchCapacity = 64 * 1024;
+
+template <typename Container>
+void releaseScratchIfOversized(Container& buf) noexcept {
+	if (buf.capacity() > kMaxKeptScratchCapacity) {
+		Container().swap(buf);
+	}
+}
+
 struct CommandParams;
 
 class [[nodiscard]] CoroClientConnection {

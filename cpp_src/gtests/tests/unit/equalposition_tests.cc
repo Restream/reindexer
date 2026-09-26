@@ -7,6 +7,8 @@ using QueryResults = ReindexerApi::QueryResults;
 using Item = ReindexerApi::Item;
 using Reindexer = ReindexerApi::Reindexer;
 using reindexer::IndexOpts;
+using reindexer::Variant;
+using reindexer::VariantArray;
 
 static bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
 	const auto res = key1.Compare<reindexer::NotComparable::Return, reindexer::NullsHandling::NotComparable>(key2);
@@ -83,8 +85,11 @@ void VerifyQueryResult(const QueryResults& qr, const std::vector<std::string>& f
 TEST_F(EqualPositionApi, SelectGt) {
 	const Variant key1(static_cast<int>(1050));
 	const Variant key2(static_cast<int>(2100));
-	Query q{Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key1).Where(kFieldA2, CondGt, key2)};
-	q.AddEqualPosition({kFieldA1, kFieldA2});
+	const auto q = Query(default_namespace)
+					   .Debug(LogTrace)
+					   .Where(kFieldA1, CondGt, key1)
+					   .Where(kFieldA2, CondGt, key2)
+					   .EqualPositions({kFieldA1, kFieldA2});
 	auto qr = rt.Select(q);
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondGt, CondGt});
 }
@@ -92,8 +97,11 @@ TEST_F(EqualPositionApi, SelectGt) {
 TEST_F(EqualPositionApi, SelectGt2) {
 	const Variant key1(static_cast<int>(1120));
 	const Variant key2(static_cast<int>(2240));
-	Query q{Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key1).Where(kFieldA2, CondGt, key2)};
-	q.AddEqualPosition({kFieldA1, kFieldA2});
+	const auto q = Query(default_namespace)
+					   .Debug(LogTrace)
+					   .Where(kFieldA1, CondGt, key1)
+					   .Where(kFieldA2, CondGt, key2)
+					   .EqualPositions({kFieldA1, kFieldA2});
 	auto qr = rt.Select(q);
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondGt, CondGt});
 }
@@ -101,8 +109,11 @@ TEST_F(EqualPositionApi, SelectGt2) {
 TEST_F(EqualPositionApi, SelectGe) {
 	const Variant key1(static_cast<int>(1120));
 	const Variant key2(static_cast<int>(2240));
-	Query q{Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGe, key1).Where(kFieldA2, CondGe, key2)};
-	q.AddEqualPosition({kFieldA1, kFieldA2});
+	const auto q = Query(default_namespace)
+					   .Debug(LogTrace)
+					   .Where(kFieldA1, CondGe, key1)
+					   .Where(kFieldA2, CondGe, key2)
+					   .EqualPositions({kFieldA1, kFieldA2});
 	auto qr = rt.Select(q);
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondGe, CondGe});
 }
@@ -110,8 +121,11 @@ TEST_F(EqualPositionApi, SelectGe) {
 TEST_F(EqualPositionApi, SelectGe2) {
 	const Variant key1(static_cast<int>(0));
 	const Variant key2(static_cast<int>(0));
-	Query q{Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGe, key1).Where(kFieldA2, CondGe, key2)};
-	q.AddEqualPosition({kFieldA1, kFieldA2});
+	const auto q = Query(default_namespace)
+					   .Debug(LogTrace)
+					   .Where(kFieldA1, CondGe, key1)
+					   .Where(kFieldA2, CondGe, key2)
+					   .EqualPositions({kFieldA1, kFieldA2});
 	auto qr = rt.Select(q);
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondGe, CondGe});
 }
@@ -119,8 +133,11 @@ TEST_F(EqualPositionApi, SelectGe2) {
 TEST_F(EqualPositionApi, SelectLt) {
 	const Variant key1(static_cast<int>(400));
 	const Variant key2(static_cast<int>(800));
-	Query q{Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondLt, key1).Where(kFieldA2, CondLt, key2)};
-	q.AddEqualPosition({kFieldA1, kFieldA2});
+	const auto q = Query(default_namespace)
+					   .Debug(LogTrace)
+					   .Where(kFieldA1, CondLt, key1)
+					   .Where(kFieldA2, CondLt, key2)
+					   .EqualPositions({kFieldA1, kFieldA2});
 	auto qr = rt.Select(q);
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondLt, CondLt});
 }
@@ -128,8 +145,11 @@ TEST_F(EqualPositionApi, SelectLt) {
 TEST_F(EqualPositionApi, SelectLe) {
 	const Variant key1(static_cast<int>(400));
 	const Variant key2(static_cast<int>(800));
-	Query q{Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondLe, key1).Where(kFieldA2, CondLe, key2)};
-	q.AddEqualPosition({kFieldA1, kFieldA2});
+	const auto q = Query(default_namespace)
+					   .Debug(LogTrace)
+					   .Where(kFieldA1, CondLe, key1)
+					   .Where(kFieldA2, CondLe, key2)
+					   .EqualPositions({kFieldA1, kFieldA2});
 	auto qr = rt.Select(q);
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondLe, CondLe});
 }
@@ -138,9 +158,12 @@ TEST_F(EqualPositionApi, SelectEq) {
 	const Variant key1(static_cast<int>(900));
 	const Variant key2(static_cast<int>(1800));
 	const Variant key3(static_cast<int>(2700));
-	Query q{
-		Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondEq, key1).Where(kFieldA2, CondEq, key2).Where(kFieldA3, CondEq, key3)};
-	q.AddEqualPosition({kFieldA1, kFieldA2, kFieldA3});
+	const auto q = Query(default_namespace)
+					   .Debug(LogTrace)
+					   .Where(kFieldA1, CondEq, key1)
+					   .Where(kFieldA2, CondEq, key2)
+					   .Where(kFieldA3, CondEq, key3)
+					   .EqualPositions({kFieldA1, kFieldA2, kFieldA3});
 	auto qr = rt.Select(q);
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2, kFieldA3}, {key1, key2, key3}, {CondEq, CondEq, CondEq});
 }
@@ -160,8 +183,11 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 
 	const Variant key1(static_cast<int64_t>(3));
 	const Variant key2(static_cast<int64_t>(4));
-	Query q{Query(ns).Debug(LogTrace).Where("nested.a2", CondGe, key1).Where("nested.a3", CondGe, key2)};
-	q.AddEqualPosition({"nested.a2", "nested.a3"});
+	const auto q = Query(ns)
+					   .Debug(LogTrace)
+					   .Where("nested.a2", CondGe, key1)
+					   .Where("nested.a3", CondGe, key2)
+					   .EqualPositions({"nested.a2", "nested.a3"});
 	auto qr = rt.Select(q);
 	VerifyQueryResult(qr, {"nested.a2", "nested.a3"}, {key1, key2}, {CondGe, CondGe});
 }
@@ -182,8 +208,7 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 
 	const Variant key1(static_cast<int64_t>(4));
 	const Variant key2(static_cast<int64_t>(5));
-	Query q{Query(ns).Debug(LogTrace).Where("a1", CondGe, key1).Where("nested.a2", CondGe, key2)};
-	q.AddEqualPosition({"a1", "nested.a2"});
+	const auto q = Query(ns).Debug(LogTrace).Where("a1", CondGe, key1).Where("nested.a2", CondGe, key2).EqualPositions({"a1", "nested.a2"});
 	auto qr = rt.Select(q);
 	VerifyQueryResult(qr, {"a1", "nested.a2"}, {key1, key2}, {CondGe, CondGe});
 }
@@ -203,21 +228,24 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IS NULL AND a2=20 equal_position(a1, a2)");
 		auto err = rt.reindexer->Select(q, qr);
-		EXPECT_STREQ(err.what(), "Conditions IN(with empty parameter list), IS NULL, KNN and DWithin are not allowed for equal position");
+		EXPECT_STREQ(err.what(),
+					 "Conditions IN(with empty parameter list), IS NULL, ALLSET, KNN and DWithin are not allowed for equal position");
 		EXPECT_FALSE(err.ok());
 	}
 	{
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 =10 AND a2 IS EMPTY equal_position(a1, a2)");
 		auto err = rt.reindexer->Select(q, qr);
-		EXPECT_STREQ(err.what(), "Conditions IN(with empty parameter list), IS NULL, KNN and DWithin are not allowed for equal position");
+		EXPECT_STREQ(err.what(),
+					 "Conditions IN(with empty parameter list), IS NULL, ALLSET, KNN and DWithin are not allowed for equal position");
 		EXPECT_FALSE(err.ok());
 	}
 	{
 		QueryResults qr;
 		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IN () AND a2=20 equal_position(a1, a2)");
 		auto err = rt.reindexer->Select(q, qr);
-		EXPECT_STREQ(err.what(), "Conditions IN(with empty parameter list), IS NULL, KNN and DWithin are not allowed for equal position");
+		EXPECT_STREQ(err.what(),
+					 "Conditions IN(with empty parameter list), IS NULL, ALLSET, KNN and DWithin are not allowed for equal position");
 		EXPECT_FALSE(err.ok());
 	}
 }
@@ -229,7 +257,7 @@ TEST_F(EqualPositionApi, SamePosition) {
 	// Build query that contains conditions for field 'a1'
 	Query q{Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key).Where(kFieldA1, CondGt, key)};
 	// query contains equal_position() for field 'a1' twice
-	q.AddEqualPosition({kFieldA1, kFieldA1});
+	q.EqualPositions({kFieldA1, kFieldA1});
 	// Make sure processing this query leads to error
 	const Error err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());
@@ -260,7 +288,7 @@ TEST_F(EqualPositionApi, SelectBrackets) {
 				  .Where(kFieldA1, CondEq, key1)
 				  .Where(kFieldA2, CondEq, key2)
 				  .Where(kFieldA3, CondEq, key3)
-				  .AddEqualPosition({kFieldA1, kFieldA2, kFieldA3})
+				  .EqualPositions({kFieldA1, kFieldA2, kFieldA3})
 				  .CloseBracket();
 	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();

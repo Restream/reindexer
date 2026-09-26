@@ -5,6 +5,7 @@
 #include "core/reindexer.h"
 #include "dbmanager.h"
 #include "estl/fast_hash_map.h"
+#include "loggerregistry.h"
 #include "loggerwrapper.h"
 #include "net/http/router.h"
 #include "net/listener.h"
@@ -28,8 +29,8 @@ class [[nodiscard]] HTTPServer {
 	};
 
 public:
-	HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, Prometheus* prometheusI = nullptr,
-			   IStatsWatcher* statsWatcherI = nullptr);
+	HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, ILoggerConfigurator& loggerConfigurator,
+			   Prometheus* prometheusI = nullptr, IStatsWatcher* statsWatcherI = nullptr);
 
 	void Start(const std::string& addr, ev::dynamic_loop& loop);
 	void Stop() { listener_->Stop(); }
@@ -86,6 +87,16 @@ public:
 	void OnResponse(http::Context& ctx);
 	int GetRole(http::Context& ctx);
 	int GetDefaultConfigs(http::Context& ctx);
+	int PutCoreLoggingConfig(http::Context& ctx);
+	int PutServerLoggingConfig(http::Context& ctx);
+	int PutHttpLoggingConfig(http::Context& ctx);
+	int PutRpcLoggingConfig(http::Context& ctx);
+	int PutGrpcLoggingConfig(http::Context& ctx);
+	int GetCoreLoggingConfig(http::Context& ctx);
+	int GetServerLoggingConfig(http::Context& ctx);
+	int GetHttpLoggingConfig(http::Context& ctx);
+	int GetRpcLoggingConfig(http::Context& ctx);
+	int GetGrpcLoggingConfig(http::Context& ctx);
 
 private:
 	enum class [[nodiscard]] DataFormat { JSON, MsgPack, Protobuf, CSVFile };
@@ -138,7 +149,7 @@ private:
 	int protobufStatus(http::Context& ctx, const http::HttpStatus& status = http::HttpStatus(), const Fn& additional = {});
 	unsigned prepareLimit(std::string_view limitParam, int limitDefault = kDefaultLimit);
 	unsigned prepareOffset(std::string_view offsetParam, int offsetDefault = kDefaultOffset);
-	int modifyQueryTxImpl(http::Context& ctx, const std::string& dbName, std::string_view txId, Query& q);
+	int modifyQueryTxImpl(http::Context& ctx, const std::string& dbName, std::string_view txId, Query&& q);
 
 	template <UserRole role>
 	Reindexer getDB(http::Context& ctx, std::string* dbNameOut = nullptr);
@@ -151,9 +162,11 @@ private:
 	void removeExpiredTx();
 	void deadlineTimerCb(ev::periodic&, int) { removeExpiredTx(); }
 
-	Error execQueryByType(const reindexer::Query& query, reindexer::QueryResults& res, http::Context& ctx);
+	Error execQueryByType(ConstQueryImpl query, reindexer::QueryResults& res, http::Context& ctx);
 	bool isParameterSetOn(std::string_view val) const noexcept;
 	int getAuth(http::Context& ctx, AuthContext& auth, const std::string& dbName) const;
+	int putLoggingConfig(http::Context& ctx, LoggerComponent component);
+	int getLoggingConfig(http::Context& ctx, LoggerComponent component);
 
 	DataFormat dataFormatFromStr(std::string_view str);
 	DataFormat getDataFormat(const http::Context& ctx);
@@ -163,6 +176,7 @@ private:
 	DBManager& dbMgr_;
 	Pprof pprof_;
 	const ServerConfig& serverConfig_;
+	ILoggerConfigurator& loggerConfigurator_;
 	Prometheus* prometheus_;
 	IStatsWatcher* statsWatcher_;
 	const std::string webRoot_;

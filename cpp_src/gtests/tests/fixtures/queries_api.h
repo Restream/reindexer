@@ -6,6 +6,8 @@
 #include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/geometry.h"
+#include "core/query/query.h"
+#include "core/queryresults/localqueryresults.h"
 #include "gtests/tools.h"
 #include "queries_verifier.h"
 #include "reindexer_api.h"
@@ -13,13 +15,17 @@
 
 namespace reindexer_tests {
 
+using reindexer::Variant;
+using reindexer::VariantArray;
+using reindexer::LocalQueryResults;
+
 class [[nodiscard]] TestQuery : private reindexer::Query {
 public:
 	using Query::Query;
 	template <reindexer::concepts::ConvertibleToString Str>
 	reindexer::Query& Distinct(Str&& name) & {
 		if (!reindexer::strEmpty(name)) {
-			reindexer::Query::Distinct(std::forward<Str>(name));
+			reindexer::Query::Distinct(name);
 		}
 		return *this;
 	}
@@ -31,6 +37,10 @@ public:
 };
 
 class [[nodiscard]] QueriesApi : public ReindexerApi, public QueriesVerifier {
+	static reindexer::Desc toDesc(SortOrder sortOrder) noexcept {
+		return sortOrder == SortOrder::Desc ? reindexer::Desc_True : reindexer::Desc_False;
+	}
+
 public:
 	void SetUp() override {
 		using reindexer::CollateOpts;
@@ -233,48 +243,72 @@ public:
 	void ExecuteAndVerify(Q&& query, Args&&... args) {
 		query.Explain();
 		auto qr = rt.Select(query);
-		if constexpr (std::is_rvalue_reference_v<decltype(query)>) {
+		if constexpr (std::is_same_v<std::remove_cvref_t<Q>, Query>) {
 			Verify(qr, std::forward<Q>(query), *rt.reindexer);
+		} else if constexpr (std::is_same_v<std::remove_cvref_t<Q>, TestQuery>) {
+			Verify(qr, forward_like<Q>(Impl(query)), *rt.reindexer);
 		} else {
-			Verify(qr, reindexer::Query(query), *rt.reindexer);
+			Verify(qr, (std::forward<Q>(query)), *rt.reindexer);
 		}
 		Verify(qr, std::forward<Args>(args)...);
 	}
 
 	template <typename Q>
-	void ExecuteAndVerifyWithSql(Q&& query) {
-		ExecuteAndVerify(query);
-		Query queryFromSql = Query::FromSQL(query.GetSQL()).Strict(query.GetStrictMode()).Debug(query.GetDebugLevel());
-		ASSERT_EQ(query, queryFromSql) << "query: " << query.GetSQL() << "\nqueryFromSql: " << queryFromSql.GetSQL();
-		ExecuteAndVerify(std::move(queryFromSql));
+	void ExecuteAndVerifyWithSql(Q&& q) {
+		if constexpr (std::is_same_v<std::remove_cvref_t<Q>, TestQuery>) {
+			ExecuteAndVerifyWithSql(Impl(q));
+		} else {
+			Query query{std::forward<Q>(q)};
+			ExecuteAndVerify(query);
+			reindexer::ConstQueryImpl queryImpl = Impl(query);
+			auto queryFromSql = Query::FromSQL(query.GetSQL()).Strict(queryImpl.GetStrictMode()).Debug(queryImpl.DebugLevel());
+			ASSERT_EQ(query, queryFromSql) << "query: " << query.GetSQL() << "\nqueryFromSql: " << queryFromSql.GetSQL();
+			ExecuteAndVerify(std::move(queryFromSql));
+		}
+	}
+
+	template <typename... Args>
+	void executeAndVerify(Query&& query, QueryResults& qr, Args&&... args) {
+		query.Explain();
+		rt.Select(query, qr);
+		Verify(qr, std::move(query), *rt.reindexer);
+		Verify(qr, std::forward<Args>(args)...);
+	}
+
+	template <typename... Args>
+	void executeAndVerify(Query& query, QueryResults& qr, Args&&... args) {
+		executeAndVerify(Query{query}, qr, std::forward<Args>(args)...);
 	}
 
 	template <typename Q, typename... Args>
-	void ExecuteAndVerify(Q&& query, QueryResults& qr, Args&&... args) {
-		query.Explain();
-		rt.Select(query, qr);
-		if constexpr (std::is_rvalue_reference_v<decltype(query)>) {
-			Verify(qr, std::forward<Q>(query), *rt.reindexer);
+	void ExecuteAndVerify(Q&& q, QueryResults& qr, Args&&... args) {
+		if constexpr (std::is_same_v<std::remove_cvref_t<Q>, TestQuery>) {
+			executeAndVerify(q.Impl(), qr, std::forward<Args>(args)...);
 		} else {
-			Verify(qr, reindexer::Query(query), *rt.reindexer);
+			executeAndVerify(Query{std::forward<Q>(q)}, qr, std::forward<Args>(args)...);
 		}
-		Verify(qr, std::forward<Args>(args)...);
 	}
 
 	template <typename Q>
-	void ExecuteAndVerifyWithSql(Q&& query, QueryResults& qr) {
-		ExecuteAndVerify(query, qr);
-		Query queryFromSql = Query::FromSQL(query.GetSQL()).Strict(query.GetStrictMode()).Debug(query.GetDebugLevel());
-		ASSERT_EQ(query, queryFromSql);
-		qr.Clear();
-		ExecuteAndVerify(std::move(queryFromSql), qr);
+	void ExecuteAndVerifyWithSql(Q&& q, QueryResults& qr) {
+		if constexpr (std::is_same_v<std::remove_cvref_t<Q>, TestQuery>) {
+			ExecuteAndVerifyWithSql(q.Impl(), qr);
+		} else {
+			Query query{std::forward<Q>(q)};
+			ExecuteAndVerify(query, qr);
+			reindexer::ConstQueryImpl queryImpl = Impl(query);
+			auto queryFromSql = Query::FromSQL(query.GetSQL()).Strict(queryImpl.GetStrictMode()).Debug(queryImpl.DebugLevel());
+			ASSERT_EQ(query, queryFromSql);
+			qr.Clear();
+			ExecuteAndVerify(std::move(queryFromSql), qr);
+		}
 	}
 
 	void Verify(const reindexer::QueryResults&) const noexcept {}
-	void Verify(const LocalQueryResults&) const noexcept {}
+	void Verify(const reindexer::LocalQueryResults&) const noexcept {}
 
 	template <typename... Args>
-	void Verify(const QueryResults& qr, const char* fieldName, const std::vector<Variant>& expectedValues, Args&&... args) {
+	void Verify(const QueryResults& qr, const char* fieldName, const std::vector<reindexer::Variant>& expectedValues, Args&&... args) {
 		Verify(qr.ToLocalQr(), fieldName, expectedValues, std::forward<Args>(args)...);
 	}
 	template <typename... Args>
@@ -320,7 +354,7 @@ public:
 	using QueriesVerifier::Verify;
 
 protected:
-	void CheckStandardQueries(bool sortOrder, const std::string& sortIdx, const std::string& distinct);
+	void CheckStandardQueries(SortOrder sortOrder, const std::string& sortIdx, const std::string& distinct);
 	void FillCompositeIndexesNamespace(size_t since, size_t till) {
 		for (size_t i = since; i < till; ++i) {
 			int idValue(static_cast<int>(i));
@@ -456,8 +490,10 @@ protected:
 
 	enum [[nodiscard]] Column { First, Second };
 
-	std::vector<Variant> ForcedSortOffsetTestExpectedResults(size_t offset, size_t limit, bool desc,
+	std::vector<Variant> ForcedSortOffsetTestExpectedResults(size_t offset, size_t limit, SortOrder sortOrder,
 															 const std::vector<int>& forcedSortOrder, Column column) const {
+		const auto desc = toDesc(sortOrder);
+
 		if (limit == 0 || offset >= forcedSortOffsetValues.size()) {
 			return {};
 		}
@@ -468,7 +504,7 @@ protected:
 			column == First ? [](const std::pair<int, int>& v) { return v.first; } : [](const std::pair<int, int>& v) { return v.second; });
 		std::sort(res.begin(), res.end(), desc ? [](int lhs, int rhs) { return lhs > rhs; } : [](int lhs, int rhs) { return lhs < rhs; });
 		const auto boundary = std::stable_partition(res.begin(), res.end(), [&forcedSortOrder, desc](int v) {
-			return desc == (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v) == forcedSortOrder.cend());
+			return *desc == (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v) == forcedSortOrder.cend());
 		});
 		if (desc) {
 			std::sort(boundary, res.end(), [&forcedSortOrder](int lhs, int rhs) {
@@ -484,10 +520,13 @@ protected:
 		return {res.cbegin() + offset, (offset + limit >= res.size()) ? res.cend() : (res.begin() + offset + limit)};
 	}
 
-	std::pair<std::vector<Variant>, std::vector<Variant>> ForcedSortOffsetTestExpectedResults(size_t offset, size_t limit, bool desc1Column,
-																							  bool desc2Column,
+	std::pair<std::vector<Variant>, std::vector<Variant>> ForcedSortOffsetTestExpectedResults(size_t offset, size_t limit,
+																							  SortOrder sortOrder1Column,
+																							  SortOrder sortOrder2Column,
 																							  const std::vector<int>& forcedSortOrder,
 																							  Column firstSortColumn) {
+		const auto desc1Column = toDesc(sortOrder1Column);
+		const auto desc2Column = toDesc(sortOrder2Column);
 		if (limit == 0 || offset >= forcedSortOffsetValues.size()) {
 			return {};
 		}
@@ -499,7 +538,7 @@ protected:
 					  });
 			const auto boundary = std::stable_partition(
 				forcedSortOffsetValues.begin(), forcedSortOffsetValues.end(), [&forcedSortOrder, desc1Column](std::pair<int, int> v) {
-					return desc1Column == (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v.first) == forcedSortOrder.cend());
+					return *desc1Column == (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v.first) == forcedSortOrder.cend());
 				});
 			std::sort(desc1Column ? boundary : forcedSortOffsetValues.begin(), desc1Column ? forcedSortOffsetValues.end() : boundary,
 					  [&forcedSortOrder, desc1Column, desc2Column](std::pair<int, int> lhs, std::pair<int, int> rhs) {
@@ -519,7 +558,8 @@ protected:
 					  });
 			const auto boundary = std::stable_partition(
 				forcedSortOffsetValues.begin(), forcedSortOffsetValues.end(), [&forcedSortOrder, desc2Column](std::pair<int, int> v) {
-					return desc2Column == (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v.second) == forcedSortOrder.cend());
+					return *desc2Column ==
+						   (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v.second) == forcedSortOrder.cend());
 				});
 			std::sort(desc2Column ? boundary : forcedSortOffsetValues.begin(), desc2Column ? forcedSortOffsetValues.end() : boundary,
 					  [&forcedSortOrder, desc1Column, desc2Column](std::pair<int, int> lhs, std::pair<int, int> rhs) {
@@ -569,6 +609,14 @@ protected:
 
 			saveItem(std::move(item), default_namespace);
 		}
+	}
+
+	void UpsertArithmeticSampleItem(int id = 1000, int age = 10, int year = 2010) {
+		Item item = GenerateDefaultNsItem(id, /*packagesCount=*/0);
+		item[kFieldNameAge] = age;
+		item[kFieldNameYear] = year;
+		Upsert(default_namespace, item);
+		saveItem(std::move(item), default_namespace);
 	}
 
 	void AddToDefaultNamespace(int start, int count, int packagesCount) {
@@ -682,6 +730,86 @@ protected:
 	void CheckMergeQueriesWithLimit();
 	void CheckMergeQueriesWithAggregation();
 
+	void CheckArithmeticQueries() {
+		using reindexer::Variant;
+		using reindexer::VariantArray;
+		using reindexer::expressions::ArithmeticExpression;
+
+		constexpr size_t kRandomComparisonIters = 12;
+		constexpr size_t kRandomBooleanTreeIters = 8;
+
+		const std::string_view intFields[]{kFieldNameId,  kFieldNameYear,	   kFieldNameGenre,
+										   kFieldNameAge, kFieldNameStartTime, kFieldNameEndTime};
+		const auto randField = [&intFields] { return std::string{intFields[static_cast<size_t>(rand()) % std::size(intFields)]}; };
+		const auto randExpr = [&] {
+			std::string a = randField();
+			switch (rand() % 7) {
+				case 0:
+					return a;
+				case 1:
+					return a + '*' + std::to_string(1 + rand() % 5);
+				case 2:
+					return a + '+' + std::to_string(rand() % 25);
+				case 3:
+					return a + '-' + std::to_string(rand() % 25);
+				case 4:
+					return a + '+' + randField();
+				case 5:
+					return '-' + a;
+				default:
+					return '(' + a + '+' + std::to_string(rand() % 10) + ")*" + std::to_string(1 + rand() % 3);
+			}
+		};
+		constexpr CondType kConds[]{CondEq, CondLt, CondLe, CondGt, CondGe, CondSet, CondAllSet, CondRange};
+		const auto randCond = [&] { return kConds[static_cast<size_t>(rand()) % std::size(kConds)]; };
+		const auto randValues = [](CondType cond) {
+			if (cond == CondRange) {
+				const int lo = rand() % 3000;
+				return VariantArray::Create(lo, lo + rand() % 500);
+			}
+			if (cond == CondSet || cond == CondAllSet) {
+				VariantArray values;
+				const int n = 1 + rand() % 6;
+				values.reserve(n);
+				for (int i = 0; i < n; ++i) {
+					values.emplace_back(rand() % 4000);
+				}
+				return values;
+			}
+			return VariantArray{Variant{rand() % 4000}};
+		};
+
+		for (size_t i = 0; i < kRandomComparisonIters; ++i) {
+			const CondType cond = randCond();
+			const VariantArray values = randValues(cond);
+			ExecuteAndVerify(Query(default_namespace).Where(ArithmeticExpression(randExpr()), cond, VariantArray{values}));
+			if (cond == CondRange) {
+				continue;
+			}
+			ExecuteAndVerify(Query(default_namespace).Where(randField(), cond, ArithmeticExpression(randExpr())));
+			ExecuteAndVerify(Query(default_namespace).Where(ArithmeticExpression(randExpr()), cond, randField()));
+			ExecuteAndVerify(Query(default_namespace).Where(ArithmeticExpression(randExpr()), cond, ArithmeticExpression(randExpr())));
+		}
+
+		for (size_t i = 0; i < kRandomBooleanTreeIters; ++i) {
+			ExecuteAndVerify(Query(default_namespace)
+								 .Where(ArithmeticExpression(randExpr()), CondGe, VariantArray{Variant{rand() % 100}})
+								 .Where(kFieldNameGenre, CondLt, rand() % 50)
+								 .Or()
+								 .Where(ArithmeticExpression(randField() + "*2"), CondLe, VariantArray{Variant{rand() % 80}}));
+		}
+
+		ExecuteAndVerify(
+			Query(default_namespace)
+				.Where(ArithmeticExpression(std::string("flat_array_len(") + kFieldNamePackages + ')'), CondGe, VariantArray{Variant{0}}));
+		ExecuteAndVerify(Query(default_namespace)
+							 .Where(ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondGe, VariantArray{Variant{rand() % 40}})
+							 .ReqTotal());
+		ExecuteAndVerify(Query(default_namespace)
+							 .Where(ArithmeticExpression(std::string(kFieldNameYear) + "-2000"), CondLt, VariantArray{Variant{rand() % 60}})
+							 .CachedTotal());
+	}
+
 	void CheckGeomQueries() {
 		using namespace reindexer_tests_tools;
 
@@ -694,12 +822,12 @@ protected:
 			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointNonIndex, randPoint(10), randBin<double>(0, 1)));
 			ExecuteAndVerify(Query(geomNs)
 								 .DWithin(kFieldNamePointLinearRTree, randPoint(10), randBin<double>(0, 1))
-								 .SortStDistance(kFieldNamePointNonIndex, kFieldNamePointLinearRTree, false));
-			ExecuteAndVerify(
-				Query(geomNs)
-					.DWithin(kFieldNamePointLinearRTree, randPoint(10), randBin<double>(0, 1))
-					.SortStDistance(kFieldNamePointNonIndex, randPoint(10), false)
-					.Sort(std::string("ST_Distance(") + pointToSQL(randPoint(10)) + ", " + kFieldNamePointGreeneRTree + ')', false));
+								 .SortStDistance(kFieldNamePointNonIndex, kFieldNamePointLinearRTree, SortOrder::Asc));
+			ExecuteAndVerify(Query(geomNs)
+								 .DWithin(kFieldNamePointLinearRTree, randPoint(10), randBin<double>(0, 1))
+								 .SortStDistance(kFieldNamePointNonIndex, randPoint(10), SortOrder::Asc)
+								 .Sort(std::string("ST_Distance(") + pointToSQL(randPoint(10)) + ", " + kFieldNamePointGreeneRTree + ')',
+									   SortOrder::Asc));
 			ExecuteAndVerify(Query(geomNs)
 								 .DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBin<double>(0, 1))
 								 .Or()
@@ -707,7 +835,7 @@ protected:
 								 .Sort(std::string("ST_Distance(") + pointToSQL(randPoint(10)) + ", " + kFieldNamePointQuadraticRTree +
 										   ") + 3 * ST_Distance(" + kFieldNamePointLinearRTree + ", " + kFieldNamePointNonIndex +
 										   ") + ST_Distance(" + kFieldNamePointRStarRTree + ", " + kFieldNamePointGreeneRTree + ')',
-									   false));
+									   SortOrder::Asc));
 		}
 	}
 
@@ -721,50 +849,50 @@ protected:
 			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
 										.Where(kFieldNameGenre, CondEq, randomGenre)
-										.Sort(kFieldNameYear, true));
+										.Sort(kFieldNameYear, SortOrder::Desc));
 
 			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
 										.Where(kFieldNameName, CondEq, RandString())
-										.Sort(kFieldNameYear, true));
+										.Sort(kFieldNameYear, SortOrder::Desc));
 
 			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
 										.Where(kFieldNameRate, CondEq, static_cast<double>(rand() % 100) / 10)
-										.Sort(kFieldNameYear, true));
+										.Sort(kFieldNameYear, SortOrder::Desc));
 
 			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
 										.Where(kFieldNameGenre, CondGt, randomGenre)
-										.Sort(kFieldNameYear, true)
+										.Sort(kFieldNameYear, SortOrder::Desc)
 										.Debug(LogTrace));
 
 			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
 										.Where(kFieldNameName, CondGt, RandString())
-										.Sort(kFieldNameYear, true));
+										.Sort(kFieldNameYear, SortOrder::Desc));
 
 			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
 										.Where(kFieldNameRate, CondGt, static_cast<double>(rand() % 100) / 10)
-										.Sort(kFieldNameYear, true));
+										.Sort(kFieldNameYear, SortOrder::Desc));
 
 			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
 										.Where(kFieldNameGenre, CondLt, randomGenre)
-										.Sort(kFieldNameYear, true));
+										.Sort(kFieldNameYear, SortOrder::Desc));
 
 			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
 										.Where(kFieldNameAge, CondEq, randomAge)
 										.Where(kFieldNameGenre, CondEq, randomGenre)
-										.Sort(kFieldNameYear, true));
+										.Sort(kFieldNameYear, SortOrder::Desc));
 
 			ExecuteAndVerifyWithSql(TestQuery(default_namespace)
 										.Distinct(distinct.c_str())
-										.Select({distinct.c_str()})
+										.Select(distinct)
 										.Where(kFieldNameGenre, CondEq, randomGenre)
-										.Sort(kFieldNameYear, true));
+										.Sort(kFieldNameYear, SortOrder::Desc));
 		}
 	}
 
@@ -1118,18 +1246,14 @@ protected:
 		ExecuteAndVerify(Query(compositeIndexesNs).WhereComposite(kCompositeFieldPricePages.c_str(), CondSet, intKeys));
 
 		ExecuteAndVerify(Query(compositeIndexesNs)
-							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq,
-											 {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
+							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq, {{Variant(titleValue), Variant(nameValue)}}));
 		ExecuteAndVerify(Query(compositeIndexesNs)
-							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondGe,
-											 {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
+							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondGe, {{Variant(titleValue), Variant(nameValue)}}));
 
 		ExecuteAndVerify(Query(compositeIndexesNs)
-							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondLt,
-											 {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
+							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondLt, {{Variant(titleValue), Variant(nameValue)}}));
 		ExecuteAndVerify(Query(compositeIndexesNs)
-							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondLe,
-											 {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
+							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondLe, {{Variant(titleValue), Variant(nameValue)}}));
 		constexpr size_t kStringKeysCnt = 1010;
 		std::vector<VariantArray> stringKeys;
 		stringKeys.reserve(kStringKeysCnt);
@@ -1140,16 +1264,14 @@ protected:
 
 		ExecuteAndVerify(Query(compositeIndexesNs)
 							 .Where(kFieldNameName, CondEq, nameValue)
-							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq,
-											 {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
+							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq, {{Variant(titleValue), Variant(nameValue)}}));
 
 		// Fulltext query is inside brackets
 		ExecuteAndVerify(Query(compositeIndexesNs)
 							 .OpenBracket()
 							 .Where(kFieldNameName, CondEq, nameValue)
 							 .CloseBracket()
-							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq,
-											 {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
+							 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq, {{Variant(titleValue), Variant(nameValue)}}));
 
 		ExecuteAndVerify(Query(compositeIndexesNs));
 	}
@@ -1168,9 +1290,9 @@ protected:
 			doubleSet.emplace_back(static_cast<double>(rand()) / RAND_MAX);
 		}
 		ExecuteAndVerify(Query(comparatorsNs).Where("columnDouble", CondAllSet, doubleSet));
-		ExecuteAndVerify(Query(comparatorsNs).Where("columnString", CondGe, std::string("test_string1")));
-		ExecuteAndVerify(Query(comparatorsNs).Where("columnString", CondLe, std::string("test_string2")));
-		ExecuteAndVerify(Query(comparatorsNs).Where("columnString", CondEq, std::string("test_string3")));
+		ExecuteAndVerify(Query(comparatorsNs).Where("columnString", CondGe, "test_string1"));
+		ExecuteAndVerify(Query(comparatorsNs).Where("columnString", CondLe, "test_string2"));
+		ExecuteAndVerify(Query(comparatorsNs).Where("columnString", CondEq, "test_string3"));
 
 		std::vector<std::string> stringSet;
 		stringSet.reserve(1010);
@@ -1196,7 +1318,7 @@ protected:
 			stringSet.emplace_back(std::to_string(i + 1));
 		}
 		ExecuteAndVerify(Query(comparatorsNs).Where("columnStringNumeric", CondSet, stringSet));
-		ExecuteAndVerify(Query(comparatorsNs).Where("columnStringNumeric", CondEq, std::string("777")));
+		ExecuteAndVerify(Query(comparatorsNs).Where("columnStringNumeric", CondEq, "777"));
 		ExecuteAndVerify(Query(comparatorsNs).Where("columnFullText", CondEq, RandString()));
 	}
 	void sortByNsDifferentTypesImpl(std::string_view fillingNs, const reindexer::Query& q, const std::string& sortPrefix);

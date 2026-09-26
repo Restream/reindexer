@@ -1,4 +1,5 @@
 #include "selector_plan_test.h"
+#include "core/enums.h"
 #include "core/index/index.h"
 #include "json_helpers.h"
 
@@ -6,6 +7,7 @@ namespace reindexer_tests {
 
 using namespace json_helpers;
 using reindexer::IndexOpts;
+using reindexer::VariantArray;
 
 TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 	FillNs(btreeNs);
@@ -68,9 +70,9 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 
 			for (const char* sortField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
 				const bool sortByBtreeField = (sortField == kFieldTree1 || sortField == kFieldTree2);
-				for (bool desc : {true, false}) {
+				for (const auto sortOrder : {SortOrder::Asc, SortOrder::Desc}) {
 					{
-						const Query query{Query(btreeNs).Explain().Where(searchField, cond, RandInt()).Sort(sortField, desc)};
+						const Query query{Query(btreeNs).Explain().Where(searchField, cond, RandInt()).Sort(sortField, sortOrder)};
 						auto qr = rt.Select(query);
 						const std::string& explain = qr.GetExplainResults();
 						// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
@@ -88,8 +90,8 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "items", {kNsSize}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {1}));
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {scanMethods, scanMethods}));
-								ASSERT_NO_FATAL_FAILURE(
-									AssertJsonFieldEqualTo(explain, "type", {desc ? "RevSingleRange" : "SingleRange", "Comparator"}));
+								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(
+									explain, "type", {sortOrder == SortOrder::Desc ? "RevSingleRange" : "SingleRange", "Comparator"}));
 							}
 						} else {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
@@ -114,12 +116,12 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 													   .Explain()
 													   .Where(additionalSearchField, CondEq, RandInt())
 													   .Where(searchField, cond, RandInt())
-													   .Sort(sortField, desc),
+													   .Sort(sortField, sortOrder),
 												   Query(btreeNs)
 													   .Explain()
 													   .Where(searchField, cond, RandInt())
 													   .Where(additionalSearchField, CondEq, RandInt())
-													   .Sort(sortField, desc)}) {
+													   .Sort(sortField, sortOrder)}) {
 							auto qr = rt.Select(query);
 							const std::string& explain = qr.GetExplainResults();
 							// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
@@ -138,7 +140,8 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualToOneOf(explain, "method", {indexMethods, scanMethods}));
 									if (sortByBtreeField) {
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(
-											explain, "type", {desc ? "RevSingleIdset" : "SingleIdset", "Comparator"}));
+											explain, "type",
+											{sortOrder == SortOrder::Desc ? "RevSingleIdset" : "SingleIdset", "Comparator"}));
 									} else {
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "Comparator"}));
 									}
@@ -231,9 +234,9 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 
 			for (const char* sortField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
 				const bool sortByBtreeField = (sortField == kFieldTree1 || sortField == kFieldTree2);
-				for (bool desc : {true, false}) {
+				for (const auto sortOrder : {SortOrder::Desc, SortOrder::Asc}) {
 					{
-						const Query query{Query(unbuiltBtreeNs).Explain().Where(searchField, cond, RandInt()).Sort(sortField, desc)};
+						const Query query{Query(unbuiltBtreeNs).Explain().Where(searchField, cond, RandInt()).Sort(sortField, sortOrder)};
 						SCOPED_TRACE(query.GetSQL());
 						auto qr = rt.Select(query);
 						const std::string& explain = qr.GetExplainResults();
@@ -248,7 +251,8 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 								if (matched[0] == 0) {
 									if (sortField == searchField) {
-										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {desc ? "Reverse" : "Forward"}));
+										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(
+											explain, "type", {sortOrder == SortOrder::Desc ? "Reverse" : "Forward"}));
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {true}));
 										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {sortField}));
 									} else {
@@ -301,12 +305,12 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 													   .Explain()
 													   .Where(additionalSearchField, CondEq, RandInt())
 													   .Where(searchField, cond, RandInt())
-													   .Sort(sortField, desc),
+													   .Sort(sortField, sortOrder),
 												   Query(unbuiltBtreeNs)
 													   .Explain()
 													   .Where(searchField, cond, RandInt())
 													   .Where(additionalSearchField, CondEq, RandInt())
-													   .Sort(sortField, desc)}) {
+													   .Sort(sortField, sortOrder)}) {
 							SCOPED_TRACE(query.GetSQL());
 							auto qr = rt.Select(query);
 							const std::string& explain = qr.GetExplainResults();
@@ -446,7 +450,7 @@ TEST_F(SelectorPlanTest, DistinctWithFilterOnUnbuiltBtreeIndex) {
 	};
 
 	const std::vector<Case> cases{
-		{.query = Query(unbuiltBtreeNs).Explain().Distinct(kFieldTree1).Where(kFieldTree1, CondLt, 10).Sort(kFieldTree1, false),
+		{.query = Query(unbuiltBtreeNs).Explain().Distinct(kFieldTree1).Where(kFieldTree1, CondLt, 10).Sort(kFieldTree1, SortOrder::Asc),
 		 .expectedTypes = {"UnbuiltSortOrdersIndex"},
 		 .expectedMatched = {3}},
 		{.query = Query(unbuiltBtreeNs).Explain().Distinct(kFieldTree1).Where(kFieldTree1, CondLt, 10),
@@ -459,7 +463,7 @@ TEST_F(SelectorPlanTest, DistinctWithFilterOnUnbuiltBtreeIndex) {
 					  .Where(kFieldTree1, CondLt, 10)
 					  .Not()
 					  .Where(kFieldId, CondEq, 999)
-					  .Sort(kFieldTree1, false),
+					  .Sort(kFieldTree1, SortOrder::Asc),
 		 .expectedTypes = {"UnbuiltSortOrdersIndex", "Comparator"},
 		 .expectedMatched = {3, 3}},
 	};
@@ -493,7 +497,7 @@ TEST_F(SelectorPlanTest, DistinctWithFilterOnUnbuiltBtreeIndex) {
 	for (bool explicitSort : {false, true}) {
 		Query totalQuery = Query(unbuiltBtreeNs).Explain().Distinct(kFieldTree1).Where(kFieldTree1, CondLt, 10);
 		if (explicitSort) {
-			totalQuery.Sort(kFieldTree1, false);
+			totalQuery.Sort(kFieldTree1, SortOrder::Asc);
 		}
 		totalQuery.ReqTotal().Limit(2);
 		SCOPED_TRACE(totalQuery.GetSQL());
@@ -685,7 +689,7 @@ TEST_F(SelectorPlanTest, UnbuiltSortIndexTotalCountFastPath) {
 	constexpr int kRangeHi = 100;
 	RefillUnbuilt(kRows, [](int i) { return IndexValues{.tree1 = i % 120, .tree2 = i % 7, .hash = i % 5}; });
 
-	const Query fullSelect = Query(unbuiltBtreeNs).Where(kFieldTree1, CondRange, {kRangeLo, kRangeHi}).Sort(kFieldTree1, false);
+	const Query fullSelect = Query(unbuiltBtreeNs).Where(kFieldTree1, CondRange, {kRangeLo, kRangeHi}).Sort(kFieldTree1, SortOrder::Asc);
 	auto fullQr = rt.Select(fullSelect);
 	const int expectedTotal = fullQr.Count();
 	ASSERT_GT(expectedTotal, 0);
@@ -694,7 +698,7 @@ TEST_F(SelectorPlanTest, UnbuiltSortIndexTotalCountFastPath) {
 	const Query totalQuery = Query(unbuiltBtreeNs)
 								 .Explain()
 								 .Where(kFieldTree1, CondRange, {kRangeLo, kRangeHi})
-								 .Sort(kFieldTree1, false)
+								 .Sort(kFieldTree1, SortOrder::Asc)
 								 .ReqTotal()
 								 .Limit(kLimit);
 	SCOPED_TRACE(totalQuery.GetSQL());
@@ -715,9 +719,9 @@ TEST_F(SelectorPlanTest, UnbuiltSortIndexWithInnerJoinIteratorPlan) {
 							.Explain()
 							.Distinct(kFieldTree1)
 							.Where(kFieldTree1, CondRange, {10, 100})
-							.Sort(kFieldTree1, false)
+							.Sort(kFieldTree1, SortOrder::Asc)
 							.Limit(20)
-							.InnerJoin(kFieldId, kFieldId, CondEq, Query(unbuiltBtreeNs).Where(kFieldHash, CondEq, 0));
+							.InnerJoin(Query(unbuiltBtreeNs).Where(kFieldHash, CondEq, 0), kFieldId, CondEq, kFieldId);
 	SCOPED_TRACE(query.GetSQL());
 	auto qr = rt.Select(query);
 	EXPECT_LE(qr.Count(), 20);

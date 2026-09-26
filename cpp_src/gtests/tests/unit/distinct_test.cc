@@ -1,3 +1,4 @@
+#include "core/query/query_impl.h"
 #include "distinct_api.h"
 
 namespace reindexer_tests {
@@ -16,7 +17,7 @@ TEST_F(DistinctApi, Serialize) {
 		ASSERT_EQ(json, q.GetJSON());
 	}
 	{
-		Query q{Query::FromJSON(json)};
+		auto q = Query::FromJSON(json);
 		ASSERT_EQ(sql, q.GetSQL());
 		ASSERT_EQ(json, q.GetJSON());
 	}

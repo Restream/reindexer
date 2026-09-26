@@ -1,20 +1,17 @@
 #pragma once
 
 #include <stdlib.h>
-#include "core/query/query.h"
+#include "core/query/query_impl.h"
 
-/// @namespace reindexer
-/// The base namespace
 namespace reindexer {
 
-class Query;
 class SingleLineSqlFormatter;
 
 template <typename Formatter = SingleLineSqlFormatter>
 class [[nodiscard]] SQLEncoder {
 public:
-	SQLEncoder(const Query& q, Formatter& formatter) noexcept : SQLEncoder(q, q.Type(), formatter) {}
-	SQLEncoder(const Query& q, QueryType queryType, Formatter& formatter) noexcept
+	SQLEncoder(ConstQueryImpl q, Formatter& formatter) noexcept : SQLEncoder(q, q.Type(), formatter) {}
+	SQLEncoder(ConstQueryImpl q, QueryType queryType, Formatter& formatter) noexcept
 		: query_(q), realQueryType_(queryType), formatter_(formatter) {}
 
 	void DumpSQL(bool stripArgs = false) const;
@@ -55,7 +52,7 @@ private:
 	void dumpSQLWhere(bool stripArgs) const;
 	void printField(bool& needComma, std::string_view name) const;
 
-	const Query& query_;
+	ConstQueryImpl query_;
 	const QueryType realQueryType_;
 	Formatter& formatter_;
 };

@@ -141,7 +141,7 @@ Untyped typle of nonidexed fields is stored in `CJSON` format in 1-st field (nam
 ```c++
 
 
-	PayloadType type = ns->payloadType_;
+	PayloadType type = ns->payloadType();
 	PayloadValue value  = ns->items_[index];
 
 	// Create control object

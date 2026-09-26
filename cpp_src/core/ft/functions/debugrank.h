@@ -12,7 +12,7 @@ class ItemRef;
 
 class [[nodiscard]] DebugRank {
 public:
-	bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder);
+	bool Process(ItemRef&, const PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder);
 
 private:
 	VariantArray plArr_;

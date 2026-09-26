@@ -9,7 +9,6 @@
 namespace reindexer {
 
 class FtFunctionsHolder;
-struct QueryResultsContext;
 
 class [[nodiscard]] RxSelector {
 	class [[nodiscard]] NsLockerItem {
@@ -98,6 +97,13 @@ public:
 				it->RLock(context_);
 			}
 			locked_ = true;
+		}
+		// Releases the mutexes only, keeping NamespaceImpl::Ptr, which are still required by the caller (e.g. by perf counters).
+		void Unlock() noexcept {
+			locked_ = false;
+			for (auto it = rbegin(), re = rend(); it != re; ++it) {
+				it->UnlockIfOwns();
+			}
 		}
 
 		NamespaceImpl::Ptr Get(std::string_view name) {
@@ -277,27 +283,30 @@ public:
 	};
 
 	template <typename LockerType>
-	static void DoSelect(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, LockerType& locks,
+	static void DoSelect(ConstQueryImpl q, std::optional<Query>& queryCopy, LocalQueryResults& result, LockerType& locks,
 						 FtFunctionsHolder& func, const RdxContext& ctx);
 
-	static void DoPreSelectForUpdateDelete(const Query& q, std::optional<Query>& queryCopy, LocalQueryResults& result, NsLockerW& locks,
+	static void DoPreSelectForUpdateDelete(ConstQueryImpl q, std::optional<Query>& queryCopy, LocalQueryResults& result, NsLockerW& locks,
 										   FloatVectorsHolderMap* fvHolder, const RdxContext& ctx);
 
 private:
 	template <typename LockerT>
-	static std::vector<SubQueryExplain> preselectSubQueries(Query& mainQuery, std::vector<LocalQueryResults>& queryResultsHolder, LockerT&,
-															FtFunctionsHolder&, const RdxContext&);
+	static void preselectSubQueries(QueryImpl mainQuery, std::vector<LocalQueryResults>& queryResultsHolder, LockerT&, FtFunctionsHolder&,
+									std::vector<SubQueryExplain>&, const RdxContext&);
 	template <typename LockerT>
-	static bool selectSubQuery(const Query& subQuery, const Query& mainQuery, LockerT&, FtFunctionsHolder&, std::vector<SubQueryExplain>&,
-							   const RdxContext&);
+	static bool selectSubQuery(ConstQueryImpl subQuery, ConstQueryImpl mainQuery, LockerT&, FtFunctionsHolder&,
+							   std::vector<SubQueryExplain>&, const RdxContext&);
 	template <typename LockerT>
-	static VariantArray selectSubQuery(const Query& subQuery, const Query& mainQuery, LockerT&, LocalQueryResults&, FtFunctionsHolder&,
+	static VariantArray selectSubQuery(ConstQueryImpl subQuery, ConstQueryImpl mainQuery, LockerT&, LocalQueryResults&, FtFunctionsHolder&,
 									   std::variant<std::string, size_t> fieldOrKeys, std::vector<SubQueryExplain>&, const RdxContext&);
 
 	template <typename LockerType>
-	static void preselectSubQuriesMain(const Query& q, std::optional<Query>& queryCopy, LockerType& locks, FtFunctionsHolder& func,
-									   std::vector<SubQueryExplain>& subQueryExplains, Explain::Duration& preselectTimeTotal,
-									   std::vector<LocalQueryResults>& queryResultsHolder, LogLevel logLevel, const RdxContext& ctx);
+	static void preselectSubQueriesMain(ConstQueryImpl q, std::optional<Query>& queryCopy, LockerType& locks, FtFunctionsHolder& func,
+										std::vector<SubQueryExplain>& subQueryExplains, Explain::Duration& preselectTimeTotal,
+										std::vector<LocalQueryResults>& queryResultsHolder, LogLevel logLevel, const RdxContext& ctx);
+	template <typename LockerType>
+	static void preselectSubQueriesInJoins(QueryImpl q, std::vector<LocalQueryResults>& queryResultsHolder, LockerType& locks,
+										   FtFunctionsHolder& func, std::vector<SubQueryExplain>& subQueryExplains, const RdxContext& ctx);
 };
 
 }  // namespace reindexer

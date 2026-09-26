@@ -39,7 +39,12 @@ void PerfStatCounter<Mutex>::Hit(std::chrono::microseconds time) noexcept {
 		stddev_ = sqrt(dispersion);
 	}
 
-	lap();
+	if (lap()) {
+		calcHitCount_ = 1;
+		calcTime_ = time;
+		calcLockTime_ = pendingLockTime_;
+	}
+	pendingLockTime_ = std::chrono::microseconds(0);
 }
 
 template <typename Mutex>
@@ -47,6 +52,7 @@ void PerfStatCounter<Mutex>::LockHit(std::chrono::microseconds time) noexcept {
 	lock_guard lck(mtx_);
 	calcLockTime_ += time;
 	totalLockTime_ += time;
+	pendingLockTime_ += time;
 }
 
 template <typename Mutex>
@@ -62,7 +68,8 @@ void PerfStatCounter<Mutex>::Reset() noexcept {
 	calcHitCount_ = defaultCounter.calcHitCount_;
 	calcTime_ = defaultCounter.calcTime_;
 	calcLockTime_ = defaultCounter.calcLockTime_;
-	calcStartTime_ = defaultCounter.calcStartTime_;
+	pendingLockTime_ = defaultCounter.pendingLockTime_;
+	calcStartTime_ = system_clock_w::now_coarse();
 	stddev_ = defaultCounter.stddev_;
 	minTime_ = defaultCounter.minTime_;
 	maxTime_ = defaultCounter.maxTime_;
@@ -71,14 +78,15 @@ void PerfStatCounter<Mutex>::Reset() noexcept {
 }
 
 template <typename Mutex>
-void PerfStatCounter<Mutex>::lap() noexcept {
+bool PerfStatCounter<Mutex>::lap() noexcept {
 	const auto now = system_clock_w::now_coarse();
 	std::chrono::microseconds elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - calcStartTime_);
 	constexpr static auto kPeriod = std::chrono::microseconds(1000000);
 	if (elapsed < kPeriod) {
-		return;
+		return false;
 	}
-	if (elapsed < 2 * kPeriod) [[likely]] {
+	const bool idle = elapsed >= 2 * kPeriod;
+	if (!idle) [[likely]] {
 		lastSecHitCount_ = calcHitCount_;
 		lastSecTotalTime_ = calcTime_;
 		lastSecTotalLockTime_ = calcLockTime_;
@@ -92,6 +100,7 @@ void PerfStatCounter<Mutex>::lap() noexcept {
 	calcTime_ = std::chrono::microseconds(0);
 	calcLockTime_ = std::chrono::microseconds(0);
 	lastValuesUs_.resize(0);
+	return idle;
 }
 
 template class PerfStatCounter<reindexer::mutex>;
@@ -102,30 +111,31 @@ void PerfStatCounterCountAvg<Mutex>::Hit(size_t val) noexcept {
 	lock_guard lck(mtx_);
 	++hitCount_;
 	valueCount += val;
-	lap();
+	if (lap()) {
+		hitCount_ = 1;
+		valueCount = val;
+	}
 }
 
 template <typename Mutex>
-void PerfStatCounterCountAvg<Mutex>::lap() noexcept {
+bool PerfStatCounterCountAvg<Mutex>::lap() noexcept {
 	const auto now = system_clock_w::now_coarse();
 	std::chrono::microseconds elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - calcStartTime_);
 	constexpr static auto kPeriod = std::chrono::microseconds(1000000);
 	if (elapsed < kPeriod) {
-		return;
+		return false;
 	}
-	if (elapsed < 2 * kPeriod) [[likely]] {
-		lastSecondAvgValue = 0.0;
+	const bool idle = elapsed >= 2 * kPeriod;
+	lastSecondAvgValue = 0.0;
+	if (!idle) [[likely]] {
 		if (hitCount_) {
 			lastSecondAvgValue = float(valueCount) / hitCount_;
 		}
-	} else {
-		lastSecondAvgValue = 0.0;
-		hitCount_ = 0;
-		valueCount = 0;
 	}
 	calcStartTime_ = now;
 	hitCount_ = 0;
 	valueCount = 0;
+	return idle;
 }
 
 template <typename Mutex>

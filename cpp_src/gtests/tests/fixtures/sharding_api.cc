@@ -54,6 +54,9 @@ void ShardingApi::Init(InitShardingConfig c) {
 	for (size_t shard = 0; shard < kShards; ++shard) {
 		YAML::Node clusterConf;
 		clusterConf["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
+		for (const auto& ns : c.clusterNamespaces) {
+			clusterConf["namespaces"].push_back(ns);
+		}
 		clusterConf["sync_threads"] = syncThreadsCount;
 		clusterConf["enable_compression"] = true;
 		clusterConf["online_updates_timeout_sec"] = 20;
@@ -366,7 +369,7 @@ void ShardingApi::AwaitOnlineReplicationStatus(size_t idx) {
 		auto node = getNode(idx);
 		Query qr = Query(kReplicationStatsNamespace).Where("type", CondEq, Variant("cluster"));
 		BaseApi::QueryResultsType res;
-		auto err = node->api.reindexer->Select(qr, res);
+		auto err = node->api.SelectErr(qr, res);
 		if (err.ok()) {
 			stats = node->GetReplicationStats("cluster");
 			for (auto& nodeStat : stats.nodeStats) {

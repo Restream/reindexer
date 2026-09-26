@@ -66,7 +66,7 @@ void ApiTvSimpleBase::GetEqString(benchmark::State& state) {
 
 void ApiTvSimpleBase::GetUuidStr(benchmark::State& state) {
 	const auto& uuid = uuids_[rand() % uuids_.size()];
-	const auto q = Query(nsdef_.name).Where("uuid_str", CondEq, uuid);
+	auto q = Query(nsdef_.name).Where("uuid_str", CondEq, uuid);
 	benchQuery(q, state);
 }
 
@@ -96,7 +96,7 @@ void ApiTvSimpleBase::Query3Cond(benchmark::State& state) {
 					 .Where("genre", CondEq, 5)
 					 .Where("year", CondRange, {2010, 2016})
 					 .Where("packages", CondSet, packages_.at(randomPackage))
-					 .Sort("year", false)
+					 .Sort("year", SortOrder::Asc)
 					 .Limit(20);
 		Total::Apply(q);
 		return q;
@@ -160,16 +160,16 @@ template void ApiTvSimpleBase::Query4CondRange<BaseFixture::CachedTotal, BaseFix
 
 void ApiTvSimpleBase::GetByRangeIDAndSortByHash(benchmark::State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		return Query(nsdef_.name).Where("id", CondRange, {idRange.first, idRange.second}).Sort("age", false).Limit(20);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
+		return Query(nsdef_.name).Where("id", CondRange, {idRange.first, idRange.second}).Sort("age", SortOrder::Asc).Limit(20);
 	};
 	benchQuery(q, state);
 }
 
 void ApiTvSimpleBase::GetByRangeIDAndSortByTree(benchmark::State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		return Query(nsdef_.name).Where("id", CondRange, {idRange.first, idRange.second}).Sort("genre", false).Limit(20);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
+		return Query(nsdef_.name).Where("id", CondRange, {idRange.first, idRange.second}).Sort("genre", SortOrder::Asc).Limit(20);
 	};
 	benchQuery(q, state);
 }
@@ -182,7 +182,7 @@ void ApiTvSimpleBase::Query3CondKillIdsCache(benchmark::State& state) {
 			.Where("genre", CondEq, 5)
 			.Where("year", CondRange, {2010, 2016})
 			.Where("packages", CondSet, randomNumArray<int>(20, 10000, 10))
-			.Sort("year", false)
+			.Sort("year", SortOrder::Asc)
 			.Limit(20);
 	};
 	benchQuery(q, state);
@@ -195,7 +195,7 @@ void ApiTvSimpleBase::Query3CondRestoreIdsCache(benchmark::State& state) {
 			.Where("genre", CondEq, 5)
 			.Where("year", CondRange, {2010, 2016})
 			.Where("packages", CondSet, packages_.at(randomIndex))
-			.Sort("year", false)
+			.Sort("year", SortOrder::Asc)
 			.Limit(20);
 	};
 	benchQuery(q, state);

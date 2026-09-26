@@ -2,7 +2,6 @@
 #include <fstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
-#include "core/formatters/checksum_fmt.h"
 #include "core/formatters/lsn_fmt.h"
 #include "core/system_ns_names.h"
 #include "estl/gift_str.h"
@@ -53,7 +52,8 @@ AsyncReplicationConfigTest::AsyncReplicationConfigTest(std::string _role, std::v
 
 AsyncReplicationConfigTest::AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers, bool _forceSyncOnLogicError,
 													   bool _forceSyncOnWrongDataHash, int _serverId, std::string _appName,
-													   NsSet _namespaces, std::string _mode, int _onlineUpdatesDelayMSec)
+													   NsSet _namespaces, std::string _mode, int _onlineUpdatesDelayMSec,
+													   int _retrySyncIntervalMSec)
 	: role(std::move(_role)),
 	  mode(std::move(_mode)),
 	  nodes(std::move(_followers)),
@@ -62,13 +62,15 @@ AsyncReplicationConfigTest::AsyncReplicationConfigTest(std::string _role, std::v
 	  appName(std::move(_appName)),
 	  namespaces(std::move(_namespaces)),
 	  serverId(_serverId),
-	  onlineUpdatesDelayMSec(_onlineUpdatesDelayMSec) {}
+	  onlineUpdatesDelayMSec(_onlineUpdatesDelayMSec),
+	  retrySyncIntervalMSec(_retrySyncIntervalMSec) {}
 
 bool AsyncReplicationConfigTest::operator==(const AsyncReplicationConfigTest& config) const {
 	return role == config.role && mode == config.mode && nodes == config.nodes && forceSyncOnLogicError == config.forceSyncOnLogicError &&
 		   forceSyncOnWrongDataHash == config.forceSyncOnWrongDataHash && appName == config.appName && namespaces == config.namespaces &&
 		   serverId == config.serverId && syncThreads == config.syncThreads &&
-		   concurrentSyncsPerThread == config.concurrentSyncsPerThread && onlineUpdatesDelayMSec == config.onlineUpdatesDelayMSec;
+		   concurrentSyncsPerThread == config.concurrentSyncsPerThread && onlineUpdatesDelayMSec == config.onlineUpdatesDelayMSec &&
+		   retrySyncIntervalMSec == config.retrySyncIntervalMSec;
 }
 
 std::string AsyncReplicationConfigTest::GetJSON() const {
@@ -88,6 +90,7 @@ void AsyncReplicationConfigTest::GetJSON(JsonBuilder& jb) const {
 	jb.Put("sync_threads", syncThreads);
 	jb.Put("syncs_per_thread", concurrentSyncsPerThread);
 	jb.Put("online_updates_delay_msec", onlineUpdatesDelayMSec);
+	jb.Put("retry_sync_interval_msec", retrySyncIntervalMSec);
 	{
 		auto arrNode = jb.Array("namespaces");
 		for (const auto& ns : namespaces) {
@@ -186,14 +189,12 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 			break;
 		}
 		case ConfigType::Namespace: {
-			BaseApi::QueryResultsType results;
-			auto err = api.reindexer->Select(
-				Query(kConfigNamespace).Where("type", CondEq, "async_replication").Or().Where("type", CondEq, "replication"), results);
-			EXPECT_TRUE(err.ok()) << err.what();
+			BaseApi::QueryResultsType results =
+				api.Select(Query(kConfigNamespace).Where("type", CondEq, "async_replication").Or().Where("type", CondEq, "replication"));
 			EXPECT_TRUE(results.Status().ok()) << results.Status().what();
 			for (auto it : results) {
 				WrSerializer ser;
-				err = it.GetJSON(ser, false);
+				auto err = it.GetJSON(ser, false);
 				EXPECT_TRUE(err.ok()) << err.what();
 				try {
 					gason::JsonParser parser;
@@ -237,7 +238,8 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 	return AsyncReplicationConfigTest(cluster::AsyncReplConfigData::Role2str(asyncReplConf.role), std::move(followers),
 									  asyncReplConf.forceSyncOnLogicError, asyncReplConf.forceSyncOnWrongDataHash, replConf.serverID,
 									  std::move(asyncReplConf.appName), std::move(namespaces),
-									  cluster::AsyncReplConfigData::Mode2str(asyncReplConf.mode), asyncReplConf.onlineUpdatesDelayMSec);
+									  cluster::AsyncReplConfigData::Mode2str(asyncReplConf.mode), asyncReplConf.onlineUpdatesDelayMSec,
+									  asyncReplConf.retrySyncIntervalMSec);
 }
 
 void ServerControl::Interface::WriteReplicationConfig(const std::string& configYaml) {
@@ -308,12 +310,10 @@ void ServerControl::Interface::EnableAllProfilings() {
 
 cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::string_view type) {
 	Query qr = Query(kReplicationStatsNamespace).Where("type", CondEq, Variant(type));
-	BaseApi::QueryResultsType res;
-	auto err = api.reindexer->Select(qr, res);
-	EXPECT_TRUE(err.ok()) << err.what();
+	BaseApi::QueryResultsType res = api.Select(qr);
 	assertf(res.Count() == 1, "Qr.Count()=={}\n", res.Count());
 	WrSerializer wser;
-	err = res.begin().GetJSON(wser, false);
+	auto err = res.begin().GetJSON(wser, false);
 	EXPECT_TRUE(err.ok()) << err.what();
 	cluster::ReplicationStats stats;
 	err = stats.FromJSON(giftStr(wser.Slice()));
@@ -474,6 +474,32 @@ void ServerControl::Interface::MakeFollower() {
 	SetReplicationConfig(config);
 }
 
+static reindexer::Reindexer* getLocalDB(ServerControl::Interface& iface, const ServerControlConfig& config) {
+	EXPECT_FALSE(config.asServerProcess) << "Local namespace lifecycle requires an in-process server (RPC CloseNamespace is a no-op)";
+	auto ctx = reindexer_server::MakeSystemAuthContext();
+	auto err = iface.srv.GetDBManager().OpenDatabase(config.dbName, ctx, false);
+	EXPECT_TRUE(err.ok()) << err.what();
+	reindexer::Reindexer* db = nullptr;
+	err = ctx.GetDB<reindexer_server::AuthContext::CalledFrom::HTTPServer>(reindexer_server::kRoleSystem, &db);
+	EXPECT_TRUE(err.ok()) << err.what();
+	EXPECT_TRUE(db);
+	return db;
+}
+
+void ServerControl::Interface::CloseNamespaceOnServer(std::string_view ns) {
+	auto* db = getLocalDB(*this, config_);
+	ASSERT_TRUE(db);
+	auto err = db->CloseNamespace(ns);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+void ServerControl::Interface::OpenNamespaceOnServer(std::string_view ns, const StorageOpts& storage) {
+	auto* db = getLocalDB(*this, config_);
+	ASSERT_TRUE(db);
+	auto err = db->OpenNamespace(ns, storage);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
 void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfigTest& config) {
 	cluster::AsyncReplConfigData asyncReplConf;
 	asyncReplConf.appName = config.appName;
@@ -488,7 +514,7 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	asyncReplConf.forceSyncOnLogicError = config.forceSyncOnLogicError;
 	asyncReplConf.forceSyncOnWrongDataHash = config.forceSyncOnWrongDataHash;
 	asyncReplConf.onlineUpdatesDelayMSec = config.onlineUpdatesDelayMSec;
-	asyncReplConf.retrySyncIntervalMSec = 1000;
+	asyncReplConf.retrySyncIntervalMSec = config.retrySyncIntervalMSec;
 	asyncReplConf.logLevel = LogTrace;
 	asyncReplConf.selfReplToken = config.selfReplicationToken;
 	auto err = checkSelfToken(asyncReplConf.selfReplToken);
@@ -519,12 +545,10 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 template <typename T>
 T ServerControl::Interface::getConfigByType() const {
 	const std::string type = std::is_same_v<T, cluster::AsyncReplConfigData> ? "async_replication" : "replication";
-	BaseApi::QueryResultsType qr;
-	auto err = api.reindexer->Select(Query(kConfigNamespace).Where("type", CondEq, type), qr);
-	EXPECT_TRUE(err.ok()) << err.what();
+	BaseApi::QueryResultsType qr = api.Select(Query(kConfigNamespace).Where("type", CondEq, type));
 	EXPECT_EQ(qr.Count(), 1);
 	WrSerializer ser;
-	err = qr.begin().GetJSON(ser, false);
+	auto err = qr.begin().GetJSON(ser, false);
 	EXPECT_TRUE(err.ok()) << err.what();
 	T config;
 	gason::JsonParser parser;
@@ -697,7 +721,7 @@ void ServerControl::WaitSync(const ServerControl::Interface::Ptr& s1, const Serv
 		ASSERT_TRUE(now < kMaxSyncTime) << fmt::format(
 			"Wait sync is too long. s1 lsn: {}; s2 lsn: {}; s1 count: {}; s2 count: {}; s1 hash: {}; s2 hash: {}; s1 tm_token: {}; s2 "
 			"tm_token: {}; s1 tm_version: {}; s2 tm_version: {}",
-			state1.lsn, state2.lsn, state1.dataCount, state2.dataCount, state1.dataHash, state2.dataHash, tmStateToken1, tmStateToken2,
+			state1.lsn, state2.lsn, state1.dataCount, state2.dataCount, state1.checksum, state2.checksum, tmStateToken1, tmStateToken2,
 			tmVersion1, tmVersion2);
 		state1 = s1->GetState(nsName);
 		state2 = s2->GetState(nsName);
@@ -709,7 +733,7 @@ void ServerControl::WaitSync(const ServerControl::Interface::Ptr& s1, const Serv
 			const bool hasSameLSN = state1.lsn == state2.lsn && state1.nsVersion == state2.nsVersion;
 
 			if (hasSameTms && hasSameLSN) {
-				ASSERT_EQ(state1.dataHash, state2.dataHash);
+				ASSERT_EQ(state1.checksum, state2.checksum);
 				return;
 			}
 		}

@@ -18,7 +18,6 @@ class [[nodiscard]] EqualPositionComparatorTypeImpl {
 public:
 	void SetValues(CondType cond, const VariantArray& values) {
 		assertrx_throw(valuesS_.empty());
-		assertrx_throw(allSetValuesS_.empty());
 
 		for (const Variant& key : values) {
 			key.Type().EvaluateOneOf(
@@ -68,14 +67,6 @@ public:
 				return lhs >= values_[0] && lhs <= values_[1];
 			case CondSet:
 				return valuesS_.find(lhs) != valuesS_.end();
-			case CondAllSet: {
-				const auto it = valuesS_.find(lhs);
-				if (it == valuesS_.end()) {
-					return false;
-				}
-				allSetValuesS_.insert(&*it);
-				return allSetValuesS_.size() == valuesS_.size();
-			}
 			case CondAny:
 				return true;
 			case CondLike:
@@ -83,6 +74,7 @@ public:
 			case CondEmpty:
 			case CondDWithin:
 			case CondKnn:
+			case CondAllSet:
 				break;
 		}
 		throw_as_assert;
@@ -108,7 +100,7 @@ private:
 	}
 
 	void addValue(CondType cond, T value) {
-		if (cond == CondSet || cond == CondAllSet) {
+		if (cond == CondSet) {
 			valuesS_.emplace(value);
 		} else {
 			values_.emplace_back(value);
@@ -117,7 +109,6 @@ private:
 
 	h_vector<T, 2> values_;
 	ValuesSet valuesS_;
-	AllSetValuesSet allSetValuesS_;
 };
 
 template <>
@@ -128,7 +119,6 @@ class [[nodiscard]] EqualPositionComparatorTypeImpl<Uuid> {
 public:
 	void SetValues(CondType cond, const VariantArray& values) {
 		assertrx_throw(valuesS_.empty());
-		assertrx_throw(allSetValuesS_.empty());
 
 		for (const Variant& key : values) {
 			key.Type().EvaluateOneOf(
@@ -172,14 +162,6 @@ public:
 				return lhs >= values_[0] && lhs <= values_[1];
 			case CondSet:
 				return valuesS_.find(lhs) != valuesS_.end();
-			case CondAllSet: {
-				const auto it = valuesS_.find(lhs);
-				if (it == valuesS_.end()) {
-					return false;
-				}
-				allSetValuesS_.insert(&*it);
-				return allSetValuesS_.size() == valuesS_.size();
-			}
 			case CondAny:
 				return true;
 			case CondLike:
@@ -187,6 +169,7 @@ public:
 			case CondEmpty:
 			case CondDWithin:
 			case CondKnn:
+			case CondAllSet:
 				break;
 		}
 		throw_as_assert;
@@ -194,7 +177,7 @@ public:
 
 private:
 	void addValue(CondType cond, Uuid value) {
-		if (cond == CondSet || cond == CondAllSet) {
+		if (cond == CondSet) {
 			valuesS_.emplace(value);
 		} else {
 			values_.emplace_back(value);
@@ -203,7 +186,6 @@ private:
 
 	h_vector<Uuid, 2> values_;
 	ValuesSet valuesS_;
-	AllSetValuesSet allSetValuesS_;
 };
 
 template <>
@@ -221,7 +203,6 @@ public:
 
 	void SetValues(CondType cond, const VariantArray& values) {
 		assertrx_throw(valuesS_.empty());
-		assertrx_throw(allSetValuesS_.empty());
 
 		for (const Variant& key : values) {
 			key.Type().EvaluateOneOf(
@@ -264,14 +245,6 @@ public:
 					   (collateCompare(std::string_view(lhs), std::string_view(values_[1]), collate_) & ComparationResult::Le);
 			case CondSet:
 				return valuesS_.find(std::string_view(lhs)) != valuesS_.end();
-			case CondAllSet: {
-				auto it = valuesS_.find(lhs);
-				if (it == valuesS_.end()) {
-					return false;
-				}
-				allSetValuesS_.insert(&*it);
-				return allSetValuesS_.size() == valuesS_.size();
-			}
 			case CondAny:
 				return true;
 			case CondLike: {
@@ -280,6 +253,7 @@ public:
 			case CondEmpty:
 			case CondDWithin:
 			case CondKnn:
+			case CondAllSet:
 				break;
 		}
 		throw_as_assert;
@@ -300,7 +274,6 @@ private:
 	h_vector<key_string, 2> values_;
 	std::string_view cachedValueSV_;
 	key_string_set valuesS_;
-	fast_hash_set<const key_string*> allSetValuesS_;
 	CollateOpts collate_;
 };
 

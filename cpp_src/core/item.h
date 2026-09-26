@@ -237,7 +237,8 @@ public:
 	/// USE WITH CAUTION. In unsafe mode most of Item methods will not store  strings and slices, passed from/to application.<br>
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>
 	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containers in many cases invalidates references -
-	/// and in unsafe mode caller is responsible to guarantee, that all resources passed to Item will keep valid
+	/// and in unsafe mode caller is responsible to guarantee, that all resources passed to Item will keep valid.<br>
+	/// If the item is added into a Transaction, those resources must stay valid until that transaction is committed
 	Item& Unsafe(bool enable = true) & noexcept;
 	/// Get index type by field id
 	/// @return either index type or Undefined (if index with this number does not exist or PayloadType is not available)

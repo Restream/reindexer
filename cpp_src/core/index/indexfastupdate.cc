@@ -16,10 +16,13 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 		logFmt(LogTrace, "[{}]:{} Index '{}' will be created anew without changing the payloads of the items.", ns.name_,
 			   ns.wal_.GetServer(), from.Name());
 
-		ns.verifyUpdateIndex(to);
+		// The fast update never changes the JSON-paths, so the verification has nothing to register. The throwaway copy
+		// here just keeps the namespace tags matcher out of reach of the checks
+		TagsMatcher tmCopy{ns.tagsMatcher()};
+		ns.verifyUpdateIndex(to, tmCopy);
 
-		const auto idxNo = ns.indexesNames_.find(from.Name())->second;
-		auto& index = ns.indexes_[idxNo];
+		const auto idxNo = ns.getIndexByName(from.Name());
+		const auto& index = ns.indexes()[idxNo];
 		const auto& fields = index->Fields();
 		const auto isSparse = index->Opts().IsSparse();
 		if (isSparse && fields.getJsonPathsLength() != 1) {
@@ -46,14 +49,14 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 				keys.emplace_back(item);
 			} else if (isSparse) {
 				try {
-					ConstPayload(ns.payloadType_, item).GetByJsonPath(fields.getJsonPath(0), ns.tagsMatcher_, keys, index->KeyType());
+					ConstPayload(ns.payloadType(), item).GetByJsonPath(fields.getJsonPath(0), ns.tagsMatcher(), keys, index->KeyType());
 				} catch (const std::exception& e) {
 					logFmt(LogInfo, "[{}]:{} Unable to index sparse value during index fast update (index name: '{}'): '{}'", ns.name_,
 						   ns.wal_.GetServer(), index->Name(), e.what());
 					keys.resize(0);
 				}
 			} else {
-				ConstPayload(ns.payloadType_, item).Get(idxNo, keys);
+				ConstPayload(ns.payloadType(), item).Get(idxNo, keys);
 			}
 
 			resKeys.resize(0);
@@ -64,35 +67,38 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 		auto indexesCacheCleaner{ns.GetIndexesCacheCleaner()};
 		indexesCacheCleaner.Add(*index);
 
-		index = std::move(newIndex);
+		std::ignore = ns.indexRegistry_.ReplaceIndex(idxNo, std::move(newIndex));
 
-		ns.indexOptimizer_.UpdateSortedIdxCount(ns.indexes_);
+		ns.indexOptimizer_.UpdateSortedIdxCount(ns.indexes(), ns.name_);
 		ns.markUpdated(IndexOptimization::Full);
 	} else if (indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::Embedding, FloatVectorIndexOpts::Diff::Radius,
 										  FloatVectorIndexOpts::Diff::QuantizationConfig, IndexOpts::ParamsDiff::Config)) {
 		logFmt(LogTrace, "[{}]:{} Only the options will be updated for the index '{}'.", ns.name_, ns.wal_.GetServer(), from.Name());
 		const auto idx = ns.getIndexByName(to.Name());
-		auto* index = ns.indexes_[idx].get();
+		auto* index = ns.indexes()[idx].get();
 
-		if (indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::QuantizationConfig)) {
+		const bool quantizationChanged = indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::QuantizationConfig);
+		const bool embeddingChanged = indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::Embedding);
+
+		// Every verification has to run before the first mutation below (reloadNonQuantizedIndex/ReplaceFieldType are not
+		// reversible), so a failed check here leaves the live index untouched
+		if (quantizationChanged) {
 			ns.verifyUpsertQuantizationConfigHNSWIndex("update", to);
 			ns.verifyUpdateQuantizationConfigHNSWIndex(index, to);
-
-			// If quantization config is reset in new IndexDef we must reload the origin non-quantized index.
-			if (!to.Opts().FloatVector().QuantizationConfig()) {
-				ns.reloadNonQuantizedIndex(idx);
-				index = ns.indexes_[idx].get();
-			}
 		}
-		if (indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::Embedding)) {
+		if (embeddingChanged) {
 			ns.verifyUpsertEmbedder("update", to);
+		}
+
+		if (quantizationChanged && !to.Opts().FloatVector().QuantizationConfig()) {
+			// If quantization config is reset in new IndexDef we must reload the origin non-quantized index.
+			ns.reloadNonQuantizedIndex(idx);
+			index = ns.indexes()[idx].get();
+		}
+		if (embeddingChanged) {
 			PayloadFieldType f(ns.name_.ToLower(), *index, to, ns.embeddersCache_, ns.enablePerfCounters_);
-			f.SetOffset(ns.payloadType_.Field(idx).Offset());
-			ns.payloadType_.Replace(idx, std::move(f));
-			for (auto& idx : ns.indexes_) {
-				idx->UpdatePayloadType(PayloadType{ns.payloadType_});
-			}
-			ns.tagsMatcher_.UpdatePayloadType(ns.payloadType_, ns.indexes_.SparseIndexes(), NeedChangeTmVersion::No);
+			f.SetOffset(ns.payloadType().Field(idx).Offset());
+			ns.indexRegistry_.ReplaceFieldType(idx, std::move(f));
 		}
 
 		index->SetOpts(to.Opts());

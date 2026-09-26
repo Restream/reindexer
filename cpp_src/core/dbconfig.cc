@@ -736,6 +736,7 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode& v) {
 	err = tryReadOptionalJsonValue(&errorString, v, "tx_vec_insertion_threads"sv, txVecInsertionThreads);
 	err = tryReadOptionalJsonValue(&errorString, v, "optimization_timeout_ms"sv, optimizationTimeout);
 	err = tryReadOptionalJsonValue(&errorString, v, "optimization_sort_workers"sv, optimizationSortWorkers);
+	err = tryReadOptionalJsonValue(&errorString, v, "ft_cleanup_timeout_ms"sv, ftCleanupTimeout);
 	(void)err;	// ignored; Errors will be handled with errorString
 
 	if (int64_t walSizeV = walSize; tryReadOptionalJsonValue(&errorString, v, "wal_size"sv, walSizeV, 0).ok()) {
@@ -783,6 +784,7 @@ void NamespaceConfigData::GetJSON(JsonBuilder& jb) const {
 	jb.Put("tx_vec_insertion_threads"sv, txVecInsertionThreads);
 	jb.Put("optimization_timeout_ms"sv, optimizationTimeout);
 	jb.Put("optimization_sort_workers"sv, optimizationSortWorkers);
+	jb.Put("ft_cleanup_timeout_ms"sv, ftCleanupTimeout);
 	jb.Put("wal_size"sv, walSize);
 
 	jb.Put("min_preselect_size"sv, minPreselectSize);

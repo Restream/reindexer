@@ -8,7 +8,7 @@
 
 namespace reindexer {
 
-class Query;
+class ConstQueryImpl;
 
 namespace joins {
 
@@ -23,7 +23,7 @@ public:
 	 * Constructs a JOIN lookup table for the given query tree.
 	 * @param q - Query to analyze
 	 */
-	explicit QueryJoinsTable(const Query& q);
+	explicit QueryJoinsTable(ConstQueryImpl q);
 
 	/**
 	 * Returns the namespace ID of a JOIN query.
@@ -74,7 +74,7 @@ private:
 	 * Builds the lookup table from the query tree.
 	 * @param q - Query to process.
 	 */
-	void buildJoinsOffsetTable(const Query& q);
+	void buildJoinsOffsetTable(ConstQueryImpl q);
 
 	/**
 	 * Process query and all it's nested queries with DFS algorithm.
@@ -82,7 +82,7 @@ private:
 	 * @param parentNsId - parent's NsId.
 	 * @param nextNsId - value of the next consequent NsId.
 	 */
-	void processQuery(const Query& query, uint16_t parentNsId, uint16_t& nextNsId);
+	void processQuery(ConstQueryImpl query, uint16_t parentNsId, uint16_t& nextNsId);
 
 	/**
 	 * Sets NsId for a parent's JOIN, growing the table lazily while building the query tree.

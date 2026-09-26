@@ -243,6 +243,8 @@ type FtFastConfig struct {
 	MaxAreasInDoc int `json:"max_areas_in_doc"`
 	// Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited
 	MaxTotalAreasToCache int `json:"max_total_areas_to_cache"`
+	// Minimum fraction of deleted documents required to run full-text index cleanup. Default value is 0.2
+	DeletedDocsOptimizationThreshold float64 `json:"deleted_docs_optimization_threshold"`
 	// Configuration for certain field
 	FieldsCfg []FtFastFieldConfig `json:"fields,omitempty"`
 	// Optimize the index by memory or by cpu. Default 'memory'.
@@ -264,39 +266,40 @@ type FtFastConfig struct {
 
 func DefaultFtFastConfig() FtFastConfig {
 	return FtFastConfig{
-		Bm25Boost:               1.0,
-		Bm25Weight:              0.1,
-		DistanceBoost:           1.0,
-		DistanceWeight:          0.5,
-		TermLenBoost:            1.0,
-		TermLenWeight:           0.3,
-		PositionBoost:           1.0,
-		PositionWeight:          0.1,
-		FullMatchBoost:          1.1,
-		PartialMatchDecrease:    15,
-		MinRelevancy:            0.05,
-		MinRank:                 5,
-		MaxTypos:                2,
-		MaxTypoLen:              15,
-		TyposDetailedConfig:     &FtTyposDetailedConfig{MaxTypoDistance: 0, MaxSymbolPermutationDistance: 1, MaxExtraLetters: 2, MaxMissingLetters: 2},
-		MergeLimit:              20000,
-		KeepDiacritics:          []string{},
-		Stemmers:                []string{"en", "ru"},
-		EnableTermsConcat:       true,
-		EnableTermsSplit:        true,
-		EnableTranslit:          true,
-		EnableKbLayout:          KbLayoutHeuristic,
-		LogLevel:                0,
-		ExtraWordSymbols:        "-/+_`'",
-		WordPartDelimiters:      "-/+_`'",
-		MinWordPartSize:         3,
-		SumRanksByFieldsRatio:   0.0,
-		MaxAreasInDoc:           5,
-		MaxTotalAreasToCache:    -1,
-		Optimization:            "Memory",
-		EnablePreselectBeforeFt: false,
-		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, ConcatProc: 90, SplitProc: 90, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95, Delimited: 80},
-		Bm25Config:              &Bm25ConfigType{Bm25k1: 2.0, Bm25b: 0.75, Bm25Type: "rx_bm25"},
+		Bm25Boost:                        1.0,
+		Bm25Weight:                       0.1,
+		DistanceBoost:                    1.0,
+		DistanceWeight:                   0.5,
+		TermLenBoost:                     1.0,
+		TermLenWeight:                    0.3,
+		PositionBoost:                    1.0,
+		PositionWeight:                   0.1,
+		FullMatchBoost:                   1.1,
+		PartialMatchDecrease:             15,
+		MinRelevancy:                     0.05,
+		MinRank:                          5,
+		MaxTypos:                         2,
+		MaxTypoLen:                       15,
+		TyposDetailedConfig:              &FtTyposDetailedConfig{MaxTypoDistance: 0, MaxSymbolPermutationDistance: 1, MaxExtraLetters: 2, MaxMissingLetters: 2},
+		MergeLimit:                       20000,
+		KeepDiacritics:                   []string{},
+		Stemmers:                         []string{"en", "ru"},
+		EnableTermsConcat:                true,
+		EnableTermsSplit:                 true,
+		EnableTranslit:                   true,
+		EnableKbLayout:                   KbLayoutHeuristic,
+		LogLevel:                         0,
+		ExtraWordSymbols:                 "-/+_`'",
+		WordPartDelimiters:               "-/+_`'",
+		MinWordPartSize:                  3,
+		SumRanksByFieldsRatio:            0.0,
+		MaxAreasInDoc:                    5,
+		MaxTotalAreasToCache:             -1,
+		DeletedDocsOptimizationThreshold: 0.2,
+		Optimization:                     "Memory",
+		EnablePreselectBeforeFt:          false,
+		FtBaseRankingConfig:              &FtBaseRanking{FullMatch: 100, ConcatProc: 90, SplitProc: 90, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95, Delimited: 80},
+		Bm25Config:                       &Bm25ConfigType{Bm25k1: 2.0, Bm25b: 0.75, Bm25Type: "rx_bm25"},
 	}
 }
 

@@ -59,7 +59,7 @@ message ErrorResponse {
 		errCodeBadTransaction = 15;
 		errCodeOutdatedWAL = 16;
 		errCodeNoWAL = 17;
-		errCodeDataHashMismatch = 18;
+		errCodeChecksumMismatch = 18;
 		errCodeTimeout = 19;
 		errCodeCanceled = 20;
 		errCodeTagsMissmatch = 21;

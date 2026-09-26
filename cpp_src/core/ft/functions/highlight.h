@@ -13,7 +13,7 @@ class key_string;
 
 class [[nodiscard]] Highlight : private AreasSorter {
 public:
-	bool Process(ItemRef&, PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder);
+	bool Process(ItemRef&, const PayloadType&, const FtFuncStruct&, std::vector<key_string>& stringsHolder);
 
 private:
 	VariantArray plArr_;

@@ -49,25 +49,25 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults,
 	if (clientResults.HaveJoined()) {
 		throw Error(errLogic, "Queries with non-empty joined data are not supported by Cluster Proxy");
 	}
-	if (result.getMergedNSCount() != 0 || result.totalCount != 0) {
+	if (result.getNamespacesCount() != 0 || result.totalCount != 0) {
 		throw Error(errLogic, "Target query results are not empty. Query results merging is not supported by Cluster Proxy");
 	}
 
 	const auto itemsCnt = clientResults.Count();
-	for (int nsid = 0, nss = clientResults.GetMergedNSCount(); nsid < nss; ++nsid) {
+	for (size_t nsid = 0, nss = clientResults.GetNamespacesCount(); nsid < nss; ++nsid) {
 		auto& incTagsVec = clientResults.GetIncarnationTags();
 		lsn_t incTag;
 		if (!incTagsVec.empty()) {
 			if (incTagsVec.size() != 1) [[unlikely]] {
 				throw Error(errLogic, "Unexpected incarnation tags count {} for single-node query", incTagsVec.size());
 			}
-			if (incTagsVec[0].tags.size() > unsigned(nsid)) [[likely]] {
+			if (incTagsVec[0].tags.size() > nsid) [[likely]] {
 				incTag = incTagsVec[0].tags[nsid];
 			} else if (itemsCnt) {
 				throw Error(errLogic, "Missing incarnation tag for ns id {} in non-empty result", nsid);
 			}
 		}
-		result.addNSContext(clientResults.GetPayloadType(nsid), clientResults.GetTagsMatcher(nsid), FieldsFilter(), nullptr,
+		result.addNSContext(clientResults.GetPayloadType(int(nsid)), clientResults.GetTagsMatcher(int(nsid)), FieldsFilter(), nullptr,
 							std::move(incTag));
 	}
 	result.explainResults = clientResults.GetExplainResults();
@@ -290,8 +290,8 @@ Error ClusterProxy::Update(std::string_view nsName, Item& item, LocalQueryResult
 	return proxyCall<LocalItemQrActionFT, &ReindexerImpl::Update, Error>(ctx, nsName, action, nsName, item, qr);
 }
 
-Error ClusterProxy::Update(const Query& q, LocalQueryResults& qr, const RdxContext& ctx) {
-	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, const Query& q, LocalQueryResults& qr) {
+Error ClusterProxy::Update(ConstQueryImpl q, LocalQueryResults& qr, const RdxContext& ctx) {
+	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, ConstQueryImpl q, LocalQueryResults& qr) {
 		return resultFollowerAction<&client::Reindexer::Update>(ctx, clientToLeader, q, qr);
 	};
 	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Update query", getServerIDRel());
@@ -327,15 +327,15 @@ Error ClusterProxy::Delete(std::string_view nsName, Item& item, LocalQueryResult
 	return proxyCall<LocalItemQrActionFT, &ReindexerImpl::Delete, Error>(ctx, nsName, action, nsName, item, qr);
 }
 
-Error ClusterProxy::Delete(const Query& q, LocalQueryResults& qr, const RdxContext& ctx) {
-	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, const Query& q, LocalQueryResults& qr) {
+Error ClusterProxy::Delete(ConstQueryImpl q, LocalQueryResults& qr, const RdxContext& ctx) {
+	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, ConstQueryImpl q, LocalQueryResults& qr) {
 		return resultFollowerAction<&client::Reindexer::Delete>(ctx, clientToLeader, q, qr);
 	};
 	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Delete QUERY", getServerIDRel());
 	return proxyCall<LocalQueryActionFT, &ReindexerImpl::Delete, Error>(ctx, q.NsName(), action, q, qr);
 }
 
-Error ClusterProxy::Select(const Query& q, LocalQueryResults& qr, const RdxContext& ctx) {
+Error ClusterProxy::Select(ConstQueryImpl q, LocalQueryResults& qr, const RdxContext& ctx) {
 	using namespace std::placeholders;
 	if (!shouldProxyQuery(q)) {
 		clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Select query local", getServerIDRel());
@@ -344,16 +344,17 @@ Error ClusterProxy::Select(const Query& q, LocalQueryResults& qr, const RdxConte
 	const RdxDeadlineContext deadlineCtx(kReplicationStatsTimeout, ctx.GetCancelCtx());
 	const RdxContext rdxDeadlineCtx = ctx.WithCancelCtx(deadlineCtx);
 
-	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, const Query& q, LocalQueryResults& qr) {
+	auto action = [this](const RdxContext& ctx, LeaderRefT clientToLeader, ConstQueryImpl q, LocalQueryResults& qr) {
 		return resultFollowerAction<&client::Reindexer::Select>(ctx, clientToLeader, q, qr);
 	};
 	clusterProxyLog(LogTrace, "[{} proxy] ClusterProxy::Select query proxied", getServerIDRel());
-	auto err = proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q.NsName(), action, q, qr);
+	const std::string& nsName = q.NsName();
+	auto err = proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, nsName, action, q, qr);
 	if (err.code() == errNetwork) {
 		// Force leader's check, if proxy returned errNetwork
 		const auto clusterErr = impl_.ClusterControlRequest(ClusterControlRequestData(ForceElectionsCommand{}));
 		if (clusterErr.ok()) {
-			return proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q.NsName(), action, q, qr);
+			return proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, nsName, action, q, qr);
 		}
 	}
 	return err;
@@ -491,12 +492,12 @@ bool ClusterProxy::IsFulltextOrVector(std::string_view nsName, std::string_view 
 	return impl_.isFulltextOrVector(nsName, indexName);
 }
 
-bool ClusterProxy::shouldProxyQuery(const Query& q) {
+bool ClusterProxy::shouldProxyQuery(ConstQueryImpl q) {
 	assertrx_throw(q.Type() == QuerySelect);
 	if (kReplicationStatsNamespace != q.NsName()) {
 		return false;
 	}
-	if (q.GetJoinQueries().size() || q.GetMergeQueries().size() || q.GetSubQueries().size()) {
+	if (q.JoinQueries().size() || q.MergeQueries().size() || q.SubQueries().size()) {
 		throw Error(errParams, "Joins, merges and subqueries are not allowed for #replicationstats queries");
 	}
 	bool hasTypeCond = false;
@@ -816,22 +817,22 @@ Error ClusterProxy::itemFollowerAction(const RdxContext& ctx, LeaderRefT clientT
 }
 
 template <ClusterProxy::ProxiedQueryActionFT fnl>
-Error ClusterProxy::resultFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, const Query& query, LocalQueryResults& qr) {
+Error ClusterProxy::resultFollowerAction(const RdxContext& ctx, LeaderRefT clientToLeader, ConstQueryImpl query, LocalQueryResults& qr) {
 	try {
 		Error err;
 		client::Reindexer l = clientToLeader->WithEmitterServerId(sId_);
 		client::QueryResults clientResults;
 		{
 			const auto ward = ctx.BeforeClusterProxy();
-			err = (l.*fnl)(query, clientResults);
+			err = (l.*fnl)(*query, clientResults);
 		}
 		if (!err.ok()) {
 			return err;
 		}
-		if (!query.GetMergeQueries().empty()) {
+		if (!query.MergeQueries().empty()) {
 			return Error(errLogic, "Unable to proxy query with MERGE");
 		}
-		if (!query.GetJoinQueries().empty() && query.Type() == QuerySelect) {
+		if (!query.JoinQueries().empty() && query.Type() == QuerySelect) {
 			return Error(errLogic, "Unable to proxy SELECT query with JOIN");
 		}
 		clientToCoreQueryResults(clientResults, qr);

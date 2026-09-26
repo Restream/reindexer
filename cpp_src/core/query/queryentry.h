@@ -1,13 +1,15 @@
 #pragma once
 
-#include <climits>
 #include <string>
 #include <vector>
+#include "core/enums.h"
 #include "core/expressiontree.h"
 #include "core/function/function.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/fieldsset.h"
+#include "core/query/expression/arithmetic_expression.h"
 #include "core/query/knn_search_params.h"
+#include "core/query/query_consts.h"
 #include "core/type_consts.h"
 #include "estl/concepts.h"
 #include "estl/h_vector.h"
@@ -26,7 +28,6 @@ using builders::JsonBuilder;
 template <typename T>
 class PayloadIface;
 using ConstPayload = PayloadIface<const PayloadValue>;
-class TagsMatcher;
 
 struct [[nodiscard]] JoinQueryEntry {
 	explicit JoinQueryEntry(size_t joinIdx) noexcept : joinIndex{joinIdx} {}
@@ -100,8 +101,8 @@ public:
 	struct [[nodiscard]] DistinctTag {};
 	struct [[nodiscard]] ForcedSortOptEntryTag {};
 	struct [[nodiscard]] IgnoreEmptyValues {};
-	static constexpr unsigned kDefaultLimit = UINT_MAX;
-	static constexpr unsigned kDefaultOffset = 0;
+	static constexpr unsigned kDefaultLimit = kQueryMaxLimit;
+	static constexpr unsigned kDefaultOffset = kQueryMinOffset;
 
 	template <concepts::ConvertibleToString Str, concepts::ConvertibleToVariantArray VA>
 	QueryEntry(Str&& fieldName, CondType cond, VA&& v, size_t insertedFrom = NotInserted)
@@ -218,25 +219,32 @@ protected:
 	template <concepts::Function Function>
 	FunctionEntry(Function&& function, CondType condition)
 		: comparisonField_(""), function_(std::forward<Function>(function)), condition_(condition) {
+		verify();
 		setFieldsFromFunction();
 	}
 	FunctionEntry(functions::FunctionVariant&& function, CondType condition)
 		: comparisonField_(""), function_(std::move(function)), condition_(condition) {
+		verify();
 		setFieldsFromFunction();
 	}
 	FunctionEntry(const functions::FunctionVariant& function, CondType condition)
 		: comparisonField_(""), function_(function), condition_(condition) {
+		verify();
 		setFieldsFromFunction();
 	}
 
 public:
 	template <concepts::ConvertibleToString Str, concepts::Function Function>
 	FunctionEntry(Str&& comparisonField, CondType cond, Function&& function)
-		: comparisonField_(std::forward<Str>(comparisonField)), function_(function), condition_(cond) {}
+		: comparisonField_(std::forward<Str>(comparisonField)), function_(function), condition_(cond) {
+		verify();
+	}
 
 	template <concepts::ConvertibleToString Str>
 	FunctionEntry(Str&& comparisonField, CondType cond, functions::FunctionVariant&& function)
-		: comparisonField_(std::forward<Str>(comparisonField)), function_(std::move(function)), condition_(cond) {}
+		: comparisonField_(std::forward<Str>(comparisonField)), function_(std::move(function)), condition_(cond) {
+		verify();
+	}
 
 	FunctionEntry(const FunctionEntry&) = default;
 	FunctionEntry& operator=(const FunctionEntry&) = delete;
@@ -249,8 +257,8 @@ public:
 	QueryField& FieldData(size_t field) & noexcept { return fields_[field]; }
 	size_t Fields() const noexcept { return fields_.size(); }
 	CondType Condition() const noexcept { return condition_; }
-	const QueryField& ComparisonField() const noexcept { return comparisonField_; }
-	QueryField& ComparisonField() noexcept { return comparisonField_; }
+	const QueryField& ComparisonField() const& noexcept { return comparisonField_; }
+	QueryField& ComparisonField() & noexcept { return comparisonField_; }
 	bool HasComparisonField() const noexcept { return !comparisonField_.FieldName().empty(); }
 
 	const functions::Function& Function() const&;
@@ -261,6 +269,7 @@ public:
 	auto FieldData(size_t) const&& = delete;
 	auto Function() const&& = delete;
 	auto FunctionVariant() const&& = delete;
+	auto ComparisonField() const&& = delete;
 
 protected:
 	void setFieldsFromFunction() {
@@ -268,6 +277,7 @@ protected:
 			fields_.emplace_back(field);
 		}
 	}
+	void verify() const;
 
 	QueryField comparisonField_;
 	h_vector<QueryField, 1> fields_;
@@ -316,6 +326,104 @@ private:
 	VariantArray values_;
 };
 
+/// WHERE condition with at least one arithmetic operand (fields, constants, +*-/, (), flat_array_len, now).
+class [[nodiscard]] QueryArithmeticEntry {
+public:
+	enum class [[nodiscard]] LeftKind : uint8_t { Field, Arithmetic };
+	enum class [[nodiscard]] RightKind : uint8_t { Values, Field, Arithmetic };
+
+	QueryArithmeticEntry(expressions::ArithmeticExpression&& left, CondType cond, VariantArray&& values)
+		: leftKind_{LeftKind::Arithmetic},
+		  rightKind_{RightKind::Values},
+		  leftField_{""},
+		  rightField_{""},
+		  leftExpr_{std::move(left)},
+		  condition_{cond},
+		  values_{std::move(values)} {
+		checkCondition(cond);
+	}
+
+	template <concepts::ConvertibleToString Str>
+	QueryArithmeticEntry(Str&& field, CondType cond, expressions::ArithmeticExpression&& right)
+		: leftKind_{LeftKind::Field},
+		  rightKind_{RightKind::Arithmetic},
+		  leftField_{std::forward<Str>(field)},
+		  rightField_{""},
+		  rightExpr_{std::move(right)},
+		  condition_{cond} {
+		checkCondition(cond);
+	}
+
+	QueryArithmeticEntry(expressions::ArithmeticExpression&& left, CondType cond, expressions::ArithmeticExpression&& right)
+		: leftKind_{LeftKind::Arithmetic},
+		  rightKind_{RightKind::Arithmetic},
+		  leftField_{""},
+		  rightField_{""},
+		  leftExpr_{std::move(left)},
+		  rightExpr_{std::move(right)},
+		  condition_{cond} {
+		checkCondition(cond);
+	}
+
+	template <concepts::ConvertibleToString Str>
+	QueryArithmeticEntry(expressions::ArithmeticExpression&& left, CondType cond, Str&& field)
+		: leftKind_{LeftKind::Arithmetic},
+		  rightKind_{RightKind::Field},
+		  leftField_{""},
+		  rightField_{std::forward<Str>(field)},
+		  leftExpr_{std::move(left)},
+		  condition_{cond} {
+		checkCondition(cond);
+	}
+
+	bool operator==(const QueryArithmeticEntry& other) const noexcept {
+		return leftKind_ == other.leftKind_ && rightKind_ == other.rightKind_ && condition_ == other.condition_ &&
+			   leftField_ == other.leftField_ && rightField_ == other.rightField_ && leftExpr_ == other.leftExpr_ &&
+			   rightExpr_ == other.rightExpr_ &&
+			   values_.RelaxCompare<WithString::Yes, NotComparable::Return, kDefaultNullsHandling>(other.values_) == ComparationResult::Eq;
+	}
+
+	LeftKind GetLeftKind() const noexcept { return leftKind_; }
+	RightKind GetRightKind() const noexcept { return rightKind_; }
+	CondType Condition() const noexcept { return condition_; }
+
+	const QueryField& LeftField() const& noexcept { return leftField_; }
+	QueryField& LeftField() & noexcept { return leftField_; }
+	const QueryField& RightField() const& noexcept { return rightField_; }
+	QueryField& RightField() & noexcept { return rightField_; }
+
+	const expressions::ArithmeticExpression& LeftExpr() const& noexcept { return leftExpr_; }
+	expressions::ArithmeticExpression& LeftExpr() & noexcept { return leftExpr_; }
+	const expressions::ArithmeticExpression& RightExpr() const& noexcept { return rightExpr_; }
+	expressions::ArithmeticExpression& RightExpr() & noexcept { return rightExpr_; }
+
+	const VariantArray& Values() const& noexcept { return values_; }
+
+	bool UsesNow() const noexcept {
+		return (leftKind_ == LeftKind::Arithmetic && leftExpr_.UsesNow()) || (rightKind_ == RightKind::Arithmetic && rightExpr_.UsesNow());
+	}
+
+	std::string Dump() const;
+
+	auto LeftField() const&& = delete;
+	auto RightField() const&& = delete;
+	auto LeftExpr() const&& = delete;
+	auto RightExpr() const&& = delete;
+	auto Values() const&& = delete;
+
+private:
+	void checkCondition(CondType cond) const;
+
+	LeftKind leftKind_{LeftKind::Arithmetic};
+	RightKind rightKind_{RightKind::Values};
+	QueryField leftField_;
+	QueryField rightField_;
+	expressions::ArithmeticExpression leftExpr_;
+	expressions::ArithmeticExpression rightExpr_;
+	CondType condition_{CondAny};
+	VariantArray values_;
+};
+
 class [[nodiscard]] SubQueryFunctionEntry : public FunctionEntry {
 public:
 	using FunctionEntry::Fields;
@@ -329,21 +437,21 @@ public:
 	template <concepts::Function Function>
 	SubQueryFunctionEntry(Function&& function, CondType condition, size_t queryIndex)
 		: FunctionEntry(std::forward<Function>(function), condition), queryIndex_(queryIndex), subqueryType_(Right) {
-		checkCondition(condition);
+		verify();
 	}
 	SubQueryFunctionEntry(functions::FunctionVariant&& function, CondType condition, size_t queryIndex)
 		: FunctionEntry(std::move(function), condition), queryIndex_(queryIndex), subqueryType_(Right) {
-		checkCondition(condition);
+		verify();
 	}
 
 	template <concepts::Function Function>
 	SubQueryFunctionEntry(size_t queryIndex, CondType condition, Function&& function)
 		: FunctionEntry(std::forward<Function>(function), condition), queryIndex_(queryIndex), subqueryType_(Left) {
-		checkCondition(condition);
+		verify();
 	}
 	SubQueryFunctionEntry(size_t queryIndex, CondType condition, functions::FunctionVariant&& function)
 		: FunctionEntry(std::move(function), condition), queryIndex_(queryIndex), subqueryType_(Left) {
-		checkCondition(condition);
+		verify();
 	}
 
 	bool operator==(const SubQueryFunctionEntry& other) const {
@@ -355,7 +463,7 @@ public:
 	std::string Dump(const std::vector<Query>& subQueries) const;
 
 private:
-	void checkCondition(CondType condition) const;
+	void verify() const;
 
 	// index of Query in Query::subQueries_
 	size_t queryIndex_{std::numeric_limits<size_t>::max()};
@@ -367,7 +475,7 @@ public:
 	template <typename StrL, typename StrR>
 	BetweenFieldsQueryEntry(StrL&& fstIdx, CondType cond, StrR&& sndIdx)
 		: leftField_{std::forward<StrL>(fstIdx)}, rightField_{std::forward<StrR>(sndIdx)}, condition_{cond} {
-		checkCondition(cond);
+		verify();
 	}
 
 	bool operator==(const BetweenFieldsQueryEntry&) const noexcept = default;
@@ -403,7 +511,7 @@ public:
 	auto RightFieldData() const&& = delete;
 
 private:
-	void checkCondition(CondType cond) const;
+	void verify() const;
 
 	QueryField leftField_;
 	QueryField rightField_;
@@ -453,7 +561,7 @@ class [[nodiscard]] SubQueryFieldEntry {
 public:
 	template <concepts::ConvertibleToString Str>
 	SubQueryFieldEntry(Str&& field, CondType cond, size_t qIdx) : field_{std::forward<Str>(field)}, condition_{cond}, queryIndex_{qIdx} {
-		checkCondition(cond);
+		verify();
 	}
 	const std::string& FieldName() const& noexcept { return field_; }
 	std::string&& FieldName() && noexcept { return std::move(field_); }
@@ -465,7 +573,7 @@ public:
 	auto FieldName() const&& = delete;
 
 private:
-	void checkCondition(CondType cond) const;
+	void verify() const;
 
 	std::string field_;
 	CondType condition_{CondAny};
@@ -494,7 +602,7 @@ public:
 	template <concepts::ConvertibleToString Str>
 	UpdateEntry(Str&& c, VariantArray&& v, FieldModifyMode m = FieldModeSet, bool e = false)
 		: column_(std::forward<Str>(c)), values_(std::move(v)), mode_(m), isExpression_(e) {
-		if (column_.empty()) {
+		if (column_.empty()) [[unlikely]] {
 			throw Error{errParams, "Empty update column name"};
 		}
 	}
@@ -517,9 +625,9 @@ private:
 
 class [[nodiscard]] QueryJoinEntry {
 public:
-	QueryJoinEntry(OpType op, CondType cond, std::string&& leftFld, std::string&& rightFld, bool reverseNs = false)
+	QueryJoinEntry(OpType op, std::string&& leftFld, CondType cond, std::string&& rightFld, ReverseNsOrder reverseNs = ReverseNsOrder_False)
 		: leftField_{std::move(leftFld)}, rightField_{std::move(rightFld)}, op_{op}, condition_{cond}, reverseNamespacesOrder_{reverseNs} {
-		if (condition_ == CondKnn) {
+		if (condition_ == CondKnn) [[unlikely]] {
 			throw Error(errLogic, "Condition KNN cannot be used in ON statement");
 		}
 	}
@@ -543,7 +651,7 @@ public:
 	CondType Condition() const noexcept { return condition_; }
 	const std::string& LeftFieldName() const& noexcept { return leftField_.FieldName(); }
 	const std::string& RightFieldName() const& noexcept { return rightField_.FieldName(); }
-	bool ReverseNamespacesOrder() const noexcept { return reverseNamespacesOrder_; }
+	ReverseNsOrder ReverseNamespacesOrder() const noexcept { return reverseNamespacesOrder_; }
 	const QueryField& LeftFieldData() const& noexcept { return leftField_; }
 	QueryField& LeftFieldData() & noexcept { return leftField_; }
 	const QueryField& RightFieldData() const& noexcept { return rightField_; }
@@ -567,9 +675,9 @@ private:
 	QueryField rightField_;
 	const OpType op_{OpOr};
 	const CondType condition_{CondAny};
-	const bool reverseNamespacesOrder_{false};	///< controls SQL encoding order
-												///< false: mainNs.index Condition joinNs.joinIndex
-												///< true:  joinNs.joinIndex Invert(Condition) mainNs.index
+	const ReverseNsOrder reverseNamespacesOrder_{ReverseNsOrder_False};	 ///< controls SQL encoding order
+																		 ///< false: mainNs.index Condition joinNs.joinIndex
+																		 ///< true:  joinNs.joinIndex Invert(Condition) mainNs.index
 };
 
 class [[nodiscard]] KnnQueryEntry {
@@ -629,9 +737,9 @@ private:
 enum class [[nodiscard]] JoinConditionInsertionDirection : bool { IntoMain, FromMain };
 class Index;
 
-using QueryEntriesTree =
-	ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse, AlwaysTrue,
-				   SubQueryEntry, SubQueryFieldEntry, KnnQueryEntry, MultiDistinctQueryEntry, QueryFunctionEntry, SubQueryFunctionEntry>;
+using QueryEntriesTree = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
+										AlwaysTrue, SubQueryEntry, SubQueryFieldEntry, KnnQueryEntry, MultiDistinctQueryEntry,
+										QueryFunctionEntry, SubQueryFunctionEntry, QueryArithmeticEntry>;
 
 template <>
 template <>
@@ -715,7 +823,7 @@ extern template size_t QueryEntries::InsertConditionsFromOnConditions<JoinCondit
 struct [[nodiscard]] SortingEntry {
 	SortingEntry() noexcept = default;
 	template <concepts::ConvertibleToString Str>
-	SortingEntry(Str&& e, bool d) noexcept : expression(std::forward<Str>(e)), desc(d) {}
+	SortingEntry(Str&& e, Desc d) noexcept : expression(std::forward<Str>(e)), desc(d) {}
 	bool operator==(const SortingEntry&) const noexcept = default;
 	bool operator!=(const SortingEntry& se) const noexcept = default;
 
@@ -739,7 +847,7 @@ public:
 	unsigned Offset() const noexcept { return offset_; }
 	void AddSortingEntry(SortingEntry&& sorting);
 	template <concepts::ConvertibleToString Str>
-	void Sort(Str&& sortExpr, bool desc) {
+	void Sort(Str&& sortExpr, Desc desc) {
 		AddSortingEntry({std::forward<Str>(sortExpr), desc});
 	}
 	void SetLimit(unsigned l);

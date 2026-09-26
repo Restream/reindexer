@@ -4,21 +4,23 @@
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/nsselecter/joins/item_context.h"
-#include "core/nsselecter/joins/iterators.h"
+#include "core/query/query_impl.h"
+#include "core/query/sql/sql_helpers.h"
 #include "core/reindexer.h"
-#include "core/type_consts.h"
 #include "estl/lock.h"
 #include "server/dbmanager.h"
+#include "tools/clock.h"
 #include "tools/logger.h"
 
 #include <grpcpp/grpcpp.h>
 
 namespace reindexer {
 namespace grpc {
+using namespace std::string_view_literals;
 
 ReindexerService::ReindexerService(reindexer_server::DBManager& dbMgr, std::chrono::seconds txIdleTimeout,
-								   reindexer::net::ev::dynamic_loop& loop)
-	: Reindexer::Service(), dbMgr_(dbMgr), txID_(0), txIdleTimeout_(txIdleTimeout) {
+								   reindexer::net::ev::dynamic_loop& loop, reindexer_server::LoggerWrapper logger)
+	: Reindexer::Service(), dbMgr_(dbMgr), logger_(logger), txID_(0), txIdleTimeout_(txIdleTimeout) {
 	expirationChecker_.set<ReindexerService, &ReindexerService::removeExpiredTxCb>(this);
 	expirationChecker_.set(loop);
 	expirationChecker_.start(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::seconds(1)).count(),
@@ -40,145 +42,163 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 	return errOK;
 }
 
-::grpc::Status ReindexerService::Connect(::grpc::ServerContext*, const ConnectRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
-	if (status.ok()) {
-		std::string dsn;
-		if (request->login().size() && request->password().size()) {
-			dsn += request->login();
-			dsn += ":";
-			dsn += request->password();
-			dsn += "@";
-		}
-		dsn += request->url();
-		if (dsn.size() && dsn.back() != '\\') {
-			dsn += '\\';
-		}
-		dsn += request->dbname();
-
-		ConnectOpts opts;
-		opts.OpenNamespaces(request->connectopts().opennamespaces());
-		opts.WithStorageType(StorageTypeOpt(request->connectopts().storagetype()));
-		opts.DisableReplication(request->connectopts().disablereplication());
-		opts.AllowNamespaceErrors(request->connectopts().allownamespaceerrors());
-
-		assertrx(rx);
-		status = rx->Connect(dsn, opts);
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
-}
-
-::grpc::Status ReindexerService::CreateDatabase(::grpc::ServerContext*, const CreateDatabaseRequest* request, ErrorResponse* response) {
-	auto dbs = dbMgr_.EnumDatabases();
-	for (auto& db : dbs) {
-		if (db == request->dbname()) {
-			response->set_code(ErrorResponse::ErrorCode(ErrorResponse_ErrorCode_errCodeParams));
-			response->set_what("Database already exists");
-		}
-	}
-	reindexer_server::AuthContext actx;
-	Error status = dbMgr_.OpenDatabase(request->dbname(), actx, true);
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
-}
-
-::grpc::Status ReindexerService::OpenNamespace(::grpc::ServerContext*, const OpenNamespaceRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
-	if (status.ok()) {
-		StorageOpts opts;
-		opts.Sync(request->storageoptions().sync());
-		opts.Enabled(request->storageoptions().enabled());
-		opts.FillCache(request->storageoptions().fillcache());
-		opts.CreateIfMissing(request->storageoptions().createifmissing());
-		opts.VerifyChecksums(request->storageoptions().verifychecksums());
-		opts.DropOnFileFormatError(request->storageoptions().droponfileformaterror());
-
-		assertrx(rx);
-		status = rx->OpenNamespace(request->storageoptions().nsname(), opts);
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
-}
-
-::grpc::Status ReindexerService::AddNamespace(::grpc::ServerContext*, const AddNamespaceRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
-	if (status.ok()) {
-		NamespaceDef nsDef;
-		nsDef.name = request->namespace_().name();
-		nsDef.storage.Sync(request->namespace_().storageoptions().sync());
-		nsDef.storage.Enabled(request->namespace_().storageoptions().enabled());
-		nsDef.storage.FillCache(request->namespace_().storageoptions().fillcache());
-		nsDef.storage.CreateIfMissing(request->namespace_().storageoptions().createifmissing());
-		nsDef.storage.VerifyChecksums(request->namespace_().storageoptions().verifychecksums());
-		nsDef.storage.DropOnFileFormatError(request->namespace_().storageoptions().droponfileformaterror());
-		for (int i = 0; i < request->namespace_().indexesdefinitions().size(); ++i) {
-			Index index = request->namespace_().indexesdefinitions(i);
-			IndexOpts opts;
-			opts.PK(index.options().ispk());
-			opts.Array(index.options().isarray());
-			opts.Dense(index.options().isdense());
-			opts.Sparse(index.options().issparse());
-			opts.SetConfig(IndexDef::DetermineIndexType(index.name(), index.indextype(), index.fieldtype()), index.options().config());
-			opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(index.options().rtreetype()));
-			opts.SetCollateMode(CollateMode(index.options().collatemode()));
-			JsonPaths jsonPaths;
-			jsonPaths.reserve(index.jsonpaths().size());
-			for (int j = 0; j < index.jsonpaths().size(); ++j) {
-				jsonPaths.emplace_back(index.jsonpaths(j));
+::grpc::Status ReindexerService::Connect(::grpc::ServerContext* context, const ConnectRequest* request, ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
+		if (status.ok()) {
+			std::string dsn;
+			if (request->login().size() && request->password().size()) {
+				dsn += request->login();
+				dsn += ":";
+				dsn += request->password();
+				dsn += "@";
 			}
-			nsDef.indexes.emplace_back(index.name(), std::move(jsonPaths), index.indextype(), index.fieldtype(), std::move(opts),
-									   index.expireafter());
+			dsn += request->url();
+			if (dsn.size() && dsn.back() != '\\') {
+				dsn += '\\';
+			}
+			dsn += request->dbname();
+
+			ConnectOpts opts;
+			opts.OpenNamespaces(request->connectopts().opennamespaces());
+			opts.WithStorageType(StorageTypeOpt(request->connectopts().storagetype()));
+			opts.DisableReplication(request->connectopts().disablereplication());
+			opts.AllowNamespaceErrors(request->connectopts().allownamespaceerrors());
+
+			assertrx(rx);
+			status = rx->Connect(dsn, opts);
 		}
-		assertrx(rx);
-		status = rx->AddNamespace(nsDef);
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::CloseNamespace(::grpc::ServerContext*, const CloseNamespaceRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
-	if (status.ok()) {
-		assertrx(rx);
-		status = rx->CloseNamespace(request->nsname());
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
+::grpc::Status ReindexerService::CreateDatabase(::grpc::ServerContext* context, const CreateDatabaseRequest* request,
+												ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		auto dbs = dbMgr_.EnumDatabases();
+		for (auto& db : dbs) {
+			if (db == request->dbname()) {
+				response->set_code(ErrorResponse::ErrorCode(ErrorResponse_ErrorCode_errCodeParams));
+				response->set_what("Database already exists");
+			}
+		}
+		reindexer_server::AuthContext actx;
+		Error status = dbMgr_.OpenDatabase(request->dbname(), actx, true);
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::DropNamespace(::grpc::ServerContext*, const DropNamespaceRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
-	if (status.ok()) {
-		assertrx(rx);
-		status = rx->DropNamespace(request->nsname());
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
+::grpc::Status ReindexerService::OpenNamespace(::grpc::ServerContext* context, const OpenNamespaceRequest* request,
+											   ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
+		if (status.ok()) {
+			StorageOpts opts;
+			opts.Sync(request->storageoptions().sync());
+			opts.Enabled(request->storageoptions().enabled());
+			opts.FillCache(request->storageoptions().fillcache());
+			opts.CreateIfMissing(request->storageoptions().createifmissing());
+			opts.VerifyChecksums(request->storageoptions().verifychecksums());
+			opts.DropOnFileFormatError(request->storageoptions().droponfileformaterror());
+
+			assertrx(rx);
+			status = rx->OpenNamespace(request->storageoptions().nsname(), opts);
+		}
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::TruncateNamespace(::grpc::ServerContext*, const TruncateNamespaceRequest* request,
+::grpc::Status ReindexerService::AddNamespace(::grpc::ServerContext* context, const AddNamespaceRequest* request, ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
+		if (status.ok()) {
+			NamespaceDef nsDef;
+			nsDef.name = request->namespace_().name();
+			nsDef.storage.Sync(request->namespace_().storageoptions().sync());
+			nsDef.storage.Enabled(request->namespace_().storageoptions().enabled());
+			nsDef.storage.FillCache(request->namespace_().storageoptions().fillcache());
+			nsDef.storage.CreateIfMissing(request->namespace_().storageoptions().createifmissing());
+			nsDef.storage.VerifyChecksums(request->namespace_().storageoptions().verifychecksums());
+			nsDef.storage.DropOnFileFormatError(request->namespace_().storageoptions().droponfileformaterror());
+			for (int i = 0; i < request->namespace_().indexesdefinitions().size(); ++i) {
+				Index index = request->namespace_().indexesdefinitions(i);
+				IndexOpts opts;
+				opts.PK(index.options().ispk());
+				opts.Array(index.options().isarray());
+				opts.Dense(index.options().isdense());
+				opts.Sparse(index.options().issparse());
+				opts.SetConfig(IndexDef::DetermineIndexType(index.name(), index.indextype(), index.fieldtype()), index.options().config());
+				opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(index.options().rtreetype()));
+				opts.SetCollateMode(CollateMode(index.options().collatemode()));
+				JsonPaths jsonPaths;
+				jsonPaths.reserve(index.jsonpaths().size());
+				for (int j = 0; j < index.jsonpaths().size(); ++j) {
+					jsonPaths.emplace_back(index.jsonpaths(j));
+				}
+				nsDef.indexes.emplace_back(index.name(), std::move(jsonPaths), index.indextype(), index.fieldtype(), std::move(opts),
+										   index.expireafter());
+			}
+			assertrx(rx);
+			status = rx->AddNamespace(nsDef);
+		}
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
+}
+
+::grpc::Status ReindexerService::CloseNamespace(::grpc::ServerContext* context, const CloseNamespaceRequest* request,
+												ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
+		if (status.ok()) {
+			assertrx(rx);
+			status = rx->CloseNamespace(request->nsname());
+		}
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
+}
+
+::grpc::Status ReindexerService::DropNamespace(::grpc::ServerContext* context, const DropNamespaceRequest* request,
+											   ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
+		if (status.ok()) {
+			assertrx(rx);
+			status = rx->DropNamespace(request->nsname());
+		}
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
+}
+
+::grpc::Status ReindexerService::TruncateNamespace(::grpc::ServerContext* context, const TruncateNamespaceRequest* request,
 												   ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
-	if (status.ok()) {
-		assertrx(rx);
-		status = rx->TruncateNamespace(request->nsname());
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
+		if (status.ok()) {
+			assertrx(rx);
+			status = rx->TruncateNamespace(request->nsname());
+		}
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
 }
 
 static IndexDef toIndexDef(const Index& src) {
@@ -203,239 +223,257 @@ static IndexDef toIndexDef(const Index& src) {
 	return {src.name(), std::move(jsonPaths), src.indextype(), src.fieldtype(), std::move(opts), src.expireafter()};
 }
 
-::grpc::Status ReindexerService::AddIndex(::grpc::ServerContext*, const AddIndexRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
-	if (status.ok()) {
-		assertrx(rx);
-		IndexDef indexDef(toIndexDef(request->definition()));
-		status = rx->AddIndex(request->nsname(), indexDef);
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
+::grpc::Status ReindexerService::AddIndex(::grpc::ServerContext* context, const AddIndexRequest* request, ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
+		if (status.ok()) {
+			assertrx(rx);
+			IndexDef indexDef(toIndexDef(request->definition()));
+			status = rx->AddIndex(request->nsname(), indexDef);
+		}
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::UpdateIndex(::grpc::ServerContext*, const UpdateIndexRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
-	if (status.ok()) {
-		assertrx(rx);
-		IndexDef indexDef(toIndexDef(request->definition()));
-		status = rx->UpdateIndex(request->nsname(), indexDef);
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
+::grpc::Status ReindexerService::UpdateIndex(::grpc::ServerContext* context, const UpdateIndexRequest* request, ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
+		if (status.ok()) {
+			assertrx(rx);
+			IndexDef indexDef(toIndexDef(request->definition()));
+			status = rx->UpdateIndex(request->nsname(), indexDef);
+		}
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::DropIndex(::grpc::ServerContext*, const DropIndexRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
-	if (status.ok()) {
-		assertrx(rx);
-		IndexDef indexDef(toIndexDef(request->definition()));
-		status = rx->DropIndex(request->nsname(), indexDef);
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
+::grpc::Status ReindexerService::DropIndex(::grpc::ServerContext* context, const DropIndexRequest* request, ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
+		if (status.ok()) {
+			assertrx(rx);
+			IndexDef indexDef(toIndexDef(request->definition()));
+			status = rx->DropIndex(request->nsname(), indexDef);
+		}
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::SetSchema(::grpc::ServerContext*, const SetSchemaRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
-	if (status.ok()) {
-		assertrx(rx);
-		status = rx->SetSchema(request->schemadefinitionrequest().nsname(), request->schemadefinitionrequest().jsondata());
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
+::grpc::Status ReindexerService::SetSchema(::grpc::ServerContext* context, const SetSchemaRequest* request, ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
+		if (status.ok()) {
+			assertrx(rx);
+			status = rx->SetSchema(request->schemadefinitionrequest().nsname(), request->schemadefinitionrequest().jsondata());
+		}
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::GetProtobufSchema(::grpc::ServerContext*, const GetProtobufSchemaRequest* request,
+::grpc::Status ReindexerService::GetProtobufSchema(::grpc::ServerContext* context, const GetProtobufSchemaRequest* request,
 												   ProtobufSchemaResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	ErrorResponse* responseCode = response->errorresponse().New();
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
-	if (status.ok()) {
-		std::vector<std::string> nses;
-		for (const std::string& ns : request->namespaces()) {
-			nses.emplace_back(ns);
-		}
-		WrSerializer ser;
-		assertrx(rx);
-		status = rx->GetProtobufSchema(ser, nses);
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		ErrorResponse* responseCode = response->errorresponse().New();
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
 		if (status.ok()) {
-			std::string_view proto = ser.Slice();
-			response->set_proto(proto.data(), proto.length());
+			std::vector<std::string> nses;
+			for (const std::string& ns : request->namespaces()) {
+				nses.emplace_back(ns);
+			}
+			WrSerializer ser;
+			assertrx(rx);
+			status = rx->GetProtobufSchema(ser, nses);
+			if (status.ok()) {
+				std::string_view proto = ser.Slice();
+				response->set_proto(proto.data(), proto.length());
+			}
 		}
-	}
-	responseCode->set_code(ErrorResponse::ErrorCode(status.code()));
-	responseCode->set_what(status.whatStr());
-	response->set_allocated_errorresponse(responseCode);
-	return ::grpc::Status::OK;
+		responseCode->set_code(ErrorResponse::ErrorCode(status.code()));
+		responseCode->set_what(status.whatStr());
+		response->set_allocated_errorresponse(responseCode);
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::EnumNamespaces(::grpc::ServerContext*, const EnumNamespacesRequest* request,
+::grpc::Status ReindexerService::EnumNamespaces(::grpc::ServerContext* context, const EnumNamespacesRequest* request,
 												EnumNamespacesResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	ErrorResponse* responseCode = response->errorresponse().New();
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
-	if (status.ok()) {
-		EnumNamespacesOpts opts;
-		const bool onlyNames = request->options().onlynames();
-		opts.OnlyNames(onlyNames);
-		opts.HideSystem(request->options().hidesystems());
-		opts.WithClosed(request->options().withclosed());
-		opts.WithFilter(request->options().filter());
-
-		std::vector<NamespaceDef> nsDefs;
-		assertrx(rx);
-		status = rx->EnumNamespaces(nsDefs, opts);
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		ErrorResponse* responseCode = response->errorresponse().New();
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
 		if (status.ok()) {
-			for (const NamespaceDef& src : nsDefs) {
-				Namespace* nsdef = response->add_namespacesdefinitions();
-				nsdef->set_name(src.name);
+			EnumNamespacesOpts opts;
+			const bool onlyNames = request->options().onlynames();
+			opts.OnlyNames(onlyNames);
+			opts.HideSystem(request->options().hidesystems());
+			opts.WithClosed(request->options().withclosed());
+			opts.WithFilter(request->options().filter());
 
-				if (!onlyNames) {
-					StorageOptions* storageOpts = nsdef->storageoptions().New();
-					storageOpts->set_enabled(src.storage.IsEnabled());
-					storageOpts->set_droponfileformaterror(src.storage.IsDropOnFileFormatError());
-					storageOpts->set_createifmissing(src.storage.IsCreateIfMissing());
-					storageOpts->set_verifychecksums(src.storage.IsVerifyChecksums());
-					storageOpts->set_fillcache(src.storage.IsFillCache());
-					storageOpts->set_sync(src.storage.IsSync());
-					nsdef->set_allocated_storageoptions(storageOpts);
+			std::vector<NamespaceDef> nsDefs;
+			assertrx(rx);
+			status = rx->EnumNamespaces(nsDefs, opts);
+			if (status.ok()) {
+				for (const NamespaceDef& src : nsDefs) {
+					Namespace* nsdef = response->add_namespacesdefinitions();
+					nsdef->set_name(src.name);
 
-					for (const IndexDef& index : src.indexes) {
-						Index* indexDef = nsdef->add_indexesdefinitions();
-						indexDef->set_name(index.Name());
-						indexDef->set_fieldtype(index.FieldType());
-						indexDef->set_indextype(index.IndexTypeStr());
-						indexDef->set_expireafter(index.ExpireAfter());
-						for (const std::string& jsonPath : index.JsonPaths()) {
-							indexDef->add_jsonpaths(jsonPath);
+					if (!onlyNames) {
+						StorageOptions* storageOpts = nsdef->storageoptions().New();
+						storageOpts->set_enabled(src.storage.IsEnabled());
+						storageOpts->set_droponfileformaterror(src.storage.IsDropOnFileFormatError());
+						storageOpts->set_createifmissing(src.storage.IsCreateIfMissing());
+						storageOpts->set_verifychecksums(src.storage.IsVerifyChecksums());
+						storageOpts->set_fillcache(src.storage.IsFillCache());
+						storageOpts->set_sync(src.storage.IsSync());
+						nsdef->set_allocated_storageoptions(storageOpts);
+
+						for (const IndexDef& index : src.indexes) {
+							Index* indexDef = nsdef->add_indexesdefinitions();
+							indexDef->set_name(index.Name());
+							indexDef->set_fieldtype(index.FieldType());
+							indexDef->set_indextype(index.IndexTypeStr());
+							indexDef->set_expireafter(index.ExpireAfter());
+							for (const std::string& jsonPath : index.JsonPaths()) {
+								indexDef->add_jsonpaths(jsonPath);
+							}
+
+							IndexOptions* indexOpts = indexDef->options().New();
+							indexOpts->set_ispk(*index.Opts().IsPK());
+							indexOpts->set_config(index.Opts().Config());
+							indexOpts->set_isarray(*index.Opts().IsArray());
+							indexOpts->set_isdense(*index.Opts().IsDense());
+							indexOpts->set_issparse(*index.Opts().IsSparse());
+							indexOpts->set_collatemode(IndexOptions::CollateMode(index.Opts().GetCollateMode()));
+							indexOpts->set_rtreetype(static_cast<reindexer::grpc::IndexOptions_RTreeType>(index.Opts().RTreeType()));
+							indexDef->set_allocated_options(indexOpts);
 						}
-
-						IndexOptions* indexOpts = indexDef->options().New();
-						indexOpts->set_ispk(*index.Opts().IsPK());
-						indexOpts->set_config(index.Opts().Config());
-						indexOpts->set_isarray(*index.Opts().IsArray());
-						indexOpts->set_isdense(*index.Opts().IsDense());
-						indexOpts->set_issparse(*index.Opts().IsSparse());
-						indexOpts->set_collatemode(IndexOptions::CollateMode(index.Opts().GetCollateMode()));
-						indexOpts->set_rtreetype(static_cast<reindexer::grpc::IndexOptions_RTreeType>(index.Opts().RTreeType()));
-						indexDef->set_allocated_options(indexOpts);
 					}
 				}
 			}
 		}
-	}
-	responseCode->set_code(ErrorResponse::ErrorCode(status.code()));
-	responseCode->set_what(status.whatStr());
-	response->set_allocated_errorresponse(responseCode);
-	return ::grpc::Status::OK;
+		responseCode->set_code(ErrorResponse::ErrorCode(status.code()));
+		responseCode->set_what(status.whatStr());
+		response->set_allocated_errorresponse(responseCode);
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::EnumDatabases(::grpc::ServerContext*, const EnumDatabasesRequest*, EnumDatabasesResponse* response) {
-	std::vector<std::string> dbNames = dbMgr_.EnumDatabases();
-	for (const std::string& dbName : dbNames) {
-		*(response->add_names()) = dbName;
-	}
-	return ::grpc::Status::OK;
+::grpc::Status ReindexerService::EnumDatabases(::grpc::ServerContext* context, const EnumDatabasesRequest*,
+											   EnumDatabasesResponse* response) {
+	return handleRequest(context, {}, __func__, [&]() -> RequestResult {
+		std::vector<std::string> dbNames = dbMgr_.EnumDatabases();
+		for (const std::string& dbName : dbNames) {
+			*(response->add_names()) = dbName;
+		}
+		return ::grpc::Status::OK;
+	});
 }
 
-::grpc::Status ReindexerService::ModifyItem(::grpc::ServerContext*, ::grpc::ServerReaderWriter<ErrorResponse, ModifyItemRequest>* stream) {
-	Error status;
-	ErrorResponse response;
-	ModifyItemRequest itemRequest;
-	while (stream->Read(&itemRequest)) {
-		std::string_view data(itemRequest.data().data(), itemRequest.data().length());
-		if (data.empty()) {
-			status = Error(errParams, "Item could not be empty");
-			break;
-		}
-
-		reindexer::Reindexer* rx = nullptr;
-		status = getDB(itemRequest.dbname(), reindexer_server::kRoleDataWrite, &rx);
-		if (!status.ok()) {
-			break;
-		}
-
-		assertrx(rx);
-		Item item = rx->NewItem(itemRequest.nsname());
-		if (!item.Status().ok()) {
-			status = item.Status();
-			break;
-		}
-
-		switch (itemRequest.encodingtype()) {
-			case EncodingType::CJSON:
-				status = item.FromCJSON(data);
-				break;
-			case EncodingType::JSON:
-				status = item.FromJSON(data);
-				break;
-			case EncodingType::MSGPACK: {
-				size_t offset = 0;
-				status = item.FromMsgPack(data, offset);
+::grpc::Status ReindexerService::ModifyItem(::grpc::ServerContext* context,
+											::grpc::ServerReaderWriter<ErrorResponse, ModifyItemRequest>* stream) {
+	return handleRequest(context, {}, __func__, [&]() -> RequestResult {
+		Error status;
+		ErrorResponse response;
+		ModifyItemRequest itemRequest;
+		while (stream->Read(&itemRequest)) {
+			std::string_view data(itemRequest.data().data(), itemRequest.data().length());
+			if (data.empty()) {
+				status = Error(errParams, "Item could not be empty");
 				break;
 			}
-			case EncodingType::PROTOBUF:
-				status = item.FromProtobuf(data);
+
+			reindexer::Reindexer* rx = nullptr;
+			status = getDB(itemRequest.dbname(), reindexer_server::kRoleDataWrite, &rx);
+			if (!status.ok()) {
 				break;
-			case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
-			case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
-			default:
-				return ::grpc::Status(::grpc::INVALID_ARGUMENT, "Unsupported encoding type");
+			}
+
+			assertrx(rx);
+			Item item = rx->NewItem(itemRequest.nsname());
+			if (!item.Status().ok()) {
+				status = item.Status();
+				break;
+			}
+
+			switch (itemRequest.encodingtype()) {
+				case EncodingType::CJSON:
+					status = item.FromCJSON(data);
+					break;
+				case EncodingType::JSON:
+					status = item.FromJSON(data);
+					break;
+				case EncodingType::MSGPACK: {
+					size_t offset = 0;
+					status = item.FromMsgPack(data, offset);
+					break;
+				}
+				case EncodingType::PROTOBUF:
+					status = item.FromProtobuf(data);
+					break;
+				case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
+				case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
+				default:
+					return ::grpc::Status(::grpc::INVALID_ARGUMENT, "Unsupported encoding type");
+			}
+			if (!status.ok()) {
+				break;
+			}
+			switch (itemRequest.mode()) {
+				case ModifyMode::UPDATE:
+					status = rx->Update(itemRequest.nsname(), item);
+					break;
+				case ModifyMode::INSERT:
+					status = rx->Insert(itemRequest.nsname(), item);
+					break;
+				case ModifyMode::UPSERT:
+					status = rx->Upsert(itemRequest.nsname(), item);
+					break;
+				case ModifyMode::DELETE:
+					status = rx->Delete(itemRequest.nsname(), item);
+					break;
+				case ModifyMode_INT_MIN_SENTINEL_DO_NOT_USE_:
+				case ModifyMode_INT_MAX_SENTINEL_DO_NOT_USE_:
+				default:
+					break;
+			}
+			if (!status.ok()) {
+				break;
+			}
+			response.set_code(ErrorResponse::ErrorCode(status.code()));
+			response.set_what(status.whatStr());
+			stream->Write(response);
 		}
-		if (!status.ok()) {
-			break;
+		if (status.ok()) {
+			return status;
+		} else {
+			response.set_code(ErrorResponse::ErrorCode(status.code()));
+			response.set_what(status.whatStr());
+			stream->Write(response);
+			return RequestResult{status, ::grpc::Status::CANCELLED};
 		}
-		switch (itemRequest.mode()) {
-			case ModifyMode::UPDATE:
-				status = rx->Update(itemRequest.nsname(), item);
-				break;
-			case ModifyMode::INSERT:
-				status = rx->Insert(itemRequest.nsname(), item);
-				break;
-			case ModifyMode::UPSERT:
-				status = rx->Upsert(itemRequest.nsname(), item);
-				break;
-			case ModifyMode::DELETE:
-				status = rx->Delete(itemRequest.nsname(), item);
-				break;
-			case ModifyMode_INT_MIN_SENTINEL_DO_NOT_USE_:
-			case ModifyMode_INT_MAX_SENTINEL_DO_NOT_USE_:
-			default:
-				break;
-		}
-		if (!status.ok()) {
-			break;
-		}
-		response.set_code(ErrorResponse::ErrorCode(status.code()));
-		response.set_what(status.whatStr());
-		stream->Write(response);
-	}
-	if (status.ok()) {
-		return ::grpc::Status::OK;
-	} else {
-		response.set_code(ErrorResponse::ErrorCode(status.code()));
-		response.set_what(status.whatStr());
-		stream->Write(response);
-		return ::grpc::Status::CANCELLED;
-	}
+	});
 }
 
 void ReindexerService::packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr) {
-	const auto merged = qr.GetMergedNSCount();
-	wrser.PutVarUint(merged);
-	for (int i = 0; i < merged; ++i) {
+	const auto nsCount = qr.GetNamespacesCount();
+	wrser.PutVarUint(nsCount);
+	for (size_t i = 0; i < nsCount; ++i) {
 		wrser.PutVarUint(i);
-		const auto t = qr.GetPayloadType(i);
-		const auto m = qr.GetTagsMatcher(i);
+		const auto t = qr.GetPayloadType(int(i));
+		const auto m = qr.GetTagsMatcher(int(i));
 		wrser.PutVString(t.Name());
 
 		wrser.PutVarUint(m.stateToken());
@@ -675,160 +713,178 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	return status;
 }
 
-::grpc::Status ReindexerService::ExecSql(::grpc::ServerContext*, const SqlRequest* request,
+::grpc::Status ReindexerService::ExecSql(::grpc::ServerContext* context, const SqlRequest* request,
 										 ::grpc::ServerWriter<QueryResultsResponse>* writer) {
-	reindexer::QueryResults qr;
-	Error status = execSqlQueryByType(qr, *request);
-	if (status.ok()) {
-		return buildQueryResults(qr, writer, request->flags());
-	}
-	QueryResultsResponse response;
-	ErrorResponse* errResponse = response.errorresponse().New();
-	errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
-	errResponse->set_what(status.whatStr());
-	response.set_allocated_errorresponse(errResponse);
-	writer->Write(response);
-	return ::grpc::Status::CANCELLED;
-}
-
-::grpc::Status ReindexerService::Select(::grpc::ServerContext*, const SelectRequest* request,
-										::grpc::ServerWriter<QueryResultsResponse>* writer) {
-	reindexer::QueryResults qr;
-	Error status = executeQuery(request->dbname(), request->query(), QueryType::QuerySelect, qr);
-	if (status.ok()) {
-		return buildQueryResults(qr, writer, request->flags());
-	} else {
-		QueryResultsResponse response;
-		ErrorResponse* errResponse = response.errorresponse().New();
-		errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
-		errResponse->set_what(status.whatStr());
-		response.set_allocated_errorresponse(errResponse);
-		writer->Write(response);
-		return ::grpc::Status::CANCELLED;
-	}
-}
-
-::grpc::Status ReindexerService::Update(::grpc::ServerContext*, const UpdateRequest* request,
-										::grpc::ServerWriter<QueryResultsResponse>* writer) {
-	reindexer::QueryResults qr;
-	Error status = executeQuery(request->dbname(), request->query(), QueryType::QueryUpdate, qr);
-	if (status.ok()) {
-		return buildQueryResults(qr, writer, request->flags());
-	} else {
-		QueryResultsResponse response;
-		ErrorResponse* errResponse = response.errorresponse().New();
-		errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
-		errResponse->set_what(status.whatStr());
-		response.set_allocated_errorresponse(errResponse);
-		writer->Write(response);
-		return ::grpc::Status::CANCELLED;
-	}
-}
-
-::grpc::Status ReindexerService::Delete(::grpc::ServerContext*, const DeleteRequest* request,
-										::grpc::ServerWriter<QueryResultsResponse>* writer) {
-	reindexer::QueryResults qr;
-	Error status = executeQuery(request->dbname(), request->query(), QueryType::QueryDelete, qr);
-	if (status.ok()) {
-		return buildQueryResults(qr, writer, request->flags());
-	} else {
-		QueryResultsResponse response;
-		ErrorResponse* errResponse = response.errorresponse().New();
-		errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
-		errResponse->set_what(status.whatStr());
-		response.set_allocated_errorresponse(errResponse);
-		writer->Write(response);
-		return ::grpc::Status::CANCELLED;
-	}
-}
-
-::grpc::Status ReindexerService::GetMeta(::grpc::ServerContext*, const GetMetaRequest* request, MetadataResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
-	if (status.ok()) {
-		std::string data;
-		assertrx(rx);
-		status = rx->GetMeta(request->metadata().nsname(), request->metadata().key(), data);
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::QueryResults qr;
+		Error status = execSqlQueryByType(qr, *request);
 		if (status.ok()) {
-			response->set_metadata(data);
+			return buildQueryResults(qr, writer, request->flags());
 		}
-	}
-	ErrorResponse* errResponse = response->errorresponse().New();
-	errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
-	errResponse->set_what(status.whatStr());
-	response->set_allocated_errorresponse(errResponse);
-	return ::grpc::Status::OK;
+		QueryResultsResponse response;
+		ErrorResponse* errResponse = response.errorresponse().New();
+		errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
+		errResponse->set_what(status.whatStr());
+		response.set_allocated_errorresponse(errResponse);
+		writer->Write(response);
+		return RequestResult{status, ::grpc::Status::CANCELLED};
+	});
 }
 
-::grpc::Status ReindexerService::PutMeta(::grpc::ServerContext*, const PutMetaRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDataWrite, &rx);
-	if (status.ok()) {
-		assertrx(rx);
-		status = rx->PutMeta(request->metadata().nsname(), request->metadata().key(), request->metadata().value());
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
-}
-
-::grpc::Status ReindexerService::EnumMeta(::grpc::ServerContext*, const EnumMetaRequest* request, MetadataKeysResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
-	if (status.ok()) {
-		std::vector<std::string> keys;
-		assertrx(rx);
-		status = rx->EnumMeta(request->nsname(), keys);
+::grpc::Status ReindexerService::Select(::grpc::ServerContext* context, const SelectRequest* request,
+										::grpc::ServerWriter<QueryResultsResponse>* writer) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::QueryResults qr;
+		Error status = executeQuery(request->dbname(), request->query(), QueryType::QuerySelect, qr);
 		if (status.ok()) {
-			for (const std::string& key : keys) {
-				*(response->add_keys()) = key;
+			return buildQueryResults(qr, writer, request->flags());
+		} else {
+			QueryResultsResponse response;
+			ErrorResponse* errResponse = response.errorresponse().New();
+			errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
+			errResponse->set_what(status.whatStr());
+			response.set_allocated_errorresponse(errResponse);
+			writer->Write(response);
+			return RequestResult{status, ::grpc::Status::CANCELLED};
+		}
+	});
+}
+
+::grpc::Status ReindexerService::Update(::grpc::ServerContext* context, const UpdateRequest* request,
+										::grpc::ServerWriter<QueryResultsResponse>* writer) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::QueryResults qr;
+		Error status = executeQuery(request->dbname(), request->query(), QueryType::QueryUpdate, qr);
+		if (status.ok()) {
+			return buildQueryResults(qr, writer, request->flags());
+		} else {
+			QueryResultsResponse response;
+			ErrorResponse* errResponse = response.errorresponse().New();
+			errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
+			errResponse->set_what(status.whatStr());
+			response.set_allocated_errorresponse(errResponse);
+			writer->Write(response);
+			return RequestResult{status, ::grpc::Status::CANCELLED};
+		}
+	});
+}
+
+::grpc::Status ReindexerService::Delete(::grpc::ServerContext* context, const DeleteRequest* request,
+										::grpc::ServerWriter<QueryResultsResponse>* writer) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::QueryResults qr;
+		Error status = executeQuery(request->dbname(), request->query(), QueryType::QueryDelete, qr);
+		if (status.ok()) {
+			return buildQueryResults(qr, writer, request->flags());
+		} else {
+			QueryResultsResponse response;
+			ErrorResponse* errResponse = response.errorresponse().New();
+			errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
+			errResponse->set_what(status.whatStr());
+			response.set_allocated_errorresponse(errResponse);
+			writer->Write(response);
+			return RequestResult{status, ::grpc::Status::CANCELLED};
+		}
+	});
+}
+
+::grpc::Status ReindexerService::GetMeta(::grpc::ServerContext* context, const GetMetaRequest* request, MetadataResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
+		if (status.ok()) {
+			std::string data;
+			assertrx(rx);
+			status = rx->GetMeta(request->metadata().nsname(), request->metadata().key(), data);
+			if (status.ok()) {
+				response->set_metadata(data);
 			}
 		}
-	}
-	ErrorResponse* retStatus = response->errorresponse().New();
-	retStatus->set_code(ErrorResponse::ErrorCode(status.code()));
-	retStatus->set_what(status.whatStr());
-	response->set_allocated_errorresponse(retStatus);
-	return ::grpc::Status::OK;
+		ErrorResponse* errResponse = response->errorresponse().New();
+		errResponse->set_code(ErrorResponse::ErrorCode(status.code()));
+		errResponse->set_what(status.whatStr());
+		response->set_allocated_errorresponse(errResponse);
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::DeleteMeta(::grpc::ServerContext*, const DeleteMetaRequest* request, ErrorResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDataWrite, &rx);
-	if (status.ok()) {
-		assertrx(rx);
-		status = rx->DeleteMeta(request->metadata().nsname(), request->metadata().key());
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
-}
-
-::grpc::Status ReindexerService::BeginTransaction(::grpc::ServerContext*, const BeginTransactionRequest* request,
-												  TransactionIdResponse* response) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDataWrite, &rx);
-	if (status.ok()) {
-		assertrx(rx);
-		reindexer::Transaction tr = rx->NewTransaction(request->nsname());
-		status = tr.Status();
+::grpc::Status ReindexerService::PutMeta(::grpc::ServerContext* context, const PutMetaRequest* request, ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDataWrite, &rx);
 		if (status.ok()) {
-			uint64_t txID = txID_++;
-			response->set_id(txID);
-			TxData txData;
-			txData.dbName = request->dbname();
-			txData.nsName = request->nsname();
-			txData.tx = std::make_shared<Transaction>(std::move(tr));
-			txData.txDeadline = steady_clock_w::now_coarse() + txIdleTimeout_;
-			lock_guard lck(m_);
-			transactions_.emplace(txID, std::move(txData));
+			assertrx(rx);
+			status = rx->PutMeta(request->metadata().nsname(), request->metadata().key(), request->metadata().value());
 		}
-	}
-	ErrorResponse* retStatus = response->status().New();
-	retStatus->set_code(ErrorResponse::ErrorCode(status.code()));
-	retStatus->set_what(status.whatStr());
-	response->set_allocated_status(retStatus);
-	return ::grpc::Status::OK;
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
+}
+
+::grpc::Status ReindexerService::EnumMeta(::grpc::ServerContext* context, const EnumMetaRequest* request, MetadataKeysResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
+		if (status.ok()) {
+			std::vector<std::string> keys;
+			assertrx(rx);
+			status = rx->EnumMeta(request->nsname(), keys);
+			if (status.ok()) {
+				for (const std::string& key : keys) {
+					*(response->add_keys()) = key;
+				}
+			}
+		}
+		ErrorResponse* retStatus = response->errorresponse().New();
+		retStatus->set_code(ErrorResponse::ErrorCode(status.code()));
+		retStatus->set_what(status.whatStr());
+		response->set_allocated_errorresponse(retStatus);
+		return status;
+	});
+}
+
+::grpc::Status ReindexerService::DeleteMeta(::grpc::ServerContext* context, const DeleteMetaRequest* request, ErrorResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDataWrite, &rx);
+		if (status.ok()) {
+			assertrx(rx);
+			status = rx->DeleteMeta(request->metadata().nsname(), request->metadata().key());
+		}
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
+}
+
+::grpc::Status ReindexerService::BeginTransaction(::grpc::ServerContext* context, const BeginTransactionRequest* request,
+												  TransactionIdResponse* response) {
+	return handleRequest(context, request->dbname(), __func__, [&]() -> RequestResult {
+		reindexer::Reindexer* rx = nullptr;
+		Error status = getDB(request->dbname(), reindexer_server::kRoleDataWrite, &rx);
+		if (status.ok()) {
+			assertrx(rx);
+			reindexer::Transaction tr = rx->NewTransaction(request->nsname());
+			status = tr.Status();
+			if (status.ok()) {
+				uint64_t txID = txID_++;
+				response->set_id(txID);
+				TxData txData;
+				txData.dbName = request->dbname();
+				txData.nsName = request->nsname();
+				txData.tx = std::make_shared<Transaction>(std::move(tr));
+				txData.txDeadline = steady_clock_w::now_coarse() + txIdleTimeout_;
+				lock_guard lck(m_);
+				transactions_.emplace(txID, std::move(txData));
+			}
+		}
+		ErrorResponse* retStatus = response->status().New();
+		retStatus->set_code(ErrorResponse::ErrorCode(status.code()));
+		retStatus->set_what(status.whatStr());
+		response->set_allocated_status(retStatus);
+		return status;
+	});
 }
 
 void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
@@ -867,136 +923,153 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 	return errOK;
 }
 
-::grpc::Status ReindexerService::AddTxItem(::grpc::ServerContext*, ::grpc::ServerReaderWriter<ErrorResponse, AddTxItemRequest>* stream) {
-	Error status;
-	ErrorResponse response;
-	AddTxItemRequest request;
-	while (stream->Read(&request)) {
-		TxData txData;
-		status = getTx(request.id(), txData);
-		if (!status.ok()) {
-			break;
-		}
-
-		reindexer::Reindexer* rx = nullptr;
-		status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
-		if (!status.ok()) {
-			break;
-		}
-
-		assertrx(rx);
-		Item item = rx->NewItem(txData.nsName);
-		if (!item.Status().ok()) {
-			status = item.Status();
-			break;
-		}
-
-		switch (request.encodingtype()) {
-			case EncodingType::CJSON:
-				status = item.FromCJSON(request.data());
-				break;
-			case EncodingType::JSON:
-				status = item.FromJSON(request.data());
-				break;
-			case EncodingType::MSGPACK: {
-				size_t offset = 0;
-				status = item.FromMsgPack(request.data(), offset);
+::grpc::Status ReindexerService::AddTxItem(::grpc::ServerContext* context,
+										   ::grpc::ServerReaderWriter<ErrorResponse, AddTxItemRequest>* stream) {
+	std::string dbNameStorage;
+	std::string_view dbName;
+	return handleRequest(context, dbName, __func__, [&]() -> RequestResult {
+		Error status;
+		ErrorResponse response;
+		AddTxItemRequest request;
+		while (stream->Read(&request)) {
+			TxData txData;
+			status = getTx(request.id(), txData);
+			dbNameStorage = txData.dbName;
+			dbName = dbNameStorage;
+			if (!status.ok()) {
 				break;
 			}
-			case EncodingType::PROTOBUF:
-				status = item.FromProtobuf(request.data());
+
+			reindexer::Reindexer* rx = nullptr;
+			status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
+			if (!status.ok()) {
 				break;
-			case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
-			case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
-			default:
-				return ::grpc::Status(::grpc::INVALID_ARGUMENT, "Unsupported encoding type");
+			}
+
+			assertrx(rx);
+			Item item = rx->NewItem(txData.nsName);
+			if (!item.Status().ok()) {
+				status = item.Status();
+				break;
+			}
+
+			switch (request.encodingtype()) {
+				case EncodingType::CJSON:
+					status = item.FromCJSON(request.data());
+					break;
+				case EncodingType::JSON:
+					status = item.FromJSON(request.data());
+					break;
+				case EncodingType::MSGPACK: {
+					size_t offset = 0;
+					status = item.FromMsgPack(request.data(), offset);
+					break;
+				}
+				case EncodingType::PROTOBUF:
+					status = item.FromProtobuf(request.data());
+					break;
+				case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
+				case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
+				default:
+					return ::grpc::Status(::grpc::INVALID_ARGUMENT, "Unsupported encoding type");
+			}
+			if (!status.ok()) {
+				break;
+			}
+			switch (request.mode()) {
+				case ModifyMode::UPDATE:
+					status = txData.tx->Update(std::move(item));
+					break;
+				case ModifyMode::INSERT:
+					status = txData.tx->Insert(std::move(item));
+					break;
+				case ModifyMode::UPSERT:
+					status = txData.tx->Upsert(std::move(item));
+					break;
+				case ModifyMode::DELETE:
+					status = txData.tx->Delete(std::move(item));
+					break;
+				case ModifyMode_INT_MAX_SENTINEL_DO_NOT_USE_:
+				case ModifyMode_INT_MIN_SENTINEL_DO_NOT_USE_:
+				default:
+					break;
+			}
+			if (!status.ok()) {
+				break;
+			}
+			response.set_code(ErrorResponse::ErrorCode(status.code()));
+			response.set_what(status.whatStr());
+			stream->Write(response);
 		}
-		if (!status.ok()) {
-			break;
+		if (status.ok()) {
+			return status;
+		} else {
+			response.set_code(ErrorResponse::ErrorCode(status.code()));
+			response.set_what(status.whatStr());
+			stream->Write(response);
+			return RequestResult{status, ::grpc::Status::CANCELLED};
 		}
-		switch (request.mode()) {
-			case ModifyMode::UPDATE:
-				status = txData.tx->Update(std::move(item));
-				break;
-			case ModifyMode::INSERT:
-				status = txData.tx->Insert(std::move(item));
-				break;
-			case ModifyMode::UPSERT:
-				status = txData.tx->Upsert(std::move(item));
-				break;
-			case ModifyMode::DELETE:
-				status = txData.tx->Delete(std::move(item));
-				break;
-			case ModifyMode_INT_MAX_SENTINEL_DO_NOT_USE_:
-			case ModifyMode_INT_MIN_SENTINEL_DO_NOT_USE_:
-			default:
-				break;
-		}
-		if (!status.ok()) {
-			break;
-		}
-		response.set_code(ErrorResponse::ErrorCode(status.code()));
-		response.set_what(status.whatStr());
-		stream->Write(response);
-	}
-	if (status.ok()) {
-		return ::grpc::Status::OK;
-	} else {
-		response.set_code(ErrorResponse::ErrorCode(status.code()));
-		response.set_what(status.whatStr());
-		stream->Write(response);
-		return ::grpc::Status::CANCELLED;
-	}
+	});
 }
 
-::grpc::Status ReindexerService::CommitTransaction(::grpc::ServerContext*, const CommitTransactionRequest* request,
+::grpc::Status ReindexerService::CommitTransaction(::grpc::ServerContext* context, const CommitTransactionRequest* request,
 												   ErrorResponse* response) {
 	TxData txData;
-	Error status = getTx(request->id(), txData);
-	if (status.ok()) {
-		reindexer::Reindexer* rx = nullptr;
-		status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
+	std::string_view dbName;
+	return handleRequest(context, dbName, __func__, [&]() -> RequestResult {
+		Error status = getTx(request->id(), txData);
+		dbName = txData.dbName;
 		if (status.ok()) {
-			reindexer::QueryResults qr;
-			assertrx(rx);
-			status = rx->CommitTransaction(*txData.tx, qr);
-			{
-				lock_guard lck(m_);
-				transactions_.erase(request->id());
+			reindexer::Reindexer* rx = nullptr;
+			status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
+			if (status.ok()) {
+				reindexer::QueryResults qr;
+				assertrx(rx);
+				status = rx->CommitTransaction(*txData.tx, qr);
+				{
+					lock_guard lck(m_);
+					transactions_.erase(request->id());
+				}
 			}
 		}
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
 }
 
-::grpc::Status ReindexerService::RollbackTransaction(::grpc::ServerContext*, const RollbackTransactionRequest* request,
+::grpc::Status ReindexerService::RollbackTransaction(::grpc::ServerContext* context, const RollbackTransactionRequest* request,
 													 ErrorResponse* response) {
 	TxData txData;
-	Error status = getTx(request->id(), txData);
-	if (status.ok()) {
-		reindexer::Reindexer* rx = nullptr;
-		status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
+	std::string_view dbName;
+	return handleRequest(context, dbName, __func__, [&]() -> RequestResult {
+		Error status = getTx(request->id(), txData);
+		dbName = txData.dbName;
 		if (status.ok()) {
-			assertrx(rx);
-			status = rx->RollBackTransaction(*txData.tx);
-			{
-				lock_guard lck(m_);
-				transactions_.erase(request->id());
+			reindexer::Reindexer* rx = nullptr;
+			status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
+			if (status.ok()) {
+				assertrx(rx);
+				status = rx->RollBackTransaction(*txData.tx);
+				{
+					lock_guard lck(m_);
+					transactions_.erase(request->id());
+				}
 			}
 		}
-	}
-	response->set_code(ErrorResponse::ErrorCode(status.code()));
-	response->set_what(status.whatStr());
-	return ::grpc::Status::OK;
+		response->set_code(ErrorResponse::ErrorCode(status.code()));
+		response->set_what(status.whatStr());
+		return status;
+	});
 }
 
 Error ReindexerService::execSqlQueryByType(QueryResults& res, const SqlRequest& request) {
 	try {
 		reindexer_server::UserRole requiredRole;
-		reindexer::Query q = reindexer::Query::FromSQL(request.sql());
-		switch (q.Type()) {
+		auto q = reindexer::Query::FromSQL(request.sql());
+		QueryImpl qImpl = Impl(q);
+		ApplySqlModifyDefaults(*qImpl);
+		switch (qImpl.Type()) {
 			case QuerySelect: {
 				requiredRole = reindexer_server::kRoleDataRead;
 				break;
@@ -1011,7 +1084,7 @@ Error ReindexerService::execSqlQueryByType(QueryResults& res, const SqlRequest& 
 				break;
 			}
 			default:
-				return Error(errParams, "unknown query type %d", int(q.Type()));
+				return Error(errParams, "unknown query type %d", int(qImpl.Type()));
 		}
 		reindexer::Reindexer* rx = nullptr;
 		auto err = getDB(request.dbname(), requiredRole, &rx);
@@ -1019,25 +1092,64 @@ Error ReindexerService::execSqlQueryByType(QueryResults& res, const SqlRequest& 
 			return err;
 		}
 
-		switch (q.Type()) {
+		switch (qImpl.Type()) {
 			case QuerySelect: {
 				return rx->Select(q, res);
 			}
-			case QueryDelete: {
-				return rx->Delete(q, res);
-			}
+			case QueryDelete:
 			case QueryUpdate: {
-				return rx->Update(q, res);
+				return (qImpl.Type() == QueryDelete) ? rx->Delete(q, res) : rx->Update(q, res);
 			}
 			case QueryTruncate: {
-				return rx->TruncateNamespace(q.NsName());
+				return rx->TruncateNamespace(qImpl.NsName());
 			}
 			default:
-				return Error(errParams, "unknown query type %d", int(q.Type()));
+				return Error(errParams, "unknown query type %d", int(qImpl.Type()));
 		}
 	} catch (Error& e) {
 		return e;
 	}
+}
+
+::grpc::Status ReindexerService::log(::grpc::ServerContext* context, std::string_view method, std::string_view dbName,
+									 const RequestResult& result) const {
+	if (result.err.ok()) {
+		return log(context, method, dbName, result.grpcStatus);
+	}
+	if (!logger_.should_log(spdlog::level::err)) {
+		return result.grpcStatus;
+	}
+	const auto peer{context ? context->peer() : std::string{"-"}};
+	WrSerializer ser;
+	ser << "p='grpc' c='" << peer << "' db='" << (dbName.empty() ? "-"sv : dbName) << "' " << method << " -> " << result.err.whatStr();
+	logger_.error(ser.Slice());
+	return result.grpcStatus;
+}
+
+::grpc::Status ReindexerService::log(::grpc::ServerContext* context, std::string_view method, std::string_view dbName,
+									 const ::grpc::Status& grpcStatus) const {
+	const bool isOk{grpcStatus.ok()};
+	const auto level{isOk ? spdlog::level::info : spdlog::level::err};
+	if (!logger_.should_log(level)) {
+		return grpcStatus;
+	}
+	const auto peer{context ? context->peer() : std::string{"-"}};
+	const std::string statusMessage{isOk ? std::string{} : grpcStatus.error_message()};
+	WrSerializer ser;
+	ser << "p='grpc' c='" << peer << "' db='" << (dbName.empty() ? "-"sv : dbName) << "' " << method << " -> ";
+	if (isOk) {
+		ser << "OK"sv;
+	} else if (!statusMessage.empty()) {
+		ser << statusMessage;
+	} else {
+		ser << int(grpcStatus.error_code());
+	}
+	if (level == spdlog::level::info) {
+		logger_.info(ser.Slice());
+	} else {
+		logger_.error(ser.Slice());
+	}
+	return grpcStatus;
 }
 
 }  // namespace grpc
@@ -1049,10 +1161,11 @@ struct [[nodiscard]] grpc_data {
 };
 
 extern "C" void* start_reindexer_grpc(reindexer_server::DBManager& dbMgr, std::chrono::seconds txIdleTimeout,
-									  reindexer::net::ev::dynamic_loop& loop, const std::string& address) {
+									  reindexer::net::ev::dynamic_loop& loop, const std::string& address,
+									  reindexer_server::LoggerWrapper logger) {
 	auto data = new grpc_data();
 
-	data->service_.reset(new reindexer::grpc::ReindexerService(dbMgr, txIdleTimeout, loop));
+	data->service_.reset(new reindexer::grpc::ReindexerService(dbMgr, txIdleTimeout, loop, logger));
 	::grpc::ServerBuilder builder;
 	builder.AddListeningPort(address, ::grpc::InsecureServerCredentials());
 	builder.RegisterService(data->service_.get());

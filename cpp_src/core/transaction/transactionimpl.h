@@ -48,7 +48,7 @@ private:
 
 	void updateShardIdIfNecessary(int shardId, const Variant& curShardKey);
 	void lazyInit(const Item& item);
-	void lazyInit(const Query& q);
+	void lazyInit(ConstQueryImpl q);
 	void lazyInit();
 	void initProxiedTx(RxClientT* leader);
 	void initProxiedTxIfRequired();

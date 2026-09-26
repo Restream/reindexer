@@ -123,8 +123,7 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 			ASSERT_STREQ(err.what(), "Syntax error at or near 'update', line: 1 column: 6 12; only SELECT query could be LOCAL");
 		}
 		EXPECT_TRUE(failed);
-		localQuery = Query{default_namespace};
-		localQuery.Local(true);
+		localQuery = Query{default_namespace}.Set(kFieldLocation, "new location").Local(true);
 		client::QueryResults localQr;
 		const auto err = getNode(0)->api.reindexer->Update(localQuery, localQr);
 		EXPECT_FALSE(err.ok());
@@ -164,7 +163,9 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	std::unordered_map<int, std::string> kExpectedJoinResults2;
 	{
 		client::QueryResults qr;
-		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key" + std::to_string(kShardWithLocalNs)).Sort(kFieldId, false);
+		Query q = Query(default_namespace)
+					  .Where(kFieldLocation, CondEq, "key" + std::to_string(kShardWithLocalNs))
+					  .Sort(kFieldId, SortOrder::Asc);
 		err = shard1->Select(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.Count(), kShardDataCount);
@@ -191,7 +192,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 			Query q = Query(default_namespace)
 						  .Local(local)
 						  .Where(kFieldLocation, CondEq, key)
-						  .InnerJoin(kFieldId, kFieldId, CondEq, Query(kLocalNamespace));
+						  .InnerJoin(Query(kLocalNamespace), kFieldId, CondEq, kFieldId);
 			err = rx.Select(q, qr);
 			if (!local || getSCIdxs(i).first == kShardWithLocalNs) {
 				ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i << "; location = " << key;
@@ -221,7 +222,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 			client::QueryResults qr;
 			Query q = Query(kLocalNamespace)
 						  .Local(local)
-						  .InnerJoin(kFieldId, kFieldId, CondEq, Query(default_namespace).Where(kFieldLocation, CondEq, key));
+						  .InnerJoin(Query(default_namespace).Where(kFieldLocation, CondEq, key), kFieldId, CondEq, kFieldId);
 			err = rx.Select(q, qr);
 			if (!local || getSCIdxs(i).first == kShardWithLocalNs) {
 				ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i << "; location = " << key;
@@ -248,7 +249,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 		for (size_t i = 0; i < kNodesCount; ++i) {
 			auto& rx = *getNode(i)->api.reindexer;
 			client::QueryResults qr;
-			Query q = Query(kLocalNamespace).Local(local).InnerJoin(kFieldId, kFieldId, CondEq, Query(default_namespace));
+			Query q = Query(kLocalNamespace).Local(local).InnerJoin(Query(default_namespace), kFieldId, CondEq, kFieldId);
 			err = rx.Select(q, qr);
 			if (!local) {
 				ASSERT_EQ(err.code(), errLogic) << err.what() << "; i = " << i;
@@ -283,7 +284,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 				Query q = Query(default_namespace)
 							  .Local(local)
 							  .Where(kFieldLocation, CondEq, key)
-							  .InnerJoin(kFieldId, kFieldId, CondEq, Query(kLocalNamespace));
+							  .InnerJoin(Query(kLocalNamespace), kFieldId, CondEq, kFieldId);
 				err = rx.Select(q, qr);
 				if (!local) {
 					ASSERT_EQ(err.code(), errNotFound) << err.what() << "; i = " << i << "; location = " << key;
@@ -299,7 +300,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 				client::QueryResults qr;
 				Query q = Query(kLocalNamespace)
 							  .Local(local)
-							  .InnerJoin(kFieldId, kFieldId, CondEq, Query(default_namespace).Where(kFieldLocation, CondEq, key));
+							  .InnerJoin(Query(default_namespace).Where(kFieldLocation, CondEq, key), kFieldId, CondEq, kFieldId);
 				err = rx.Select(q, qr);
 				if (!local) {
 					ASSERT_EQ(err.code(), errNotFound) << err.what() << "; i = " << i << "; location = " << key;
@@ -318,7 +319,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 		for (size_t i = 0; i < kNodesCount; ++i) {
 			auto& rx = *getNode(i)->api.reindexer;
 			client::QueryResults qr;
-			Query q = Query(default_namespace).Local(local).InnerJoin(kFieldId, kFieldId, CondEq, Query(kLocalNamespace));
+			Query q = Query(default_namespace).Local(local).InnerJoin(Query(kLocalNamespace), kFieldId, CondEq, kFieldId);
 			err = rx.Select(q, qr);
 			if (!local) {
 				ASSERT_EQ(err.code(), errLogic) << err.what() << "; i = " << i;
@@ -809,7 +810,7 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 	int curNode = 0;
 	{
 		client::QueryResults qr;
-		err = svc_[0][curNode].Get()->api.reindexer->Select("select replication.clusterization_status.leader_id from #memstats", qr);
+		err = svc_[0][curNode].Get()->api.reindexer->ExecSQL("select replication.clusterization_status.leader_id from #memstats", qr);
 		ASSERT_EQ(qr.Count(), 1);
 		ASSERT_TRUE(err.ok()) << err.what();
 		auto item = qr.begin().GetItem();
@@ -825,12 +826,12 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 
 	auto setActivity = [](std::shared_ptr<client::Reindexer> rx, bool on) {
 		client::QueryResults qr;
-		Error err = rx->Select(fmt::format("update #config set profiling.activitystats={} where type='profiling'", on), qr);
+		Error err = rx->ExecSQL(fmt::format("update #config set profiling.activitystats={} where type='profiling'", on), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 	};
 	auto dumpActivity = [](std::shared_ptr<client::Reindexer> rx) {
 		client::QueryResults qr;
-		Error err = rx->Select("select * from #activitystats", qr);
+		Error err = rx->ExecSQL("select * from #activitystats", qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 	};
 
@@ -884,7 +885,7 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 		setActivity(svc_[0][followerId].Get()->api.reindexer, true);
 
 		client::QueryResults qr;
-		err = svc_[0][followerId].Get()->api.reindexer->Select("select * from " + default_namespace, qr);
+		err = svc_[0][followerId].Get()->api.reindexer->ExecSQL("select * from " + default_namespace, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		dumpActivity(svc_[0][followerId].Get()->api.reindexer);

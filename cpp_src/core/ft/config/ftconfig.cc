@@ -201,6 +201,7 @@ void FTConfig::parse(std::string_view json, const RHashMap<std::string, FtIndexF
 		} else {
 			throw Error(errParseJson, "FTConfig: unknown optimization value: {}", opt);
 		}
+		deletedDocsOptimizationThreshold = root["deleted_docs_optimization_threshold"].As<>(deletedDocsOptimizationThreshold, 0.0, 1.0);
 		enablePreselectBeforeFt = root["enable_preselect_before_ft"].As<>(enablePreselectBeforeFt);
 
 		const std::string splitterStr = ToLower(root["splitter"].As<std::string>("fast"));
@@ -470,6 +471,7 @@ std::string FTConfig::GetJSON(const fast_hash_map<std::string, int>& fields) con
 			jsonBuilder.Put("optimization", "CPU");
 			break;
 	}
+	jsonBuilder.Put("deleted_docs_optimization_threshold", deletedDocsOptimizationThreshold);
 
 	switch (splitterType) {
 		case Splitter::Fast:

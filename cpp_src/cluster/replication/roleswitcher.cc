@@ -337,7 +337,7 @@ Error RoleSwitcher::getNodesListForNs(const NamespaceName& nsName, elist<LeaderS
 		auto err = thisNode_.GetReplState(nsEntry.nsName, state, RdxContext());
 		if (err.ok()) {
 			nsEntry.localLsn = nsEntry.latestLsn = ExtendedLsn(state.nsVersion, state.lastLsn);
-			nsEntry.localData.hash = state.dataHash;
+			nsEntry.localData.checksum = state.checksum;
 			nsEntry.localData.count = state.dataCount;
 		}
 		logInfo("{}: Begin leader's sync for '{}'. Ns version: {}, lsn: {}", cfg_.serverId, nsEntry.nsName, nsEntry.localLsn.NsVersion(),
@@ -378,16 +378,15 @@ Error RoleSwitcher::getNodesListForNs(const NamespaceName& nsName, elist<LeaderS
 					nsEntry.nodes.clear();
 					nsEntry.nodes.emplace_back(id);
 					nsEntry.data.clear();
-					nsEntry.data.emplace_back(LeaderSyncQueue::Entry::NodeData{state.dataHash, state.dataCount});
+					nsEntry.data.emplace_back(LeaderSyncQueue::Entry::NodeData{state.checksum, state.dataCount});
 					nsEntry.latestLsn = remoteLsn;
 				} else if (nsEntry.latestLsn == remoteLsn) {
-					const bool sameAsLocal =
-						(nsEntry.localData.hash.IsEqualByAnyVersionTo(state.dataHash) && nsEntry.localData.count == state.dataCount);
-					const bool sameAsRemote = (nsEntry.data.size() && nsEntry.data[0].hash.IsEqualByAnyVersionTo(state.dataHash) &&
-											   nsEntry.data[0].count == state.dataCount);
+					const bool sameAsLocal = (nsEntry.localData.checksum == state.checksum && nsEntry.localData.count == state.dataCount);
+					const bool sameAsRemote =
+						(nsEntry.data.size() && nsEntry.data[0].checksum == state.checksum && nsEntry.data[0].count == state.dataCount);
 					if (sameAsLocal || sameAsRemote) {
 						nsEntry.nodes.emplace_back(id);
-						nsEntry.data.emplace_back(LeaderSyncQueue::Entry::NodeData{state.dataHash, state.dataCount});
+						nsEntry.data.emplace_back(LeaderSyncQueue::Entry::NodeData{state.checksum, state.dataCount});
 					}
 				}
 			} else if (err.code() == errNotFound) {

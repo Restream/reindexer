@@ -54,5 +54,6 @@ static_assert(false, "Macro conflict");
 
 enum class [[nodiscard]] LoggerPolicy : int { NotInit, WithLocks, WithoutLocks };
 void logInstallWriter(LogWriter writer, LoggerPolicy mode, int globalLogLevel);
+void logSetLevel(int globalLogLevel) noexcept;
 
 }  // namespace reindexer

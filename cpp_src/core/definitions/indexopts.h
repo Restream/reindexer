@@ -46,11 +46,19 @@ public:
 		bool operator==(const PoolOpts& o) const noexcept = default;
 	};
 	struct [[nodiscard]] EmbedderOpts {
+		enum class [[nodiscard]] Protocol : uint8_t { Rx, OpenAI };
+		enum class [[nodiscard]] Strategy : uint8_t { Always, EmptyOnly, Strict };
+		// How upsert fields are turned into OpenAI `input` text. Ignored for protocol "rx".
+		enum class [[nodiscard]] FieldsFormat : uint8_t { Join, Stringify };
+
 		std::string endpointUrl;
 		std::string name;
 		std::string cacheTag;
+		std::string model;
 		reindexer::h_vector<std::string, 1> fields;
-		enum class [[nodiscard]] Strategy : uint8_t { Always, EmptyOnly, Strict } strategy{Strategy::Always};
+		Protocol protocol{Protocol::Rx};
+		Strategy strategy{Strategy::Always};
+		FieldsFormat fieldsFormat{FieldsFormat::Stringify};
 		PoolOpts pool{};
 
 		bool operator==(const EmbedderOpts& o) const noexcept = default;

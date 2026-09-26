@@ -11,7 +11,7 @@ ProtobufSchemaBuilder::ProtobufSchemaBuilder()
 	: ser_(nullptr), fieldsTypes_(nullptr), pt_(nullptr), tm_(nullptr), type_(ObjType::TypePlain) {}
 
 ProtobufSchemaBuilder::ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsTypes* fieldsTypes, ObjType type, std::string_view name,
-											 PayloadType* pt, TagsMatcher* tm)
+											 const PayloadType* pt, TagsMatcher* tm)
 	: ser_(ser), fieldsTypes_(fieldsTypes), pt_(pt), tm_(tm), type_(type) {
 	switch (type_) {
 		case ObjType::TypePlain:

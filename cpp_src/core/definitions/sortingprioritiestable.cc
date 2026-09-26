@@ -1,5 +1,4 @@
 #include "sortingprioritiestable.h"
-#include <algorithm>
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
@@ -30,7 +29,7 @@ SortingPrioritiesTable::SortingPrioritiesTable(const std::string& sortOrderUTF8)
 				if (ch <= prevCh) {
 					throw Error(errLogic, "Incorrect format of sort order string: range should be ascending");
 				}
-				for (char32_t it = prevCh; it <= char32_t(ch); ++it) {
+				for (char32_t it = char32_t(prevCh); it <= char32_t(ch); ++it) {
 					const auto rangeCh = char16_t(it);
 					if (checkForRangeIntersection(ranges, rangeCh)) {
 						throw Error(errLogic, "There can't be 2 same formating characters in format string!");

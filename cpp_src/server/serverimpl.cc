@@ -4,6 +4,7 @@
 #include <dlfcn.h>
 #endif
 
+#include <future>
 #include <vector>
 
 #include "clientsstats.h"
@@ -15,8 +16,6 @@
 #include "reindexer_version.h"
 #include "rpcserver.h"
 #include "serverimpl.h"
-#include "spdlog/async.h"
-#include "spdlog/sinks/stdout_color_sinks.h"
 #include "statscollect/prometheus.h"
 #include "statscollect/statscollector.h"
 #if REINDEX_WITH_JEMALLOC
@@ -24,8 +23,6 @@
 #endif	// REINDEX_WITH_JEMALLOC
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
-#include "tools/logger.h"
-#include "tools/stringstools.h"
 #include "tools/tcmallocheapwatcher.h"
 #ifdef _WIN32
 #include "winservice.h"
@@ -48,7 +45,6 @@ extern std::atomic<bool> rxAllowNamespaceLeak;
 namespace reindexer_server {
 
 using reindexer::fs::GetDirPath;
-using reindexer::logLevelFromString;
 
 ServerImpl::ServerImpl(ServerMode mode)
 	:
@@ -57,7 +53,6 @@ ServerImpl::ServerImpl(ServerMode mode)
 #else
 	  config_(false),
 #endif
-	  coreLogLevel_(LogNone),
 	  storageLoaded_(false),
 	  running_(false),
 	  mode_(mode) {
@@ -118,8 +113,8 @@ Error ServerImpl::init() {
 #ifndef _WIN32
 		GetDirPath(config_.DaemonPidFile),
 #endif
-		GetDirPath(config_.CoreLog),	   GetDirPath(config_.HttpLog), GetDirPath(config_.RpcLog),
-		GetDirPath(config_.ServerLog),	   config_.StoragePath};
+		GetDirPath(config_.CoreLog),	   GetDirPath(config_.HttpLog),	  GetDirPath(config_.RpcLog),
+		GetDirPath(config_.GrpcLog),	   GetDirPath(config_.ServerLog), config_.StoragePath};
 
 	for (const std::string& dir : dirs) {
 		err = TryCreateDirectory(dir);
@@ -144,7 +139,6 @@ Error ServerImpl::init() {
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
-	coreLogLevel_ = logLevelFromString(config_.LogLevel);
 	return {};
 }
 
@@ -203,13 +197,7 @@ void ServerImpl::Stop() noexcept {
 	}
 }
 
-void ServerImpl::ReopenLogFiles() {
-#ifndef _WIN32
-	for (auto& sync : sinks_) {
-		sync.second->reopen();
-	}
-#endif
-}
+void ServerImpl::ReopenLogFiles() { loggerRegistry_.ReopenFiles(); }
 
 std::string ServerImpl::GetCoreLogPath() const { return GetDirPath(config_.CoreLog); }
 
@@ -228,8 +216,9 @@ int ServerImpl::run() {
 	void* hGRPCServiceLib = tryToOpenGRPCLib(config_.EnableGRPC);
 #endif	// defined(WITH_GRPC) && defined(REINDEX_WITH_LIBDL)
 
-	auto err = loggerConfigure();
+	auto err = loggerRegistry_.Init(config_, mode_);
 	(void)err;	// ingore; In case of the multiple builtin servers, we will get errors here
+	logger_ = loggerRegistry_.Server();
 
 	reindexer::debug::backtrace_set_writer([](std::string_view out) {
 		auto logger = spdlog::get("server");
@@ -310,7 +299,6 @@ int ServerImpl::run() {
 	}
 #endif
 
-	initCoreLogger();
 	logger_.info("Initializing databases...");
 	if (config_.HasDefaultHttpWriteTimeout()) {
 		logger_.info("HTTP write timeout was not set explicitly. The default value will be used: {0} seconds",
@@ -410,8 +398,9 @@ int ServerImpl::run() {
 			statsCollector.reset(new StatsCollector(*dbMgr_, prometheus.get(), config_.PrometheusCollectPeriod, logger_));
 		}
 
-		LoggerWrapper httpLogger("http");
-		LoggerWrapper rpcLogger("rpc");
+		LoggerWrapper httpLogger = loggerRegistry_.Http();
+		LoggerWrapper rpcLogger = loggerRegistry_.Rpc();
+		LoggerWrapper grpcLogger = loggerRegistry_.Grpc();
 
 		std::unique_ptr<HTTPServer> httpServer;
 		std::unique_ptr<HTTPServer> httpsServer;
@@ -420,7 +409,8 @@ int ServerImpl::run() {
 		std::unique_ptr<RPCServer> rpcServerUnix;
 
 		if (withHTTP) {
-			httpServer = std::make_unique<HTTPServer>(*dbMgr_, httpLogger, config_, prometheus.get(), statsCollector.get());
+			httpServer =
+				std::make_unique<HTTPServer>(*dbMgr_, httpLogger, config_, loggerRegistry_, prometheus.get(), statsCollector.get());
 			try {
 				httpServer->Start(config_.HTTPAddr, loop_);
 			} catch (std::exception& e) {
@@ -430,7 +420,8 @@ int ServerImpl::run() {
 		}
 
 		if (withHTTPs) {
-			httpsServer = std::make_unique<HTTPServer>(*dbMgr_, httpLogger, config_, prometheus.get(), statsCollector.get());
+			httpsServer =
+				std::make_unique<HTTPServer>(*dbMgr_, httpLogger, config_, loggerRegistry_, prometheus.get(), statsCollector.get());
 			try {
 				httpsServer->Start(config_.HTTPsAddr, loop_);
 			} catch (std::exception& e) {
@@ -475,14 +466,14 @@ int ServerImpl::run() {
 #if REINDEX_WITH_LIBDL
 			if (hGRPCServiceLib) {
 				auto start_grpc = reinterpret_cast<p_start_reindexer_grpc>(dlsym(hGRPCServiceLib, "start_reindexer_grpc"));
-				hGRPCService = start_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr);
+				hGRPCService = start_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr, grpcLogger);
 				logger_.info("Listening gRPC service on {0}", config_.GRPCAddr);
 			} else {
 				logger_.error("Can't load libreindexer_grpc_library. gRPC will not work: {}", dlerror());
 				return EXIT_FAILURE;
 			}
 #else	// REINDEX_WITH_LIBDL
-			hGRPCService = start_reindexer_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr);
+			hGRPCService = start_reindexer_grpc(*dbMgr_, config_.TxIdleTimeout, loop_, config_.GRPCAddr, grpcLogger);
 			logger_.info("Listening gRPC service on {0}", config_.GRPCAddr);
 #endif	// REINDEX_WITH_LIBDL
 		}
@@ -622,76 +613,6 @@ Error ServerImpl::daemonize() {
 }
 #endif
 
-Error ServerImpl::loggerConfigure() {
-	static std::once_flag loggerConfigured;
-	std::call_once(loggerConfigured, [] {
-		spdlog::init_thread_pool(16384, 1);	 // Using single background thread with st-sinks
-		spdlog::flush_every(std::chrono::seconds(2));
-		spdlog::set_level(spdlog::level::trace);
-		spdlog::set_pattern("%^[%L%d/%m %T.%e %t] %v%$", spdlog::pattern_time_type::utc);
-	});
-
-	const std::vector<std::pair<std::string, std::string>> loggers = {
-		{"server", config_.ServerLog}, {"core", config_.CoreLog}, {"http", config_.HttpLog}, {"rpc", config_.RpcLog}};
-
-	for (auto& logger : loggers) {
-		auto& fileName = logger.second;
-		try {
-			if (fileName == "stdout" || fileName == "-") {
-				using LogFactoryT = spdlog::async_factory_impl<spdlog::async_overflow_policy::discard_new>;
-				LogFactoryT::create<spdlog::sinks::stdout_color_sink_st>(logger.first);
-			} else if (!fileName.empty() && fileName != "none") {
-				auto sink = sinks_.find(fileName);
-				if (sink == sinks_.end()) {
-					auto sptr = std::make_shared<spdlog::sinks::reopen_file_sink_st>(fileName);
-					sink = sinks_.emplace(fileName, std::move(sptr)).first;
-				}
-				auto lptr = std::make_shared<spdlog::async_logger>(logger.first, sink->second, spdlog::thread_pool(),
-																   spdlog::async_overflow_policy::discard_new);
-				spdlog::initialize_logger(std::move(lptr));
-			}
-		} catch (const spdlog::spdlog_ex& e) {
-			return Error(errLogic, "Can't create logger for '{}' to file '{}': {}\n", logger.first, logger.second, e.what());
-		}
-	}
-	logger_ = LoggerWrapper("server");
-	return {};
-}
-
-void ServerImpl::initCoreLogger() {
-	std::weak_ptr<spdlog::logger> logger = spdlog::get("core");
-
-	auto callback = [this, logger](int level, char* buf) {
-		auto slogger = logger.lock();
-		if (slogger && level <= coreLogLevel_) {
-			switch (level) {
-				case LogNone:
-					break;
-				case LogError:
-					slogger->error(buf);
-					break;
-				case LogWarning:
-					slogger->warn(buf);
-					break;
-				case LogTrace:
-					slogger->trace(buf);
-					break;
-				case LogInfo:
-					slogger->info(buf);
-					break;
-				default:
-					slogger->debug(buf);
-					break;
-			}
-		}
-	};
-	if (coreLogLevel_ && logger.lock()) {
-		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
-		reindexer::logInstallWriter(callback, mode_ == ServerMode::Standalone ? LoggerPolicy::WithoutLocks : LoggerPolicy::WithLocks,
-									coreLogLevel_);
-	}
-}
-
 ServerImpl::~ServerImpl() {
 #ifndef REINDEX_WITH_ASAN
 	if (config_.AllowNamespaceLeak && mode_ == ServerMode::Standalone) {
@@ -700,12 +621,10 @@ ServerImpl::~ServerImpl() {
 #endif
 #ifdef _WIN32
 	// Windows must to call shutdown explicitly, otherwise it will stuck
-	logInstallWriter(nullptr, mode_ == ServerMode::Standalone ? LoggerPolicy::WithoutLocks : LoggerPolicy::WithLocks, int(LogNone));
+	loggerRegistry_.DisableCoreLog();
 	spdlog::shutdown();
 #else	// !_WIN32
-	if (coreLogLevel_) {
-		logInstallWriter(nullptr, mode_ == ServerMode::Standalone ? LoggerPolicy::WithoutLocks : LoggerPolicy::WithLocks, int(LogNone));
-	}
+	loggerRegistry_.DisableCoreLog();
 #endif	// !_WIN32
 	async_.reset();
 }

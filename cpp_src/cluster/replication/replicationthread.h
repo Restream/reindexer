@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include "client/cororeindexer.h"
 #include "cluster/config.h"
 #include "cluster/logger.h"
@@ -7,6 +8,7 @@
 #include "core/dbconfig.h"
 #include "coroutine/tokens_pool.h"
 #include "net/ev/ev.h"
+#include "tools/assertrx.h"
 #include "updates/updaterecord.h"
 #include "updates/updatesqueue.h"
 
@@ -42,6 +44,8 @@ struct [[nodiscard]] ReplThreadConfig {
 struct [[nodiscard]] UpdateApplyStatus {
 	UpdateApplyStatus(Error&& _err = Error(), updates::URType _type = updates::URType::None) noexcept : err(std::move(_err)), type(_type) {}
 	template <typename BehaviourParamT>
+	bool NeedsSingleNsResync() const noexcept;
+	template <typename BehaviourParamT>
 	bool IsHaveToResync() const noexcept;
 
 	Error err;
@@ -57,24 +61,42 @@ public:
 	client::CoroTransaction tx;
 	bool requiresTmUpdate = true;
 	bool isClosed = false;
+	// Sampled at the start of a successful syncNamespace via UpdatesQueue::GetNextUpdateID().
+	// Records of this ns with eventId < syncedAtQueueId are already in the snapshot (0 = never synced).
+	uint64_t syncedAtQueueId = 0;
 };
 
-struct [[nodiscard]] Node {
+class [[nodiscard]] Node {
+public:
+	// This map should not invalidate references
+	using MapT = std::unordered_map<NamespaceName, NamespaceData, NamespaceNameHash, NamespaceNameEqual>;
 	using UpdatesChT = coroutine::channel<bool>;
 
 	Node(int _serverId, uint32_t _uid, const client::ReindexerConfig& config) : serverId(_serverId), uid(_uid), client(config) {}
 	void Reconnect(net::ev::dynamic_loop& loop, const ReplThreadConfig& config);
+
+	NamespaceData& NsData(const NamespaceName& nsName) {
+		assertrx_dbg(!nsName.empty());
+		return namespaceData_[nsName];
+	}
+	void EraseNsData(const NamespaceName& nsName) {
+		assertrx_dbg(!nsName.empty());
+		namespaceData_.erase(nsName);
+	}
+	auto EraseNsData(const typename MapT::const_iterator& it) { return namespaceData_.erase(it); }
+	const MapT& NsData() const noexcept { return namespaceData_; }
 
 	int serverId;
 	uint32_t uid;
 	DSN dsn;
 	client::CoroReindexer client;
 	std::unique_ptr<UpdatesChT> updateNotifier = std::make_unique<UpdatesChT>();
-	std::unordered_map<NamespaceName, NamespaceData, NamespaceNameHash, NamespaceNameEqual>
-		namespaceData;	// This map should not invalidate references
 	uint64_t nextUpdateId = 0;
 	bool requireResync = false;
 	std::optional<int64_t> connObserverId;
+
+private:
+	MapT namespaceData_;
 };
 }  // namespace repl_thread_impl
 
@@ -107,10 +129,12 @@ public:
 	ReindexerImpl& thisNode;
 
 private:
+	enum class [[nodiscard]] SyncMode { FullSync, OnlineSingleNs };
+
 	constexpr static bool isClusterReplThread() noexcept;
 	void updateNodeStatus(size_t uid, NodeStats::Status st);
 	void nodeReplicationRoutine(Node& node);
-	Error namespacesSyncImpl(Node& node, const std::vector<NamespaceDef>& nsList);
+	Error namespacesSyncImpl(Node& node, std::span<const NamespaceDef> nsList, SyncMode syncMode);
 	Error nodeReplicationImpl(Node& node, const std::vector<NamespaceDef>& nsList);
 	Expected<std::vector<NamespaceDef>> generateSyncNssList(const Node& node) const noexcept;
 	void updatesNotifier() noexcept;
@@ -118,7 +142,12 @@ private:
 	std::tuple<bool, UpdateApplyStatus> handleNetworkCheckRecord(Node& node, UpdatesQueueT::UpdatePtr& updPtr, uint16_t offset,
 																 bool currentlyOnline, const updates::UpdateRecord& rec) noexcept;
 
-	Error syncNamespace(Node&, const NamespaceName&, const ReplicationStateV2& followerState);
+	Error syncNamespace(Node&, const NamespaceName&, const ReplicationStateV2& followerState, SyncMode syncMode);
+	Error handleMissingLeaderNs(Node& node, client::CoroReindexer& client, const NamespaceName& nsName, std::string_view stage,
+								bool& retrySync, ReplicationStateV2& retryLeaderState, bool allowOpenRetry = true);
+	Error resyncSingleNamespace(Node& node, const NamespaceName& nsName) noexcept;
+	void rollbackNamespaceTx(Node& node, const NamespaceName& nsName) { rollbackNamespaceTx(node, node.NsData(nsName)); }
+	void rollbackNamespaceTx(Node& node, NamespaceData& nsData);
 	Error syncShardingConfig(Node& node) noexcept;
 	UpdateApplyStatus nodeUpdatesHandlingLoop(Node& node) noexcept;
 	bool handleUpdatesWithError(Node& node, const Error& err);

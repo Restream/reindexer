@@ -1,9 +1,16 @@
 #include <gmock/gmock.h>
+#include "core/query/query_impl.h"
 
+#include <optional>
 #include <thread>
+#include <tuple>
 
 #include "core/cjson/csvbuilder.h"
+#include "core/enums.h"
 #include "core/function/function.h"
+#include "core/function/precomputed_values.h"
+#include "core/query/expression/arithmetic_expression.h"
+#include "core/query/functions_optimizations.h"
 #include "core/schema.h"
 #include "csv2jsonconverter.h"
 #include "queries_api.h"
@@ -14,6 +21,29 @@
 namespace reindexer_tests {
 
 using reindexer::IndexOpts;
+
+TEST(QueryImplWrapper, EqualityAndNestedWalk) {
+	using namespace reindexer;
+
+	Query left{"main"};
+	Query right{"main"};
+	Impl(left).Join(OpAnd, JoinedQuery{JoinType::LeftJoin, Query{"joined"}});
+	Impl(right).Join(OpAnd, JoinedQuery{JoinType::InnerJoin, Query{"joined"}});
+	EXPECT_NE(left, right);
+
+	JoinedQuery leftJoin{JoinType::LeftJoin, Query{"joined"}};
+	JoinedQuery rightJoin{JoinType::LeftJoin, Query{"joined"}};
+	JoinedImpl(leftJoin).EmplaceBackOnEntry(OpAnd, "left", CondEq, "right");
+	JoinedImpl(rightJoin).EmplaceBackOnEntry(OpAnd, "left", CondEq, "other");
+	EXPECT_NE(leftJoin, rightJoin);
+
+	Query nested{"main"};
+	Impl(nested).Join(OpAnd, std::move(leftJoin));
+	nested.Merge(Query{"merged"});
+	size_t visited = 0;
+	Impl(std::as_const(nested)).WalkNested(true, true, true, [&visited](ConstQueryImpl) noexcept { ++visited; });
+	EXPECT_EQ(visited, 3);
+}
 
 TEST_F(QueriesApi, QueriesStandardTestSet) {
 	try {
@@ -31,6 +61,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		CheckDslQueries();
 		CheckCompositeIndexesQueries();
 		CheckComparatorsQueries();
+		CheckArithmeticQueries();
 		CheckDistinctQueries();
 		CheckGeomQueries();
 		CheckMergeQueriesWithLimit();
@@ -93,6 +124,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		CheckDslQueries();
 		CheckCompositeIndexesQueries();
 		CheckComparatorsQueries();
+		CheckArithmeticQueries();
 		CheckDistinctQueries();
 		CheckGeomQueries();
 		CheckMergeQueriesWithLimit();
@@ -176,8 +208,7 @@ TEST_F(QueriesApi, IndexCacheInvalidationTest) {
 	for (auto values : data) {
 		UpsertBtreeIdxOptNsItem(values);
 	}
-	Query q(btreeIdxOptNs);
-	q.Where(kFieldNameId, CondSet, {3, 5, 7}).Where(kFieldNameStartTime, CondGt, 2).Debug(LogTrace);
+	auto q = Query(btreeIdxOptNs).Where(kFieldNameId, CondSet, {3, 5, 7}).Where(kFieldNameStartTime, CondGt, 2).Debug(LogTrace);
 	std::this_thread::sleep_for(std::chrono::seconds(1));
 	for (size_t i = 0; i < 10; ++i) {
 		ExecuteAndVerify(q);
@@ -255,18 +286,52 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		{"SELECT * FROM test_namespace WHERE NOT index2.field2 = \"index+field\"",
 		 Query{"test_namespace"}.Not().WhereBetweenFields("index2.field2", CondEq, "index+field")},
 		{"SELECT * FROM test_namespace WHERE 'index+field' = 5",
-		 Error{errParseSQL, "String is invalid at this location. (text = 'index+field'  location = line: 1 column: 36 47)"}},
+		 Error{errParseSQL, "Expected field or index name, but found '5' in query, line: 1 column: 51 52"}},
 		{"SELECT * FROM test_namespace WHERE \"index\" = 5", Query{"test_namespace"}.Where("index", CondEq, 5), PARSE},
 		{"SELECT * FROM test_namespace WHERE 'index' = 5",
-		 Error{errParseSQL, "String is invalid at this location. (text = 'index'  location = line: 1 column: 36 41)"}},
+		 Error{errParseSQL, "Expected field or index name, but found '5' in query, line: 1 column: 45 46"}},
+		{"SELECT * FROM test_namespace WHERE index = true", Query{"test_namespace"}.Where("index", CondEq, true), PARSE},
+		{"SELECT * FROM test_namespace WHERE true = index", Query{"test_namespace"}.Where("index", CondEq, true), PARSE},
+		{"SELECT * FROM test_namespace WHERE TRUE = index", Query{"test_namespace"}.Where("index", CondEq, true), PARSE},
+		{"SELECT * FROM test_namespace WHERE index = false", Query{"test_namespace"}.Where("index", CondEq, false), PARSE},
+		{"SELECT * FROM test_namespace WHERE false = index", Query{"test_namespace"}.Where("index", CondEq, false), PARSE},
+		{"SELECT * FROM test_namespace WHERE FALSE = index", Query{"test_namespace"}.Where("index", CondEq, false), PARSE},
+		{"SELECT * FROM test_namespace WHERE 5 = index", Query{"test_namespace"}.Where("index", CondEq, 5), PARSE},
+		{"SELECT * FROM test_namespace WHERE 5 > index", Query{"test_namespace"}.Where("index", CondLt, 5), PARSE},
+		{"SELECT * FROM test_namespace WHERE 5 < index", Query{"test_namespace"}.Where("index", CondGt, 5), PARSE},
+		{"SELECT * FROM test_namespace WHERE 'asd' = index", Query{"test_namespace"}.Where("index", CondEq, "asd"), PARSE},
+		{"SELECT * FROM test_namespace WHERE index = 'true'", Query{"test_namespace"}.Where("index", CondEq, "true"), PARSE},
+		{"SELECT * FROM test_namespace WHERE index = 'false'", Query{"test_namespace"}.Where("index", CondEq, "false"), PARSE},
+		{"SELECT * FROM test_namespace WHERE index = \"true\"", Query{"test_namespace"}.WhereBetweenFields("index", CondEq, "true"), PARSE},
+		{"SELECT * FROM test_namespace WHERE \"true\" = index", Query{"test_namespace"}.WhereBetweenFields("true", CondEq, "index"), PARSE},
+		{"SELECT * FROM test_namespace WHERE index = \"false\"", Query{"test_namespace"}.WhereBetweenFields("index", CondEq, "false"),
+		 PARSE},
+		{"SELECT * FROM test_namespace WHERE \"false\" = index", Query{"test_namespace"}.WhereBetweenFields("false", CondEq, "index"),
+		 PARSE},
+		{"SELECT * FROM test_namespace WHERE true = \"index\"", Query{"test_namespace"}.Where("index", CondEq, true), PARSE},
+		{"SELECT * FROM test_namespace WHERE false = \"index\"", Query{"test_namespace"}.Where("index", CondEq, false), PARSE},
+		{"SELECT * FROM test_namespace WHERE \"true\" = 'asd'", Query{"test_namespace"}.Where("true", CondEq, "asd"), PARSE},
+		{"SELECT * FROM test_namespace WHERE 'asd' = \"true\"", Query{"test_namespace"}.Where("true", CondEq, "asd"), PARSE},
+		{"SELECT * FROM test_namespace WHERE 'asd' = \"false\"", Query{"test_namespace"}.Where("false", CondEq, "asd"), PARSE},
+		{"SELECT * FROM test_namespace WHERE index = 'null'", Query{"test_namespace"}.Where("index", CondEq, "null"), PARSE},
+		{"SELECT * FROM test_namespace WHERE index = \"null\"", Query{"test_namespace"}.WhereBetweenFields("index", CondEq, "null"), PARSE},
+		{"SELECT * FROM test_namespace WHERE \"null\" = index", Query{"test_namespace"}.WhereBetweenFields("null", CondEq, "index"), PARSE},
+		{"SELECT * FROM test_namespace WHERE index = \"not\"", Query{"test_namespace"}.WhereBetweenFields("index", CondEq, "not"), PARSE},
+		{"SELECT * FROM test_namespace WHERE \"not\" = index", Query{"test_namespace"}.WhereBetweenFields("not", CondEq, "index"), PARSE},
+		{"SELECT * FROM test_namespace WHERE index = \"join\"", Query{"test_namespace"}.WhereBetweenFields("index", CondEq, "join"), PARSE},
+		{"SELECT * FROM test_namespace WHERE \"join\" = index", Query{"test_namespace"}.WhereBetweenFields("join", CondEq, "index"), PARSE},
+		{"SELECT * FROM test_namespace WHERE NULL = index", Query{"test_namespace"}.Where("index", CondEmpty, VariantArray{}), PARSE},
+		{"SELECT * FROM test_namespace WHERE NULL = \"index\"", Query{"test_namespace"}.Where("index", CondEmpty, VariantArray{}), PARSE},
+		{"SELECT * FROM test_namespace WHERE true = false",
+		 Error{errParseSQL, "Expected field or index name, but found 'false' in query, line: 1 column: 42 47"}},
 		{"SELECT * FROM test_namespace WHERE NOT index ALLSET 3489578", Query{"test_namespace"}.Not().Where("index", CondAllSet, 3489578)},
 		{"SELECT * FROM test_namespace WHERE NOT index ALLSET (0, 1)", Query{"test_namespace"}.Not().Where("index", CondAllSet, {0, 1})},
 		{"SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY 'year' DESC LIMIT 10000000",
-		 Query{"test_namespace"}.Select({"ID", "Year", "Genre"}).Where("year", CondGt, "2016").Sort("year", true).Limit(10000000)},
+		 Query{"test_namespace"}.Select("ID", "Year", "Genre").Where("year", CondGt, "2016").Sort("year", SortOrder::Desc).Limit(10000000)},
 		{"SELECT ID FROM test_namespace WHERE name LIKE 'something' AND (genre IN ('1', '2', '3') AND year > '2016') OR age IN "
 		 "('1', '2', '3', '4') LIMIT 10000000",
 		 Query{"test_namespace"}
-			 .Select({"ID"})
+			 .Select("ID")
 			 .Where("name", CondLike, "something")
 			 .OpenBracket()
 			 .Where("genre", CondSet, {"1", "2", "3"})
@@ -277,18 +342,38 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 			 .Limit(10000000)},
 		{"SELECT * FROM test_namespace WHERE INNER JOIN join_ns ON test_namespace.id = join_ns.id "
 		 "ORDER BY 'year + join_ns.year * (5 - rand())'",
-		 Query{"test_namespace"}.InnerJoin("id", "id", CondEq, Query{"join_ns"}).Sort("year + join_ns.year * (5 - rand())", false)},
+		 Query{"test_namespace"}
+			 .InnerJoin(Query{"join_ns"}, "id", CondEq, "id")
+			 .Sort("year + join_ns.year * (5 - rand())", SortOrder::Asc)},
+		{"SELECT * FROM ns WHERE INNER JOIN (SELECT * FROM ns2 WHERE (SELECT * FROM ns2 WHERE id = 10 AND id <= 10 LIMIT 0) IS NOT NULL) "
+		 "ON ns.id = ns2.id",
+		 Query{"ns"}.InnerJoin(Query{"ns2"}.Where(Query{"ns2"}.Select("id").Where("id", CondEq, 10), CondLe, {10}), "id", CondEq, "id")},
 		{"SELECT * FROM "s + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", ST_GeomFromText('POINT(1.25 -7.25)'), 0.5)",
 		 Query{geomNs}.DWithin(kFieldNamePointNonIndex, reindexer::Point{1.25, -7.25}, 0.5)},
-		{"SELECT * FROM test_namespace ORDER BY FIELD(index, 10, 20, 30)", Query{"test_namespace"}.Sort("index", false, {10, 20, 30})},
+		{"SELECT * FROM test_namespace ORDER BY FIELD(index, 10, 20, 30)",
+		 Query{"test_namespace"}.Sort("index", SortOrder::Asc, {10, 20, 30})},
 		{"SELECT * FROM test_namespace ORDER BY FIELD(index, 'str1', 'str2', 'str3') DESC",
-		 Query{"test_namespace"}.Sort("index", true, {"str1", "str2", "str3"})},
+		 Query{"test_namespace"}.Sort("index", SortOrder::Desc, {"str1", "str2", "str3"})},
 		{"SELECT * FROM test_namespace ORDER BY FIELD(index, {10, 'str1'}, {20, 'str2'}, {30, 'str3'})",
-		 Query{"test_namespace"}.Sort("index", false, std::vector<std::tuple<int, std::string>>{{10, "str1"}, {20, "str2"}, {30, "str3"}})},
+		 Query{"test_namespace"}.Sort("index", SortOrder::Asc,
+									  std::vector<std::tuple<int, std::string>>{{10, "str1"}, {20, "str2"}, {30, "str3"}})},
+		{"SELECT * FROM test_namespace WHERE index IS NULL", Query{"test_namespace"}.Where("index", CondEmpty, VariantArray{})},
+		{"SELECT * FROM test_namespace WHERE index IS EMPTY", Query{"test_namespace"}.Where("index", CondEmpty, VariantArray{}), PARSE},
+		{"SELECT * FROM test_namespace WHERE index = NULL", Query{"test_namespace"}.Where("index", CondEmpty, VariantArray{}), PARSE},
+		{"SELECT * FROM test_namespace WHERE index < NULL",
+		 Error{errParams, "Conditions CondGe|CondGt|CondLt|CondLe can't have null argument"}},
+		{"SELECT * FROM test_namespace WHERE index > NULL",
+		 Error{errParams, "Conditions CondGe|CondGt|CondLt|CondLe can't have null argument"}},
+		{"SELECT * FROM test_namespace WHERE index <= NULL",
+		 Error{errParams, "Conditions CondGe|CondGt|CondLt|CondLe can't have null argument"}},
+		{"SELECT * FROM test_namespace WHERE index >= NULL",
+		 Error{errParams, "Conditions CondGe|CondGt|CondLt|CondLe can't have null argument"}},
+		{"SELECT * FROM test_namespace WHERE index < NOT NULL",
+		 Error{errParseSQL, "Expected parameter, but found 'not' in query, line: 1 column: 43 46"}},
 		{"SELECT * FROM main_ns WHERE (SELECT * FROM second_ns WHERE id < 10 LIMIT 0) IS NOT NULL",
 		 Query{"main_ns"}.Where(Query{"second_ns"}.Where("id", CondLt, 10), CondAny, VariantArray{})},
 		{"SELECT * FROM main_ns WHERE id = (SELECT id FROM second_ns WHERE id < 10)",
-		 Query{"main_ns"}.Where("id", CondEq, Query{"second_ns"}.Select({"id"}).Where("id", CondLt, 10))},
+		 Query{"main_ns"}.Where("id", CondEq, Query{"second_ns"}.Select("id").Where("id", CondLt, 10))},
 		{"SELECT * FROM main_ns WHERE (SELECT max(id) FROM second_ns WHERE id < 10) > 18",
 		 Query{"main_ns"}.Where(Query{"second_ns"}.Aggregate(AggMax, {"id"}).Where("id", CondLt, 10), CondGt, {18})},
 		{"SELECT * FROM main_ns WHERE id > (SELECT avg(id) FROM second_ns WHERE id < 10)",
@@ -306,11 +391,11 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 			 .CloseBracket()
 			 .Where("value", CondSet, {Variant{5}, Variant{4}, Variant{1}})},
 		{"SELECT * FROM main_ns WHERE id IN (SELECT id FROM second_ns WHERE id < 999) AND value >= 1000",
-		 Query{"main_ns"}.Where("id", CondSet, Query{"second_ns"}.Select({"id"}).Where("id", CondLt, 999)).Where("value", CondGe, 1000)},
+		 Query{"main_ns"}.Where("id", CondSet, Query{"second_ns"}.Select("id").Where("id", CondLt, 999)).Where("value", CondGe, 1000)},
 		{"SELECT * FROM main_ns WHERE (id IN (SELECT id FROM second_ns WHERE id < 999)) AND value >= 1000",
 		 Query{"main_ns"}
 			 .OpenBracket()
-			 .Where("id", CondSet, Query{"second_ns"}.Select({"id"}).Where("id", CondLt, 999))
+			 .Where("id", CondSet, Query{"second_ns"}.Select("id").Where("id", CondLt, 999))
 			 .CloseBracket()
 			 .Where("value", CondGe, 1000)},
 		{"SELECT * FROM main_ns "
@@ -318,53 +403,53 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		 "ORDER BY 'tree'",
 		 Query{"main_ns"}
 			 .Where(Query{"second_ns"}
-						.Select({"id"})
+						.Select("id")
 						.Where("id", CondLt, 999)
 						.Where("xxx", CondEmpty, VariantArray{})
 						.Limit(10)
-						.Sort("value", true),
+						.Sort("value", SortOrder::Desc),
 					CondEq, 0)
-			 .Sort("tree", false)},
+			 .Sort("tree", SortOrder::Asc)},
 		{"SELECT * FROM main_ns "
 		 "WHERE ((SELECT id FROM second_ns WHERE id < 999 AND xxx IS NULL ORDER BY 'value' DESC LIMIT 10) = 0) "
 		 "ORDER BY 'tree'",
 		 Query{"main_ns"}
 			 .OpenBracket()
 			 .Where(Query{"second_ns"}
-						.Select({"id"})
+						.Select("id")
 						.Where("id", CondLt, 999)
 						.Where("xxx", CondEmpty, VariantArray{})
 						.Limit(10)
-						.Sort("value", true),
+						.Sort("value", SortOrder::Desc),
 					CondEq, 0)
 			 .CloseBracket()
-			 .Sort("tree", false)},
+			 .Sort("tree", SortOrder::Asc)},
 		{"SELECT * FROM main_ns "
 		 "WHERE INNER JOIN (SELECT * FROM second_ns WHERE NOT val = 10) ON main_ns.id = second_ns.uid "
 		 "AND id IN (SELECT id FROM third_ns WHERE id < 999) "
 		 "AND INNER JOIN (SELECT * FROM fourth_ns WHERE val IS NOT NULL OFFSET 2 LIMIT 1) ON main_ns.uid = fourth_ns.id",
 		 Query{"main_ns"}
-			 .InnerJoin("id", "uid", CondEq, Query("second_ns").Not().Where("val", CondEq, 10))
-			 .Where("id", CondSet, Query{"third_ns"}.Select({"id"}).Where("id", CondLt, 999))
-			 .InnerJoin("uid", "id", CondEq, Query("fourth_ns").Where("val", CondAny, VariantArray{}).Limit(1).Offset(2))},
+			 .InnerJoin(Query("second_ns").Not().Where("val", CondEq, 10), "id", CondEq, "uid")
+			 .Where("id", CondSet, Query{"third_ns"}.Select("id").Where("id", CondLt, 999))
+			 .InnerJoin(Query("fourth_ns").Where("val", CondAny, VariantArray{}).Limit(1).Offset(2), "uid", CondEq, "id")},
 		{"SELECT * FROM main_ns "
 		 "WHERE INNER JOIN (SELECT * FROM second_ns WHERE NOT val = 10 OFFSET 2 LIMIT 1) ON main_ns.id = second_ns.uid "
 		 "AND id IN (SELECT id FROM third_ns WHERE id < 999) "
 		 "LEFT JOIN (SELECT * FROM fourth_ns WHERE val IS NOT NULL) ON main_ns.uid = fourth_ns.id",
 		 Query{"main_ns"}
-			 .InnerJoin("id", "uid", CondEq, Query("second_ns").Not().Where("val", CondEq, 10).Limit(1).Offset(2))
-			 .Where("id", CondSet, Query{"third_ns"}.Select({"id"}).Where("id", CondLt, 999))
-			 .LeftJoin("uid", "id", CondEq, Query("fourth_ns").Where("val", CondAny, VariantArray{}))},
+			 .InnerJoin(Query("second_ns").Not().Where("val", CondEq, 10).Limit(1).Offset(2), "id", CondEq, "uid")
+			 .Where("id", CondSet, Query{"third_ns"}.Select("id").Where("id", CondLt, 999))
+			 .LeftJoin(Query("fourth_ns").Where("val", CondAny, VariantArray{}), "uid", CondEq, "id")},
 		{"SELECT * FROM main_ns "
 		 "WHERE id IN (SELECT id FROM third_ns WHERE id < 999 OFFSET 7 LIMIT 5) "
 		 "LEFT JOIN (SELECT * FROM second_ns WHERE NOT val = 10 OFFSET 2 LIMIT 1) ON main_ns.id = second_ns.uid "
 		 "LEFT JOIN (SELECT * FROM fourth_ns WHERE val IS NOT NULL) ON main_ns.uid = fourth_ns.id",
 		 Query{"main_ns"}
-			 .LeftJoin("id", "uid", CondEq, Query("second_ns").Not().Where("val", CondEq, 10).Limit(1).Offset(2))
-			 .Where("id", CondSet, Query{"third_ns"}.Select({"id"}).Where("id", CondLt, 999).Limit(5).Offset(7))
-			 .LeftJoin("uid", "id", CondEq, Query("fourth_ns").Where("val", CondAny, VariantArray{}))},
+			 .LeftJoin(Query("second_ns").Not().Where("val", CondEq, 10).Limit(1).Offset(2), "id", CondEq, "uid")
+			 .Where("id", CondSet, Query{"third_ns"}.Select("id").Where("id", CondLt, 999).Limit(5).Offset(7))
+			 .LeftJoin(Query("fourth_ns").Where("val", CondAny, VariantArray{}), "uid", CondEq, "id")},
 		{"SELECT * FROM ns WHERE ft = 'text' ORDER BY 'rank(ft, 10.0)'",
-		 Query{"ns"}.Where("ft", CondEq, "text").Sort("rank(ft, 10.0)", false)},
+		 Query{"ns"}.Where("ft", CondEq, "text").Sort("rank(ft, 10.0)", SortOrder::Asc)},
 		{"select ssdfs", Error{errParseSQL, "Expected 'FROM', but found '' in query, line: 1 column: 12 12"}},
 		{"SELECT * FROM ns WHERE flat_array_len(arr1) > 2", Query{"ns"}.Where(reindexer::functions::FlatArrayLen("arr1"), CondGt, 2)},
 		{"SELECT * FROM ns WHERE flat_array_len(arr2) = 12", Query{"ns"}.Where(reindexer::functions::FlatArrayLen("arr2"), CondEq, 12)},
@@ -375,9 +460,10 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		{"SELECT * FROM ns WHERE INNER JOIN (SELECT * FROM ns WHERE field1 > 10) ON ns.id IN ns.id OR INNER JOIN (SELECT * FROM ns WHERE "
 		 "field2 < 17) ON ns.id IN ns.id LEFT JOIN (SELECT * FROM ns WHERE field3 = 'media') ON ns.id = ns.id",
 		 Query{"ns"}
-			 .InnerJoin("id", "id", CondSet, Query{"ns"}.Where("field1", CondGt, 10))
-			 .OrInnerJoin("id", "id", CondSet, Query{"ns"}.Where("field2", CondLt, 17))
-			 .LeftJoin("id", "id", CondEq, Query{"ns"}.Where("field3", CondEq, "media"))}};
+			 .InnerJoin(Query{"ns"}.Where("field1", CondGt, 10), "id", CondSet, "id")
+			 .Or()
+			 .InnerJoin(Query{"ns"}.Where("field2", CondLt, 17), "id", CondSet, "id")
+			 .LeftJoin(Query{"ns"}.Where("field3", CondEq, "media"), "id", CondEq, "id")}};
 
 	for (const auto& [sql, expected, direction] : cases) {
 		if (std::holds_alternative<Query>(expected)) {
@@ -397,7 +483,7 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		} else {
 			const Error& expectedErr = std::get<Error>(expected);
 			try {
-				Query parsed = Query::FromSQL(sql);
+				std::ignore = Query::FromSQL(sql);
 				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nSQL: " << sql;
 			} catch (const Error& err) {
 				EXPECT_STREQ(err.what(), expectedErr.what()) << "\nSQL: " << sql;
@@ -448,7 +534,7 @@ TEST_F(QueriesApi, DslGenerateParse) {
    "aggregations": []
 }})",
 				   geomNs),
-			   Query{geomNs}.Where("ft", CondEq, "text").Sort("rank(ft, 2.0) + 5", false)},
+			   Query{geomNs}.Where("ft", CondEq, "text").Sort("rank(ft, 2.0) + 5", SortOrder::Asc)},
 			  {fmt::format(
 				   R"({{
    "namespace": "{}",
@@ -660,7 +746,7 @@ TEST_F(QueriesApi, DslGenerateParse) {
 }})",
 				   default_namespace, kFieldNameName, joinNs, kFieldNameName, kFieldNameId),
 			   Query(default_namespace)
-				   .Where(kFieldNameName, CondEq, Query(joinNs).Select({kFieldNameName}).Where(kFieldNameId, CondSet, {1, 10, 100}))},
+				   .Where(kFieldNameName, CondEq, Query(joinNs).Select(kFieldNameName).Where(kFieldNameId, CondSet, {1, 10, 100}))},
 			  {fmt::format(
 				   R"({{
    "namespace": "{}",
@@ -749,13 +835,13 @@ TEST_F(QueriesApi, DslGenerateParse) {
 	};
 	for (const auto& [dsl, expected, direction] : cases) {
 		if (std::holds_alternative<Query>(expected)) {
-			const Query& q = std::get<Query>(expected);
+			const Query& q = (std::get<Query>(expected));
 			if (direction & GEN) {
 				EXPECT_EQ(jsonPrettyPrint(q.GetJSON()), jsonPrettyPrint(dsl));
 			}
 			if (direction & PARSE) {
 				try {
-					Query parsed = Query::FromJSON(dsl);
+					auto parsed = Query::FromJSON(dsl);
 					EXPECT_EQ(parsed, q) << dsl;
 				} catch (const Error& err) {
 					ADD_FAILURE() << "Unexpected error: " << err.what() << "\nDSL: " << dsl;
@@ -765,7 +851,7 @@ TEST_F(QueriesApi, DslGenerateParse) {
 		} else {
 			const Error& expectedErr = std::get<Error>(expected);
 			try {
-				Query parsed = Query::FromJSON(dsl);
+				auto parsed = Query::FromJSON(dsl);
 				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nDSL: " << dsl;
 			} catch (const Error& err) {
 				EXPECT_STREQ(err.what(), expectedErr.what()) << "\nDSL: " << dsl;
@@ -803,69 +889,500 @@ TEST_F(QueriesApi, FunctionDslTest) {
 	checkFunctionDsl(R"({"function":{"name":"now","arguments":["sec"]}})", {}, FunctionNow, "now", {Variant("sec")});
 }
 
-TEST_F(QueriesApi, DslQueryFlatArrayFunctionTest) {
-	const std::string dsl = R"#({
-	  "namespace": "ns1",
-	  "limit": -1,
-	  "offset": 0,
-	  "req_total": "disabled",
-	  "explain": false,
-	  "type": "select",
-	  "select_with_rank": false,
-	  "select_filter": [],
-	  "select_functions": [],
-	  "sort": [],
-	  "filters": [
-		{
-		  "op": "and",
-		  "cond": "gt",
-		  "left_expression": {
-			"type": "expression",
-			"value": "flat_array_len(prices)"
-		  },
-		  "right_expression": {
-			"type": "values",
-			"value": 2
-		  }
-		}
-	  ],
-	  "merge_queries": [],
-	  "aggregations": []
-	})#";
-	Query q1{Query().FromJSON(dsl)};
-	Query q2{Query("ns1").Where(reindexer::functions::FlatArrayLen("prices"), CondGt, 2)};
-	ASSERT_EQ(q1, q2);
-	ASSERT_EQ(q1.GetJSON(), q2.GetJSON());
+TEST_F(QueriesApi, ArithmeticFilterTest) {
+	FillDefaultNamespace(0, 20, 0);
+	UpsertArithmeticSampleItem();
+
+	ExecuteAndVerify(
+		Query(default_namespace).Where(reindexer::expressions::ArithmeticExpression("1+2*3"), CondEq, VariantArray{Variant{7}}));
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2+1"), CondEq, VariantArray{Variant{21}}));
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "+" + kFieldNameYear + "+" + kFieldNameAge),
+				   CondEq, VariantArray{Variant{2030}}));
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(kFieldNameAge, CondEq, reindexer::expressions::ArithmeticExpression(std::string(kFieldNameYear) + "-2000")));
+	ExecuteAndVerify(Query(default_namespace)
+						 .Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondEq,
+								reindexer::expressions::ArithmeticExpression("(" + std::string(kFieldNameYear) + "-2000)*2")));
+	ExecuteAndVerify(Query(default_namespace)
+						 .Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondEq, kFieldNameYear));
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondLt, VariantArray{Variant{100}}));
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameYear) + "-2000"), CondGt, VariantArray{Variant{0}}));
 }
 
-TEST_F(QueriesApi, DslQueryNowFunctionTest) {
-	const std::string dsl = R"#({
-	   "namespace":"ns1",
-	   "limit":-1,
-	   "offset":0,
-	   "explain":false,
-	   "type":"select",
-	   "filters":[
-		  {
-			 "op": "and",
-			 "cond": "gt",
-			 "left_expression": {
-				"type": "field",
-				"value": "start_time"
-			 },
-			 "right_expression": {
-				"type": "expression",
-				"value": "now(msec)"
-			 }
-		  }
-	   ],
-	   "merge_queries":[],
-	   "aggregations":[]
-	})#";
-	Query q1{Query().FromJSON(dsl)};
-	Query q2{Query("ns1").Where("start_time", CondGt, reindexer::functions::Now(reindexer::TimeUnit::msec))};
-	ASSERT_EQ(q1, q2);
-	ASSERT_EQ(q1.GetJSON(), q2.GetJSON());
+TEST_F(QueriesApi, ArithmeticTrivialExpressionsFastPathTest) {
+	using reindexer::expressions::ArithmeticExpression;
+
+	FillDefaultNamespace(0, 20, 0);
+	UpsertArithmeticSampleItem();
+
+	const auto expectIndex = [this](Query&& query) {
+		QueryResults qr;
+		ExecuteAndVerify(query, qr);
+		EXPECT_NE(qr.GetExplainResults().find(",\"field\":\"year\","), std::string::npos) << qr.GetExplainResults();
+		EXPECT_NE(qr.GetExplainResults().find(",\"method\":\"index\","), std::string::npos) << qr.GetExplainResults();
+	};
+	expectIndex(Query(default_namespace).Where(kFieldNameYear, CondGt, ArithmeticExpression("2000")));
+	expectIndex(Query(default_namespace).Where(ArithmeticExpression("2000"), CondLt, ArithmeticExpression(kFieldNameYear)));
+	expectIndex(Query(default_namespace).Where(ArithmeticExpression("2000"), CondLt, std::string{kFieldNameYear}));
+	expectIndex(Query(default_namespace).Where(ArithmeticExpression(kFieldNameYear), CondGt, VariantArray{Variant{2000}}));
+
+	const auto expectIndexNot = [this](Query&& query) {
+		QueryResults qr;
+		ExecuteAndVerify(query, qr);
+		EXPECT_NE(qr.GetExplainResults().find("\"field\":\"not year\""), std::string::npos) << qr.GetExplainResults();
+		EXPECT_NE(qr.GetExplainResults().find(",\"method\":\"index\","), std::string::npos) << qr.GetExplainResults();
+	};
+	expectIndexNot(Query(default_namespace).Not().Where(ArithmeticExpression(kFieldNameYear), CondGt, VariantArray{Variant{2000}}));
+	expectIndexNot(Query(default_namespace)
+					   .Not()
+					   .OpenBracket()
+					   .Where(ArithmeticExpression(kFieldNameYear), CondGt, VariantArray{Variant{2000}})
+					   .CloseBracket());
+
+	const auto expectTwoFieldsComparison = [this](Query&& query) {
+		QueryResults qr;
+		ExecuteAndVerify(query, qr);
+		EXPECT_EQ(qr.GetExplainResults().find("\"type\":\"ArithmeticComparator\""), std::string::npos) << qr.GetExplainResults();
+	};
+	expectTwoFieldsComparison(Query(default_namespace).Where(ArithmeticExpression(kFieldNameAge), CondLt, std::string{kFieldNameYear}));
+	expectTwoFieldsComparison(Query(default_namespace).Where(kFieldNameAge, CondLt, ArithmeticExpression(kFieldNameYear)));
+	expectTwoFieldsComparison(
+		Query(default_namespace).Where(ArithmeticExpression(kFieldNameAge), CondLt, ArithmeticExpression(kFieldNameYear)));
+	{
+		QueryResults qr;
+		auto query = Query(default_namespace)
+						 .Not()
+						 .OpenBracket()
+						 .Not()
+						 .Where(ArithmeticExpression(kFieldNameYear), CondGt, VariantArray{Variant{2000}})
+						 .CloseBracket();
+		ExecuteAndVerify(query, qr);
+		EXPECT_EQ(qr.GetExplainResults().find("\"type\":\"ArithmeticComparator\""), std::string::npos) << qr.GetExplainResults();
+		EXPECT_NE(qr.GetExplainResults().find(",\"method\":\"index\","), std::string::npos) << qr.GetExplainResults();
+	}
+}
+
+TEST_F(QueriesApi, ArithmeticCachedTotalTest) {
+	FillDefaultNamespace(0, 20, 0);
+
+	auto query =
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondGe, VariantArray{Variant{10}});
+	ExecuteAndVerify(Query(query));
+	const auto expectedTotal = rt.Select(query).Count();
+	ASSERT_GT(expectedTotal, 0);
+
+	for (int i = 0; i < 2; ++i) {
+		QueryResults qr;
+		auto cachedQuery = query;
+		cachedQuery.CachedTotal().Limit(1);
+		const auto err = rt.reindexer->Select(cachedQuery, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.TotalCount(), expectedTotal);
+	}
+
+	{
+		auto totalQuery = query;
+		totalQuery.ReqTotal().Limit(1);
+		QueryResults qr;
+		const auto err = rt.reindexer->Select(totalQuery, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.TotalCount(), expectedTotal);
+	}
+}
+
+TEST_F(QueriesApi, ArithmeticConditionsTest) {
+	FillDefaultNamespace(0, 20, 0);
+	UpsertArithmeticSampleItem();
+
+	ExecuteAndVerify(Query(default_namespace)
+						 .Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondRange,
+								VariantArray::Create(20, 20)));
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondSet, VariantArray::Create(19, 20)));
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondAllSet, VariantArray::Create(20)));
+}
+
+TEST_F(QueriesApi, ArithmeticNowIsConsistentTest) {
+	FillDefaultNamespace(0, 5, 0);
+
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression("now(msec)-now(sec)*1000"), CondRange, VariantArray::Create(0, 999)));
+}
+
+TEST_F(QueriesApi, ArithmeticNowMixedWithFunctionIsConsistentTest) {
+	FillDefaultNamespace(0, 5, 0);
+
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(kFieldNameStartTime, CondLt, reindexer::functions::Now(reindexer::TimeUnit::nsec))
+			.Where(reindexer::expressions::ArithmeticExpression("now(msec)-now(sec)*1000"), CondRange, VariantArray::Create(0, 999)));
+}
+
+TEST_F(QueriesApi, ArithmeticBooleanTreeTest) {
+	FillDefaultNamespace(0, 20, 0);
+	UpsertArithmeticSampleItem();
+
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondEq, VariantArray{Variant{20}})
+			.Where(kFieldNameYear, CondEq, 2010)
+			.Or()
+			.Where(reindexer::expressions::ArithmeticExpression("1+1"), CondEq, VariantArray{Variant{3}}));
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Not()
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondEq, VariantArray{Variant{20}}));
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Not()
+			.OpenBracket()
+			.Not()
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondEq, VariantArray{Variant{20}})
+			.CloseBracket());
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.OpenBracket()
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondGe, VariantArray{Variant{0}})
+			.Where(kFieldNameYear, CondEq, 2010)
+			.CloseBracket()
+			.Or()
+			.Where(reindexer::expressions::ArithmeticExpression("1+1"), CondEq, VariantArray{Variant{2}}));
+}
+
+TEST_F(QueriesApi, ArithmeticEmptyAndNullFieldsTest) {
+	using reindexer::expressions::ArithmeticExpression;
+	const std::string kNs = "arith_empty_null_ns";
+	constexpr const char* kSparse = "sparse_age";
+	constexpr const char* kVal = "val";
+
+	rt.OpenNamespace(kNs);
+	DefineNamespaceDataset(kNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
+								 IndexDeclaration{kFieldNameAge, "hash", "int", IndexOpts(), 0},
+								 IndexDeclaration{kSparse, "hash", "int", IndexOpts().Sparse(), 0}});
+	setPkFields(kNs, {kFieldNameId});
+	addIndexFields(kNs, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
+	addIndexFields(kNs, kFieldNameAge, {{kFieldNameAge, reindexer::KeyValueType::Int{}}});
+	addIndexFields(kNs, kSparse, {{kSparse, reindexer::KeyValueType::Int{}}});
+
+	const auto upsertJson = [&](std::string_view json) {
+		Item item = NewItem(kNs);
+		const auto err = item.FromJSON(json);
+		ASSERT_TRUE(err.ok()) << err.what() << ' ' << json;
+		Upsert(kNs, item);
+		saveItem(std::move(item), kNs);
+	};
+	upsertJson(R"json({"id":1,"age":10})json");
+	upsertJson(R"json({"id":2,"age":10,"sparse_age":7})json");
+	upsertJson(R"json({"id":3,"age":10,"val":null})json");
+	upsertJson(R"json({"id":4,"age":10,"val":5})json");
+	upsertJson(R"json({"id":5,"age":10,"sparse_age":7,"val":5})json");
+
+	const auto executeAndExpectCount = [this](Query&& query, size_t expectedCount) {
+		QueryResults qr;
+		ExecuteAndVerify(query, qr);
+		EXPECT_EQ(qr.Count(), expectedCount) << query.GetSQL() << '\n' << qr.GetExplainResults();
+	};
+
+	ExecuteAndVerify(Query(kNs).Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondEq, VariantArray{Variant{8}}));
+	ExecuteAndVerify(Query(kNs).Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondRange, VariantArray::Create(0, 100)));
+	ExecuteAndVerify(Query(kNs).Where(kFieldNameAge, CondAllSet, ArithmeticExpression(std::string(kSparse) + "+1")));
+	{
+		QueryResults qr;
+		auto query = Query(kNs).Where(kFieldNameAge, CondAllSet, ArithmeticExpression(kSparse));
+		ExecuteAndVerify(query, qr);
+		EXPECT_EQ(qr.Count(), 0);
+		EXPECT_NE(qr.GetExplainResults().find("\"type\":\"ArithmeticComparator\""), std::string::npos) << qr.GetExplainResults();
+	}
+	ExecuteAndVerify(Query(kNs).Not().Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondGt, VariantArray{Variant{0}}));
+	ExecuteAndVerify(Query(kNs).Not().Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondGt, VariantArray{Variant{100}}));
+	{
+		QueryResults qr;
+		auto query = Query(kNs).Not().Where(ArithmeticExpression(kSparse), CondEq, VariantArray{Variant{7}});
+		ExecuteAndVerify(query, qr);
+		EXPECT_EQ(qr.Count(), 3);
+	}
+	{
+		QueryResults qr;
+		auto query = Query(kNs).Not().OpenBracket().Where(ArithmeticExpression(kSparse), CondEq, VariantArray{Variant{7}}).CloseBracket();
+		ExecuteAndVerify(query, qr);
+		EXPECT_EQ(qr.Count(), 3);
+	}
+	{
+		QueryResults qr;
+		auto query =
+			Query(kNs).Not().OpenBracket().Not().Where(ArithmeticExpression(kSparse), CondEq, VariantArray{Variant{7}}).CloseBracket();
+		ExecuteAndVerify(query, qr);
+		EXPECT_EQ(qr.Count(), 2);
+		EXPECT_EQ(qr.GetExplainResults().find("\"type\":\"ArithmeticComparator\""), std::string::npos) << qr.GetExplainResults();
+	}
+	ExecuteAndVerify(Query(kNs)
+						 .Not()
+						 .OpenBracket()
+						 .Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondEq, VariantArray{Variant{8}})
+						 .CloseBracket());
+	ExecuteAndVerify(Query(kNs)
+						 .Not()
+						 .OpenBracket()
+						 .Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondEq, VariantArray{Variant{100}})
+						 .CloseBracket());
+	ExecuteAndVerify(Query(kNs)
+						 .Not()
+						 .OpenBracket()
+						 .Not()
+						 .Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondEq, VariantArray{Variant{8}})
+						 .CloseBracket());
+	ExecuteAndVerify(Query(kNs)
+						 .Not()
+						 .OpenBracket()
+						 .Not()
+						 .Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondEq, VariantArray{Variant{100}})
+						 .CloseBracket());
+	ExecuteAndVerify(Query(kNs).Where(ArithmeticExpression(std::string(kVal) + "+1"), CondEq, VariantArray{Variant{6}}));
+	ExecuteAndVerify(Query(kNs).Not().Where(ArithmeticExpression(std::string(kVal) + "+1"), CondEq, VariantArray{Variant{6}}));
+	ExecuteAndVerify(Query(kNs).Not().Where(ArithmeticExpression(std::string(kVal) + "+1"), CondEq, VariantArray{Variant{0}}));
+	ExecuteAndVerify(Query(kNs).Not().Where(kVal, CondLt, ArithmeticExpression("now()")));
+	ExecuteAndVerify(Query(kNs).Not().Where(ArithmeticExpression("now()"), CondLt, kVal));
+
+	executeAndExpectCount(Query(kNs)
+							  .Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondEq, VariantArray{Variant{100}})
+							  .Or()
+							  .Where(kFieldNameAge, CondEq, Variant{10}),
+						  5);
+	executeAndExpectCount(Query(kNs)
+							  .Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondEq, VariantArray{Variant{100}})
+							  .Or()
+							  .Where(kFieldNameId, CondEq, Variant{999}),
+						  0);
+	executeAndExpectCount(Query(kNs)
+							  .Not()
+							  .OpenBracket()
+							  .Where(ArithmeticExpression(std::string(kSparse) + "+1"), CondEq, VariantArray{Variant{100}})
+							  .Or()
+							  .Where(kFieldNameId, CondEq, Variant{999})
+							  .CloseBracket(),
+						  5);
+}
+
+TEST_F(QueriesApi, ArithmeticJoinTest) {
+	FillDefaultNamespace(0, 40, 0);
+	FillTestJoinNamespace(0, 40);
+	ExecuteAndVerify(
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondGe, VariantArray{Variant{0}})
+			.InnerJoin(Query(joinNs).Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "+1"), CondGe,
+										   VariantArray{Variant{0}}),
+					   kFieldNameId, CondEq, kFieldNameId));
+}
+
+TEST_F(QueriesApi, ArithmeticUpdateAndDeleteTest) {
+	FillDefaultNamespace(0, 20, 0);
+	UpsertArithmeticSampleItem();
+
+	const Query filter =
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondEq, VariantArray{Variant{20}});
+	ExecuteAndVerify(Query(filter));
+	const auto matching = rt.Select(filter).Count();
+	ASSERT_GE(matching, 1);
+
+	auto updateQuery = filter;
+	EXPECT_EQ(rt.Update(updateQuery.Set(kFieldNameGenre, 7)), matching);
+	EXPECT_EQ(rt.Delete(Query(filter)), matching);
+	EXPECT_EQ(rt.Select(filter).Count(), 0);
+}
+
+TEST_F(QueriesApi, ArithmeticNowSharedAcrossComparatorsTest) {
+	FillDefaultNamespace(0, 5, 0);
+	ExecuteAndVerify(Query(default_namespace)
+						 .Where(reindexer::expressions::ArithmeticExpression("now(nsec)-now(nsec)"), CondEq, VariantArray{Variant{0}})
+						 .Where(reindexer::expressions::ArithmeticExpression("now(nsec)"), CondEq,
+								reindexer::expressions::ArithmeticExpression("now(nsec)")));
+}
+
+TEST_F(QueriesApi, ArithmeticNowSharesFunctionSnapshotTest) {
+	Query query = Query(default_namespace)
+					  .Where(kFieldNameStartTime, CondGt, reindexer::functions::Now(reindexer::TimeUnit::nsec))
+					  .Where(reindexer::expressions::ArithmeticExpression("now(nsec)"), CondGt, VariantArray{Variant{0}});
+
+	reindexer::functions::PrecomputedValues precomputedValues;
+	std::optional<Query> queryCopy;
+	reindexer::OptimizeFunctionEntries(query, queryCopy, precomputedValues);
+
+	ASSERT_TRUE(queryCopy.has_value());
+	// NOLINTBEGIN(bugprone-unchecked-optional-access) queryCopy / now snapshots checked with ASSERT_TRUE(...has_value()) above
+	const auto queryCopyImpl = Impl(*queryCopy);
+	ASSERT_TRUE(queryCopyImpl.ExecutionNowNsec().has_value());
+	ASSERT_TRUE(precomputedValues.GetNowNsec().has_value());
+	EXPECT_EQ(*queryCopyImpl.ExecutionNowNsec(), *precomputedValues.GetNowNsec());
+	ASSERT_TRUE(queryCopyImpl.Entries().Is<reindexer::QueryEntry>(0));
+	const auto& optimizedNow = queryCopyImpl.Entries().Get<reindexer::QueryEntry>(0).Values();
+	ASSERT_EQ(optimizedNow.size(), 1);
+	EXPECT_EQ(optimizedNow[0].As<int64_t>(), *queryCopyImpl.ExecutionNowNsec());
+	// NOLINTEND(bugprone-unchecked-optional-access)
+}
+
+TEST_F(QueriesApi, ArithmeticNowSnapshotIsSharedAcrossNestedQueries) {
+	using reindexer::expressions::ArithmeticExpression;
+
+	Query level3{"level3"};
+	level3.Where(ArithmeticExpression("now(nsec)"), CondGt, VariantArray{Variant{0}});
+	Query level2{"level2"};
+	level2.InnerJoin(std::move(level3), "id", CondEq, "id");
+
+	Query mergedChild{"merged_child"};
+	mergedChild.Where(ArithmeticExpression("now(nsec)"), CondGt, VariantArray{Variant{0}});
+	Query merged{"merged"};
+	merged.InnerJoin(std::move(mergedChild), "id", CondEq, "id");
+
+	Query sub{"sub"};
+	sub.Where(ArithmeticExpression("now(nsec)"), CondGt, VariantArray{Variant{0}});
+
+	Query level1{"level1"};
+	level1.InnerJoin(std::move(level2), "id", CondEq, "id");
+	level1.Merge(std::move(merged));
+	level1.Where(std::move(sub), CondAny, VariantArray{});
+
+	Query root{"root"};
+	root.Where("start_time", CondGt, reindexer::functions::Now(reindexer::TimeUnit::nsec));
+	root.InnerJoin(std::move(level1), "id", CondEq, "id");
+
+	reindexer::functions::PrecomputedValues precomputedValues;
+	std::optional<Query> queryCopy;
+	reindexer::OptimizeFunctionEntries(root, queryCopy, precomputedValues);
+
+	ASSERT_TRUE(queryCopy.has_value());
+	const auto snapshot = precomputedValues.GetNowNsec();
+	ASSERT_TRUE(snapshot.has_value());
+	// NOLINTBEGIN(bugprone-unchecked-optional-access) queryCopy / now snapshots checked with ASSERT_TRUE(...has_value()) above
+	const auto rootImpl = Impl(*queryCopy);
+	ASSERT_TRUE(rootImpl.Entries().Is<reindexer::QueryEntry>(0));
+	const auto& optimizedNow = rootImpl.Entries().Get<reindexer::QueryEntry>(0).Values();
+	ASSERT_EQ(optimizedNow.size(), 1);
+	EXPECT_EQ(optimizedNow[0].As<int64_t>(), *snapshot);
+	EXPECT_FALSE(rootImpl.ExecutionNowNsec().has_value());
+
+	ASSERT_EQ(rootImpl.JoinQueries().size(), 1);
+	const auto& level1Join = rootImpl.JoinQueries()[0];
+	EXPECT_EQ(JoinedImpl(level1Join).JoinEntries().size(), 1);
+	EXPECT_FALSE(Impl(level1Join).ExecutionNowNsec().has_value());
+
+	const auto level1Impl = Impl(level1Join);
+	ASSERT_EQ(level1Impl.JoinQueries().size(), 1);
+	const auto& level2Join = level1Impl.JoinQueries()[0];
+	EXPECT_FALSE(Impl(level2Join).ExecutionNowNsec().has_value());
+	ASSERT_EQ(Impl(level2Join).JoinQueries().size(), 1);
+	EXPECT_EQ(Impl(Impl(level2Join).JoinQueries()[0]).ExecutionNowNsec(), snapshot);
+
+	ASSERT_EQ(level1Impl.MergeQueries().size(), 1);
+	const auto& mergedQuery = level1Impl.MergeQueries()[0];
+	EXPECT_FALSE(Impl(mergedQuery).ExecutionNowNsec().has_value());
+	ASSERT_EQ(Impl(mergedQuery).JoinQueries().size(), 1);
+	EXPECT_EQ(Impl(Impl(mergedQuery).JoinQueries()[0]).ExecutionNowNsec(), snapshot);
+
+	ASSERT_EQ(Impl(level1Join).SubQueries().size(), 1);
+	EXPECT_EQ(Impl(Impl(level1Join).SubQueries()[0]).ExecutionNowNsec(), snapshot);
+	// NOLINTEND(bugprone-unchecked-optional-access)
+
+	Query onlyDeep{"only_deep_3"};
+	onlyDeep.Where(ArithmeticExpression("now(nsec)"), CondGt, VariantArray{Variant{0}});
+	Query onlyMid{"only_deep_2"};
+	onlyMid.InnerJoin(std::move(onlyDeep), "id", CondEq, "id");
+	Query onlyRoot{"only_deep_1"};
+	onlyRoot.InnerJoin(std::move(onlyMid), "id", CondEq, "id");
+
+	reindexer::functions::PrecomputedValues deepValues;
+	std::optional<Query> deepCopy;
+	reindexer::OptimizeFunctionEntries(onlyRoot, deepCopy, deepValues);
+	ASSERT_TRUE(deepCopy.has_value());
+	const auto deepSnapshot = deepValues.GetNowNsec();
+	ASSERT_TRUE(deepSnapshot.has_value());
+	// NOLINTNEXTLINE(bugprone-unchecked-optional-access) deepCopy checked with ASSERT_TRUE(...has_value()) above
+	const auto deepRoot = Impl(*deepCopy);
+	EXPECT_FALSE(deepRoot.ExecutionNowNsec().has_value());
+	ASSERT_EQ(deepRoot.JoinQueries().size(), 1);
+	const auto& deepMid = deepRoot.JoinQueries()[0];
+	EXPECT_FALSE(Impl(deepMid).ExecutionNowNsec().has_value());
+	ASSERT_EQ(Impl(deepMid).JoinQueries().size(), 1);
+	EXPECT_EQ(Impl(Impl(deepMid).JoinQueries()[0]).ExecutionNowNsec(), deepSnapshot);
+}
+
+// Explain reports the now() snapshot of an arithmetic comparator as "now_nsec".
+// The same select must use one value at the root and in a third-level join.
+TEST_F(QueriesApi, ArithmeticNowSnapshotMatchesDuringNestedSelect) {
+	FillDefaultNamespace(0, 3, 0);
+	FillTestJoinNamespace(0, 3);
+
+	Query level3{joinNs};
+	level3.Where(reindexer::expressions::ArithmeticExpression("now(nsec)"), CondGt, VariantArray{Variant{int64_t{0}}});
+
+	Query level2{joinNs};
+	level2.Explain();
+	level2.InnerJoin(std::move(level3), kFieldNameId, CondEq, kFieldNameId);
+
+	Query root{default_namespace};
+	root.Explain();
+	root.Where(reindexer::expressions::ArithmeticExpression("now(nsec)"), CondGt, VariantArray{Variant{int64_t{0}}});
+	root.InnerJoin(std::move(level2), kFieldNameId, CondEq, kFieldNameId);
+
+	const int64_t before = reindexer::getTimeNow(reindexer::TimeUnit::nsec);
+	QueryResults qr = rt.Select(root);
+	const int64_t after = reindexer::getTimeNow(reindexer::TimeUnit::nsec);
+	const std::string explain = qr.GetExplainResults();
+
+	std::vector<int64_t> snapshots;
+	constexpr std::string_view kKey = "\"now_nsec\":";
+	for (size_t pos = explain.find(kKey); pos != std::string::npos; pos = explain.find(kKey, pos + kKey.size())) {
+		snapshots.push_back(std::stoll(explain.substr(pos + kKey.size())));
+	}
+
+	ASSERT_GE(snapshots.size(), 2) << explain;
+	for (const int64_t snapshot : snapshots) {
+		EXPECT_EQ(snapshot, snapshots.front()) << explain;
+		EXPECT_GE(snapshot, before) << explain;
+		EXPECT_LE(snapshot, after) << explain;
+	}
+	EXPECT_NE(explain.find("\"field\":\"now(nsec) > 0\""), std::string::npos) << explain;
+}
+
+TEST_F(QueriesApi, ArithmeticNowBypassesCachedTotalTest) {
+	FillDefaultNamespace(0, 5, 0);
+	const Query query = Query(default_namespace)
+							.Where(reindexer::expressions::ArithmeticExpression("now(nsec)"), CondGt, VariantArray{Variant{0}})
+							.Where(reindexer::expressions::ArithmeticExpression("start_time + 1"), CondGt, VariantArray{Variant{0}})
+							.CachedTotal()
+							.Limit(1);
+	const auto before = getMemStat(*rt.reindexer, default_namespace)["query_cache.items_count"].As<int64_t>();
+
+	for (int i = 0; i < 5; ++i) {
+		const auto qr = rt.Select(query);
+		ASSERT_EQ(qr.TotalCount(), 5);
+	}
+	const auto after = getMemStat(*rt.reindexer, default_namespace)["query_cache.items_count"].As<int64_t>();
+	EXPECT_EQ(after, before);
+}
+
+TEST_F(QueriesApi, ArithmeticDslRoundTripTest) {
+	using reindexer::expressions::ArithmeticExpression;
+	const auto query = Query(default_namespace)
+						   .Where(ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondEq, VariantArray{Variant{20}})
+						   .Where(kFieldNameYear, CondLt, ArithmeticExpression(std::string(kFieldNameAge) + "+2000"))
+						   .Where(ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondGe,
+								  ArithmeticExpression(std::string(kFieldNameYear) + "-2000"));
+	EXPECT_EQ(Query::FromJSON(query.GetJSON()), query);
 }
 
 static std::vector<int> generateForcedSortOrder(int maxValue, size_t size) {
@@ -888,27 +1405,27 @@ TEST_F(QueriesApi, ForcedSortOffsetTest) {
 			generateForcedSortOrder(forcedSortOffsetMaxValue * 1.1, rand() % static_cast<int>(forcedSortOffsetNsSize * 1.1));
 		const size_t offset = rand() % static_cast<size_t>(forcedSortOffsetNsSize * 1.1);
 		const size_t limit = rand() % static_cast<size_t>(forcedSortOffsetNsSize * 1.1);
-		const bool desc = rand() % 2;
+		const auto sortOrder = (rand() % 2) ? SortOrder::Desc : SortOrder::Asc;
 		// Single column sort
-		auto expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, desc, forcedSortOrder, First);
-		ExecuteAndVerify(Query(forcedSortNs).Sort(kFieldNameColumnHash, desc, forcedSortOrder).Offset(offset).Limit(limit),
+		auto expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, sortOrder, forcedSortOrder, First);
+		ExecuteAndVerify(Query(forcedSortNs).Sort(kFieldNameColumnHash, sortOrder, forcedSortOrder).Offset(offset).Limit(limit),
 						 kFieldNameColumnHash, expectedResults);
-		expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, desc, forcedSortOrder, Second);
-		ExecuteAndVerify(Query(forcedSortNs).Sort(kFieldNameColumnTree, desc, forcedSortOrder).Offset(offset).Limit(limit),
+		expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, sortOrder, forcedSortOrder, Second);
+		ExecuteAndVerify(Query(forcedSortNs).Sort(kFieldNameColumnTree, sortOrder, forcedSortOrder).Offset(offset).Limit(limit),
 						 kFieldNameColumnTree, expectedResults);
 		// Multicolumn sort
-		const bool desc2 = rand() % 2;
-		auto expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, desc, desc2, forcedSortOrder, First);
+		const auto sortOrder2 = (rand() % 2) ? SortOrder::Desc : SortOrder::Asc;
+		auto expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, sortOrder, sortOrder2, forcedSortOrder, First);
 		ExecuteAndVerify(Query(forcedSortNs)
-							 .Sort(kFieldNameColumnHash, desc, forcedSortOrder)
-							 .Sort(kFieldNameColumnTree, desc2)
+							 .Sort(kFieldNameColumnHash, sortOrder, forcedSortOrder)
+							 .Sort(kFieldNameColumnTree, sortOrder2)
 							 .Offset(offset)
 							 .Limit(limit),
 						 kFieldNameColumnHash, expectedResultsMult.first, kFieldNameColumnTree, expectedResultsMult.second);
-		expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, desc, desc2, forcedSortOrder, Second);
+		expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, sortOrder, sortOrder2, forcedSortOrder, Second);
 		ExecuteAndVerify(Query(forcedSortNs)
-							 .Sort(kFieldNameColumnTree, desc2, forcedSortOrder)
-							 .Sort(kFieldNameColumnHash, desc)
+							 .Sort(kFieldNameColumnTree, sortOrder2, forcedSortOrder)
+							 .Sort(kFieldNameColumnHash, sortOrder)
 							 .Offset(offset)
 							 .Limit(limit),
 						 kFieldNameColumnHash, expectedResultsMult.first, kFieldNameColumnTree, expectedResultsMult.second);
@@ -918,7 +1435,8 @@ TEST_F(QueriesApi, ForcedSortOffsetTest) {
 TEST_F(QueriesApi, ForcedSortByValuesOfWrongTypes) {
 	FillForcedSortNamespace();
 	reindexer::QueryResults qr;
-	auto query = Query(forcedSortNs).Sort(kFieldNameColumnString, true, std::vector{Variant{VariantArray{Variant{1}, Variant{3}}}});
+	auto query =
+		Query(forcedSortNs).Sort(kFieldNameColumnString, SortOrder::Desc, std::vector{Variant{VariantArray{Variant{1}, Variant{3}}}});
 	const Error err = rt.reindexer->Select(query, qr);
 	ASSERT_FALSE(err.ok()) << query.GetSQL();
 }
@@ -972,29 +1490,25 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 		try {
 			reindexer::Query q(tLeft);
 			reindexer::Query qr(tRight);
-			q.LeftJoin(iLeft, iRight, c.first, qr);
+			q.LeftJoin(std::move(qr), iLeft, c.first, iRight);
 
 			{
 				std::string sqlQCmp = createQuery(tLeft, tRight, iLeft, iRight, c.first);
-				reindexer::WrSerializer wrSer;
-				q.GetSQL(wrSer);
-				ASSERT_EQ(sqlQCmp, wrSer.Slice());
+				ASSERT_EQ(sqlQCmp, q.GetSQL());
 			}
 
 			{
 				std::string sqlQ = createQuery(tLeft, tRight, iLeft, iRight, c.first);
 				Query qSql = Query::FromSQL(sqlQ);
-
-				reindexer::WrSerializer wrSer;
-				qSql.GetSQL(wrSer);
-				ASSERT_EQ(sqlQ, wrSer.Slice());
+				ASSERT_EQ(sqlQ, qSql.GetSQL());
 			}
+
 			{
 				std::string sqlQ = createQuery(tRight, tLeft, iRight, iLeft, c.second);
-				Query qSql = Query::FromSQL(sqlQ);
+				auto qSql = Query::FromSQL(sqlQ);
 				ASSERT_EQ(q.GetJSON(), qSql.GetJSON());
 				reindexer::WrSerializer wrSer;
-				qSql.GetSQL(wrSer);
+				Impl(qSql).GetSQL(wrSer);
 				ASSERT_EQ(sqlQ, wrSer.Slice());
 			}
 		} catch (const Error& e) {
@@ -1056,8 +1570,7 @@ TEST_F(QueriesApi, AllSet) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	Upsert(nsName, item);
-	Query q{nsName};
-	q.Where("array", CondAllSet, {0, 1, 2});
+	const auto q = Query(nsName).Where("array", CondAllSet, {0, 1, 2});
 	auto qr = rt.Select(q);
 	EXPECT_EQ(qr.Count(), 1);
 }
@@ -1077,8 +1590,8 @@ TEST_F(QueriesApi, SetByTreeIndex) {
 		saveItem(std::move(item), nsName);
 	}
 
-	Query q{nsName};
-	q.Where("id", CondSet, {rand() % kMaxID, rand() % kMaxID, rand() % kMaxID, rand() % kMaxID}).Sort("id", false);
+	const auto q =
+		Query(nsName).Where("id", CondSet, {rand() % kMaxID, rand() % kMaxID, rand() % kMaxID, rand() % kMaxID}).Sort("id", SortOrder::Asc);
 	{
 		QueryResults qr;
 		ExecuteAndVerifyWithSql(q, qr);
@@ -1258,9 +1771,9 @@ TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
 		}
 	}
 
-	Query q = Query{nsNames[0]};
-	q.Join(LeftJoin, "join_field", "join_field", CondEq, OpAnd, Query(nsNames[1]));
-	q.Join(LeftJoin, "id", "join_field", CondEq, OpAnd, Query(nsNames[2]));
+	const auto q = Query{nsNames[0]}
+					   .Join(LeftJoin, Query(nsNames[1]), OpAnd, "join_field", CondEq, "join_field")
+					   .Join(LeftJoin, Query(nsNames[2]), OpAnd, "id", CondEq, "join_field");
 	auto qr = rt.Select(q);
 
 	for (auto& ordering : std::array<reindexer::CsvOrdering, 2>{qr.GetSchema(0)->MakeCsvTagOrdering(qr.GetTagsMatcher(0)),
@@ -1374,7 +1887,7 @@ TEST_F(QueriesApi, ConvertStringToDoubleDuringSorting) {
 	addItem(13, " .5 and something", " .5 and something");
 
 	for (const auto& f : {"str_idx"s, "str_fld"s}) {
-		Query q = Query{nsName}.Where("id", CondLt, 5).Sort("2 * "s + f, false).Strict(StrictModeNames);
+		Query q = Query{nsName}.Where("id", CondLt, 5).Sort("2 * "s + f, SortOrder::Asc).Strict(StrictModeNames);
 		auto qr = rt.Select(q);
 		int prevId = 10;
 		for (auto& it : qr) {
@@ -1388,7 +1901,7 @@ TEST_F(QueriesApi, ConvertStringToDoubleDuringSorting) {
 	}
 
 	for (const auto& f : {"str_idx"s, "str_fld"s}) {
-		Query q = Query{nsName}.Where("id", CondGt, 5).Sort("2 * "s + f, false).Strict(StrictModeNames);
+		Query q = Query{nsName}.Where("id", CondGt, 5).Sort("2 * "s + f, SortOrder::Asc).Strict(StrictModeNames);
 		reindexer::QueryResults qr;
 		auto err = rt.reindexer->Select(q, qr);
 		EXPECT_FALSE(err.ok());
@@ -1455,10 +1968,10 @@ void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const re
 	}
 
 	const auto check = [&](CondType cond, std::vector<int> values, const char* expectedErr = nullptr) {
-		for (bool desc : {true, false}) {
+		for (auto sortOrder : {SortOrder::Asc, SortOrder::Desc}) {
 			for (const char* sortField : {"value", "object.nested_value"}) {
 				auto q = qTemplate;
-				q.Where("id", cond, values).Sort(sortPrefix + sortField, desc);
+				q.Where("id", cond, values).Sort(sortPrefix + sortField, sortOrder);
 				reindexer::QueryResults qr;
 				const auto err = rt.reindexer->Select(q, qr);
 				if (expectedErr) {
@@ -1486,14 +1999,14 @@ void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const re
 						case CondKnn:
 							assert(0);
 					}
-					int prevId = 10000 * (desc ? 1 : -1);
+					int prevId = 10000 * (sortOrder == SortOrder::Desc ? 1 : -1);
 					auto prevIt = qr.end();
 					for (auto& it : qr) {
 						ASSERT_TRUE(it.Status().ok()) << it.Status().what() << print(q, it, prevIt, qr);
 						const auto item = it.GetItem();
 						ASSERT_TRUE(item.Status().ok()) << item.Status().what() << print(q, it, prevIt, qr);
 						const auto currId = item["id"].As<int>();
-						if (desc) {
+						if (sortOrder == SortOrder::Desc) {
 							EXPECT_LT(currId, prevId) << print(q, it, prevIt, qr);
 						} else {
 							EXPECT_GT(currId, prevId) << print(q, it, prevIt, qr);
@@ -1536,7 +2049,7 @@ TEST_F(QueriesApi, SortByJoinedNsDifferentTypes) {
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	}
 
-	sortByNsDifferentTypesImpl(nsRight, Query{nsMain}.InnerJoin("id", "id", CondEq, Query{nsRight}), nsRight + '.');
+	sortByNsDifferentTypesImpl(nsRight, Query{nsMain}.InnerJoin(Query{nsRight}, "id", CondEq, "id"), nsRight + '.');
 }
 
 TEST_F(QueriesApi, SortByFieldWithDifferentTypes) {
@@ -1558,11 +2071,11 @@ TEST_F(QueriesApi, SerializeDeserialize) {
 		Query(default_namespace).Not().Where(Query(default_namespace), CondEmpty, VariantArray{}),
 		Query(default_namespace).Where(kFieldNameId, CondLt, Query(default_namespace).Aggregate(AggAvg, {kFieldNameId})),
 		Query(default_namespace)
-			.Where(kFieldNameGenre, CondSet, Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40})),
+			.Where(kFieldNameGenre, CondSet, Query(joinNs).Select(kFieldNameGenre).Where(kFieldNameId, CondSet, {10, 20, 30, 40})),
 
-		Query(default_namespace).Where(Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondGt, 10), CondSet, {10, 20, 30, 40}),
+		Query(default_namespace).Where(Query(joinNs).Select(kFieldNameGenre).Where(kFieldNameId, CondGt, 10), CondSet, {10, 20, 30, 40}),
 		Query(default_namespace)
-			.Where(Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondGt, 10).Offset(1), CondSet, {10, 20, 30, 40}),
+			.Where(Query(joinNs).Select(kFieldNameGenre).Where(kFieldNameId, CondGt, 10).Offset(1), CondSet, {10, 20, 30, 40}),
 		Query(default_namespace)
 			.Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).Aggregate(AggMax, {kFieldNameGenre}), CondRange, {48, 50}),
 		Query(default_namespace).Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).ReqTotal(), CondGt, {50}),
@@ -1572,7 +2085,7 @@ TEST_F(QueriesApi, SerializeDeserialize) {
 			.Not()
 			.Where(Query(default_namespace).Where(kFieldNameGenre, CondEq, 5), CondAny, VariantArray{})
 			.Or()
-			.Where(kFieldNameGenre, CondSet, Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
+			.Where(kFieldNameGenre, CondSet, Query(joinNs).Select(kFieldNameGenre).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
 			.Not()
 			.OpenBracket()
 			.Where(kFieldNameYear, CondRange, {2001, 2020})
@@ -1599,23 +2112,219 @@ TEST_F(QueriesApi, SerializeDeserialize) {
 			.CloseBracket(),
 
 		Query(default_namespace)
-			.Where(kCompositeFieldIdTemp, CondEq, Query(default_namespace).Select({kCompositeFieldIdTemp}).Where(kFieldNameId, CondGt, 10)),
+			.Where(kCompositeFieldIdTemp, CondEq, Query(default_namespace).Select(kCompositeFieldIdTemp).Where(kFieldNameId, CondGt, 10)),
 		Query(default_namespace)
-			.Where(Query(default_namespace).Select({kCompositeFieldUuidName}).Where(kFieldNameId, CondGt, 10), CondRange,
+			.Where(Query(default_namespace).Select(kCompositeFieldUuidName).Where(kFieldNameId, CondGt, 10), CondRange,
 				   {VariantArray::Create(reindexer_tests_tools::nilUuid(), RandString()),
 					VariantArray::Create(reindexer_tests_tools::randUuid(), RandString())}),
 		Query(default_namespace)
-			.Where(Query(default_namespace).Select({kCompositeFieldAgeGenre}).Where(kFieldNameId, CondGt, 10).Limit(10), CondLe,
+			.Where(Query(default_namespace).Select(kCompositeFieldAgeGenre).Where(kFieldNameId, CondGt, 10).Limit(10), CondLe,
 				   {Variant(VariantArray::Create(rand() % 50, rand() % 50))}),
+
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2+1"), CondEq, VariantArray{Variant{21}}),
+		Query(default_namespace)
+			.Where(kFieldNameAge, CondLt, reindexer::expressions::ArithmeticExpression(std::string(kFieldNameYear) + "-2000")),
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondGe,
+				   reindexer::expressions::ArithmeticExpression("(" + std::string(kFieldNameYear) + "-2000)*2")),
+		Query(default_namespace)
+			.Where(reindexer::expressions::ArithmeticExpression("flat_array_len(" + std::string(kFieldNamePackages) + ")+1"), CondGt,
+				   kFieldNameYear),
+		Query(default_namespace)
+			.Where(kFieldNameGenre, CondEq, 5)
+			.Or()
+			.OpenBracket()
+			.Not()
+			.Where(reindexer::expressions::ArithmeticExpression("now(sec)-" + std::string(kFieldNameAge)), CondLt,
+				   VariantArray{Variant{100}})
+			.CloseBracket(),
 	};
 	for (Query& q : queries) {
 		reindexer::WrSerializer wser;
 		BindingCapabilities caps{kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs |
 								 kBindingCapabilityIncarnationTags | kBindingCapabilityComplexRank | kBindingCapabilityQueryFormatV2};
-		q.Serialize(wser, Normal, caps.GetQueryFormat());
+		Impl(q).Serialize(wser, Normal, caps.GetQueryFormat());
 		reindexer::Serializer rser(wser.Slice());
-		const auto deserializedQuery = Query::Deserialize(rser, caps.GetQueryFormat());
+		const auto deserializedQuery = QueryImpl::Deserialize(rser, caps.GetQueryFormat());
 		EXPECT_EQ(q, deserializedQuery) << "Origin query:\n" << q.GetSQL() << "\nDeserialized query:\n" << deserializedQuery.GetSQL();
+	}
+}
+
+TEST_F(QueriesApi, DeserializeRejectsBogusValuesCount) {
+	auto expectParseBin = [](reindexer::WrSerializer& wser, std::string_view messagePart, int code = errParseBin) {
+		reindexer::Serializer rser(wser.Slice());
+		try {
+			std::ignore = QueryImpl::Deserialize(rser, QueryFormatV2);
+			FAIL() << "expected deserialization error";
+		} catch (const reindexer::Error& err) {
+			EXPECT_EQ(err.code(), code) << err.what();
+			EXPECT_THAT(err.what(), ::testing::HasSubstr(messagePart)) << err.what();
+		}
+	};
+
+	{
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryExpressions);
+		wser.PutVarUint(ExpressionTypeArithmetic);
+		wser.PutVString(std::string(kFieldNameAge) + "*2");
+		wser.PutVarUint(OpAnd);
+		wser.PutVarUint(CondEq);
+		wser.PutVarUint(ExpressionTypeValues);
+		wser.PutVarUint(1'000'000'000'000'000ULL);
+		wser.PutVarUint(QueryEnd);
+		wser.PutVarUint(0);
+		wser.PutVarUint(0);
+		expectParseBin(wser, "values count");
+	}
+	{
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryCondition);
+		wser.PutVString(kFieldNameAge);
+		wser.PutVarUint(OpAnd);
+		wser.PutVarUint(CondEq);
+		wser.PutVarUint(1'000'000'000'000'000ULL);
+		wser.PutVarUint(QueryEnd);
+		wser.PutVarUint(0);
+		wser.PutVarUint(0);
+		expectParseBin(wser, "values count");
+	}
+	{
+		// The buffer ends on the missing second value. A trailing QueryEnd cannot stand in for it:
+		// QueryEnd and KeyValueType::Tuple are both 11, so that byte would be parsed as a tuple.
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryExpressions);
+		wser.PutVarUint(ExpressionTypeArithmetic);
+		wser.PutVString(std::string(kFieldNameAge) + "*2");
+		wser.PutVarUint(OpAnd);
+		wser.PutVarUint(CondEq);
+		wser.PutVarUint(ExpressionTypeValues);
+		wser.PutVarUint(2);
+		wser.PutVariant(reindexer::Variant{1});
+		const auto missingValueAt = wser.Slice().size();
+		expectParseBin(wser, fmt::format("pos={},len={}", missingValueAt, missingValueAt));
+	}
+	{
+		// One value is a tuple. The outer count is 1, so the unread-byte check on the value list does not see the
+		// inner count. That count must be rejected before reserve.
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryExpressions);
+		wser.PutVarUint(ExpressionTypeArithmetic);
+		wser.PutVString(std::string(kFieldNameAge) + "*2");
+		wser.PutVarUint(OpAnd);
+		wser.PutVarUint(CondEq);
+		wser.PutVarUint(ExpressionTypeValues);
+		wser.PutVarUint(1);
+		wser.PutVarUint(reindexer::KeyValueType{reindexer::KeyValueType::Tuple{}}.ToNumber());
+		wser.PutVarUint(1'000'000'000'000'000ULL);
+		expectParseBin(wser, "values count");
+	}
+	{
+		reindexer::VariantArray point;
+		point.emplace_back(1);
+		point.emplace_back(2);
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryExpressions);
+		wser.PutVarUint(ExpressionTypeArithmetic);
+		wser.PutVString(std::string(kFieldNameAge) + "*2");
+		wser.PutVarUint(OpAnd);
+		wser.PutVarUint(CondEq);
+		wser.PutVarUint(ExpressionTypeValues);
+		wser.PutVarUint(1);
+		wser.PutVariant(reindexer::Variant{point});
+		wser.PutVarUint(QueryEnd);
+		wser.PutVarUint(0);
+		wser.PutVarUint(0);
+		reindexer::Serializer rser(wser.Slice());
+		const Query expected = Query(default_namespace)
+								   .Where(reindexer::expressions::ArithmeticExpression(std::string(kFieldNameAge) + "*2"), CondEq,
+										  reindexer::VariantArray{reindexer::Variant{point}});
+		EXPECT_EQ(QueryImpl::Deserialize(rser, QueryFormatV2), expected);
+	}
+	{
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryExpressions);
+		wser.PutVarUint(ExpressionTypeExpression);
+		wser.PutVarUint(1'000'000'000'000'000ULL);
+		expectParseBin(wser, "values count");
+	}
+	{
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryAggregation);
+		wser.PutVarUint(AggSum);
+		wser.PutVarUint(1'000'000'000'000'000ULL);
+		expectParseBin(wser, "values count");
+	}
+	{
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QuerySortIndex);
+		wser.PutVString(kFieldNameAge);
+		wser.PutVarUint(0);
+		wser.PutVarUint(1'000'000'000'000'000ULL);
+		expectParseBin(wser, "values count");
+	}
+	{
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryEnd);
+		wser.PutVarUint(1'000'000'000'000'000ULL);
+		expectParseBin(wser, "values count");
+	}
+	{
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryEnd);
+		wser.PutVarUint(0);
+		wser.PutVarUint(1'000'000'000'000'000ULL);
+		expectParseBin(wser, "values count");
+	}
+	{
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryExpressions);
+		wser.PutVarUint(99);
+		expectParseBin(wser, "not supported");
+	}
+	{
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryExpressions);
+		wser.PutVarUint(ExpressionTypeArithmetic);
+		wser.PutVString("");
+		expectParseBin(wser, "Empty WHERE arithmetic expression", errParams);
+	}
+	{
+		reindexer::WrSerializer wser;
+		wser.PutVarUint(QueryFormatV2);
+		wser.PutVString(default_namespace);
+		wser.PutVarUint(QueryExpressions);
+		wser.PutVarUint(ExpressionTypeValues);
+		wser.PutVarUint(0);
+		wser.PutVarUint(OpAnd);
+		wser.PutVarUint(CondEq);
+		wser.PutVarUint(ExpressionTypeValues);
+		wser.PutVarUint(0);
+		expectParseBin(wser, "Unsupported type of left expression", errLogic);
 	}
 }
 
@@ -1695,7 +2404,8 @@ TEST_F(QueriesApi, EmptyResultForceSortedWithLimitTest) {
 		ASSERT_EQ(qr.Count(), expected);
 	};
 
-	auto query = Query(default_namespace).Where(kFieldNameIsDeleted, CondEq, {true}).Sort(kFieldNameGenre, false, {1, 2, 3}).Limit(10);
+	auto query =
+		Query(default_namespace).Where(kFieldNameIsDeleted, CondEq, {true}).Sort(kFieldNameGenre, SortOrder::Asc, {1, 2, 3}).Limit(10);
 	check(query, 10);
 	query.Where(kFieldNameIsDeleted, CondEq, {false});
 	check(query, 0);
@@ -1713,8 +2423,10 @@ TEST_F(QueriesApi, ExplainWithCacheTest) {
 
 	AwaitIndexOptimization(default_namespace);
 
-	Query q = Query{default_namespace};
-	q.Where(kFieldNameAge, CondEq, {18, 19, 20, 21}).Where(kFieldNameName, CondEq, "name").Sort(kFieldNameName, false);
+	const auto q = Query{default_namespace}
+					   .Where(kFieldNameAge, CondEq, {18, 19, 20, 21})
+					   .Where(kFieldNameName, CondEq, "name")
+					   .Sort(kFieldNameName, SortOrder::Asc);
 	{
 		QueryResults qr;
 		ExecuteAndVerifyWithSql(q, qr);
@@ -1739,7 +2451,7 @@ TEST_F(QueriesApi, DistinctWithForcedSortAndLimitTest) {
 
 	VariantArray forceSortOrder{Variant{5}, Variant{7}, Variant{1}};
 
-	auto query = Query(default_namespace).Distinct(kFieldNameAge).Sort(kFieldNameId, false, forceSortOrder).Limit(5);
+	auto query = Query(default_namespace).Distinct(kFieldNameAge).Sort(kFieldNameId, SortOrder::Asc, forceSortOrder).Limit(5);
 
 	int expectedCnt = 4;
 	QueryResults qr = rt.Select(query);
@@ -1902,7 +2614,7 @@ TEST_F(QueriesApi, FlatArrayFunctionSingularFieldTest) {
 
 	QueryResults qrYearSparseNull{
 		rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNameYearSparse), CondEq, 0))};
-	ASSERT_EQ(qrYearSparse.Count(), 500);
+	ASSERT_EQ(qrYearSparseNull.Count(), 500);
 
 	QueryResults qrYearNonIndexed{
 		rt.Select(Query(default_namespace).Where(reindexer::functions::FlatArrayLen(kFieldNameYear + nonIndexPrefix), CondEq, 1))};
@@ -2000,11 +2712,11 @@ TEST_F(QueriesApi, TestUpdateFieldWithFlatArrayLen) {
 	}
 	auto qr = rt.ExecSQL(
 		fmt::format("update {} set {} = flat_array_len({}) where id >= 49;", default_namespace, kFieldNameAge, kFieldNamePackages));
-	ASSERT_GT(qr.Count(), 50);
+	ASSERT_EQ(qr.Count(), 51);
 	for (auto it : qr) {
 		auto item = it.GetItem();
 		Variant age = item[kFieldNameAge];
-		ASSERT_LE(age.As<int>(), 5);
+		ASSERT_EQ(age.As<int>(), 5);
 	}
 }
 

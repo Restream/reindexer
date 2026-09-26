@@ -65,11 +65,11 @@ bool Writer::TryUpdateNextPart(RLockT&& lock, AsyncStorage& storage, UpdateInfo&
 	if (!ns_.storage_.IsValid()) {
 		return false;
 	}
-	const unsigned regularIndexes = ns_.indexes_.firstSparsePos();
+	const unsigned regularIndexes = ns_.indexes().firstSparsePos();
 	while (curIndex_ < regularIndexes) {
 		auto counterGuard = MakeScopeGuard([this]() noexcept { ++curIndex_; });
 
-		auto idx = ns_.indexes_[curIndex_].get();
+		auto idx = ns_.indexes()[curIndex_].get();
 		if (auto ann = dynamic_cast<FloatVectorIndex*>(idx); ann) {
 			if (updateInfo.LastUpdateTime(ann->Name()) == lastUpdateTime_) {
 				continue;
@@ -124,12 +124,12 @@ bool Writer::TryUpdateNextPart(RLockT&& lock, AsyncStorage& storage, UpdateInfo&
 }
 
 std::pair<int, const Index*> Writer::getPKField() const noexcept {
-	for (unsigned i = 0, size = ns_.indexes_.size(); i < size; ++i) {
-		auto idx = ns_.indexes_[i].get();
+	for (unsigned i = 0, size = ns_.indexes().size(); i < size; ++i) {
+		auto idx = ns_.indexes()[i].get();
 		const auto& opts = idx->Opts();
 		if (opts.IsPK() && !opts.IsSparse() && !opts.IsArray()) {
 			// Array or Sparse PK is not expected in this writer (currently rx does not support such PKs either)
-			const Index* pkIndex = ns_.indexes_[i].get();
+			const Index* pkIndex = ns_.indexes()[i].get();
 			const FieldsSet& pkFields = pkIndex->Fields();
 			for (const int f : pkFields) {
 				if (f < 0) {
@@ -162,7 +162,7 @@ Writer::StorageCacheWriteResult Writer::writeSingleIndexCache(FloatVectorIndex& 
 		if (size_t(id.ToNumber()) >= ns_.items_.size() || ns_.items_[id].IsFree()) [[unlikely]] {
 			throw Error(errLogic, "Item ID {} does not exist", id);
 		}
-		ConstPayload pl(ns_.payloadType_, ns_.items_[id]);
+		ConstPayload pl(ns_.payloadType(), ns_.items_[id]);
 		pl.Get(pkField, ret);
 		return ret;
 	};
@@ -171,7 +171,7 @@ Writer::StorageCacheWriteResult Writer::writeSingleIndexCache(FloatVectorIndex& 
 		if (size_t(id.ToNumber()) >= ns_.items_.size() || ns_.items_[id].IsFree()) [[unlikely]] {
 			throw Error(errLogic, "Item ID {} does not exist", id);
 		}
-		ConstPayload pl(ns_.payloadType_, ns_.items_[id]);
+		ConstPayload pl(ns_.payloadType(), ns_.items_[id]);
 		for (const int f : pkFields) {
 			pl.Get(f, tmp);
 			ret.emplace_back(tmp[0]);

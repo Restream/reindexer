@@ -7,8 +7,8 @@ namespace reindexer {
 
 TransactionContext::TransactionContext(const NamespaceImpl& ns, const LocalTransaction& tx) {
 	const size_t expectedRows = tx.GetSteps().size();
-	for (size_t field = 1, total = ns.indexes_.firstCompositePos(); field < total; ++field) {
-		Index& idx = *ns.indexes_[field];
+	for (size_t field = 1, total = ns.indexes().firstCompositePos(); field < total; ++field) {
+		Index& idx = *ns.indexes()[field];
 		if (idx.IsSupportMultithreadTransactions()) {
 			indexesData_.emplace_back(field, expectedRows, FloatVectorDimension(idx.Opts().FloatVector().Dimension()));
 		}
@@ -33,21 +33,21 @@ void TransactionConcurrentInserter::operator()(const TransactionContext& ctx) no
 #define kThreadErrorFormat "[{}] Unable to concurrently index item: '{}'"
 
 void TransactionConcurrentInserter::threadFn(std::atomic<size_t>& nextId, const TransactionContext& ctx) noexcept {
-	const PayloadType pt(ns_.payloadType_);
+	const PayloadType pt(ns_.payloadType());
 
 	for (size_t i = nextId.fetch_add(1, std::memory_order_relaxed); i < ctx.Buckets(); i = nextId.fetch_add(1, std::memory_order_relaxed)) {
 		if (auto [field, vec] = ctx[i]; vec->IsValid()) {
 			try {
 				assertrx_dbg(field > 0);
-				assertrx_dbg(field < size_t(ns_.indexes_.firstCompositePos()));
-				assertrx_dbg(dynamic_cast<FloatVectorIndex*>(ns_.indexes_[field].get()));
+				assertrx_dbg(field < size_t(ns_.indexes().firstCompositePos()));
+				assertrx_dbg(dynamic_cast<FloatVectorIndex*>(ns_.indexes()[field].get()));
 				const auto id = vec->id;
 				Payload pl(pt, ns_.items_[id.RowId()]);
 				if (pl.GetFieldLen(field) <= id.ArrayIndex()) {
 					// if in intermediate transaction step the array is longer than in the result version, then skip its tail
 					continue;
 				}
-				auto& idx = *static_cast<FloatVectorIndex*>(ns_.indexes_[field].get());
+				auto& idx = *static_cast<FloatVectorIndex*>(ns_.indexes()[field].get());
 				bool needClearCache{false};
 				auto value = idx.UpsertConcurrent(Variant{ConstFloatVectorView{vec->vec}, Variant::noHold}, id, needClearCache);
 				assertrx(ns_.items_.exists(id.RowId()));

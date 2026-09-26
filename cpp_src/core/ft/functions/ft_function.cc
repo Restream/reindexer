@@ -4,12 +4,17 @@
 #include "core/function/function_parser.h"
 #include "core/nsselecter/ranks_holder.h"
 #include "core/payload/fieldsset.h"
+#include "core/query/query_impl.h"
 #include "core/queryresults/localqueryresults.h"
 #include "core/type_consts_helpers.h"
 #include "highlight.h"
 #include "snippet.h"
+#include "tools/errors.h"
 
 namespace reindexer {
+namespace {
+constexpr std::string_view kErrorFullTextIndexRequired = "Select functions require full-text index on field '{}'";
+}
 
 FtFuncStruct::FtFuncStruct(functions::ParsedFunction&& parsed) : functions::ParsedFunction{std::move(parsed)} {
 	using namespace std::string_view_literals;
@@ -35,10 +40,10 @@ bool FtFunction::Empty() const noexcept {
 					   [](const auto& fn) noexcept { return std::holds_alternative<FuncNone>(fn.second.func); });
 }
 
-FtFunction::Ptr FtFunctionsHolder::AddNamespace(const Query& q, const NamespaceImpl& nm, uint32_t nsid, bool force) {
-	if (q.selectFunctions_.empty() && !force) {
+FtFunction::Ptr FtFunctionsHolder::AddNamespace(ConstQueryImpl q, const NamespaceImpl& nm, uint32_t nsid, bool force) {
+	if (q.SelectFunctions().empty() && !force) {
 		return nullptr;
-	} else if (!q.selectFunctions_.empty()) {
+	} else if (!q.SelectFunctions().empty()) {
 		force_only_ = false;
 	}
 
@@ -49,98 +54,103 @@ FtFunction::Ptr FtFunctionsHolder::AddNamespace(const Query& q, const NamespaceI
 	return queries_[nsid];
 }
 
-FtFunction::FtFunction(const Query& q, NsFtFuncInterface&& nm) : nm_(std::move(nm)), currCjsonFieldIdx_(nm_.getIndexesCount()) {
-	for (auto& func : q.selectFunctions_) {
+FtFunction::FtFunction(ConstQueryImpl q, NsFtFuncInterface nm)
+	: cjsonFieldIdxBase_(nm.getIndexesCount()), currCjsonFieldIdx_(cjsonFieldIdxBase_) {
+	for (auto& func : q.SelectFunctions()) {
 		auto result = functions::FunctionParser::Parse(func);
 		if (!result.isFunction) {
 			continue;
 		}
-		createFunc(FtFuncStruct{std::move(result)});
+		createFunc(nm, FtFuncStruct{std::move(result)});
 	}
 }
 
-void FtFunction::createFunc(FtFuncStruct&& data) {
+void FtFunction::createFunc(NsFtFuncInterface nm, FtFuncStruct&& data) {
 	int indexNo = IndexValueType::NotSet;
 	if (data.indexNo == IndexValueType::NotSet) {
-		if (!nm_.getIndexByName(data.field, indexNo)) {
+		if (!nm.getIndexByName(data.field, indexNo)) {
 			trim(data.field);
-			if (!nm_.getIndexByName(data.field, indexNo)) {
-				return;
+			if (!nm.getIndexByName(data.field, indexNo)) {
+				throw Error(errParams, kErrorFullTextIndexRequired, data.field);
 			}
 		}
 	} else {
 		indexNo = data.indexNo;
 	}
 
+	if (!IsFullText(nm.getIndexType(indexNo))) {
+		throw Error(errParams, kErrorFullTextIndexRequired, data.field);
+	}
+
 	// if index is composite then create function for inner use only
-	if (IsComposite(nm_.getIndexType(indexNo))) {
+	if (IsComposite(nm.getIndexType(indexNo))) {
 		int fieldNo = 0;
-		const FieldsSet& fields = nm_.getIndexFields(indexNo);
+		const FieldsSet& fields = nm.getIndexFields(indexNo);
 
 		int jsPathIdx = 0;
 		for (auto field : fields) {
 			data.fieldNo = fieldNo;
 			if (field == IndexValueType::SetByJsonPath) {
 				data.field = fields.getJsonPath(jsPathIdx);
-				data.tagsPath = nm_.getTagsPathForField(data.field);
+				data.tagsPath = nm.getTagsPathForField(data.field);
 				data.indexNo = currCjsonFieldIdx_++;
 				functions_.emplace(data.indexNo, data);
 			} else {
-				data.field = nm_.getIndexName(field);
+				data.field = nm.getIndexName(field);
 				data.indexNo = field;
 				functions_.emplace(field, data);
 			}
 		}
 	} else {
 		data.indexNo = indexNo;
-		data.field = nm_.getIndexName(indexNo);
+		data.field = nm.getIndexName(indexNo);
 		data.fieldNo = 0;
 		functions_.emplace(std::make_pair(indexNo, data));
 	}
 }
 
-FtCtx::Ptr FtFunction::createFuncForRank(int indexNo, const RanksHolder::Ptr& ranks) {
+FtCtx::Ptr FtFunction::createFuncForRank(NsFtFuncInterface nm, int indexNo, const RanksHolder::Ptr& ranks) {
 	const int lastCjsonIdx = currCjsonFieldIdx_;
 	{
 		FtFuncStruct data{functions::ParsedFunction{}};
 		data.isFunction = true;
 		data.indexNo = indexNo;
-		createFunc(std::move(data));
+		createFunc(nm, std::move(data));
 	}
-	if (IsComposite(nm_.getIndexType(indexNo))) {
-		auto field = nm_.getIndexFields(indexNo)[0];
+	if (IsComposite(nm.getIndexType(indexNo))) {
+		auto field = nm.getIndexFields(indexNo)[0];
 		if (field == IndexValueType::SetByJsonPath) {
 			field = lastCjsonIdx;
 		}
 		auto it = functions_.find(field);
 		assertrx(it != functions_.end());
-		return createCtx(it->second, nullptr, nm_.getIndexType(indexNo), ranks);
+		return createCtx(nm, it->second, nullptr, nm.getIndexType(indexNo), ranks);
 	} else {
 		auto it = functions_.find(indexNo);
 		assertrx(it != functions_.end());
-		return createCtx(it->second, nullptr, nm_.getIndexType(indexNo), ranks);
+		return createCtx(nm, it->second, nullptr, nm.getIndexType(indexNo), ranks);
 	}
 }
 
-FtCtx::Ptr FtFunction::CreateCtx(int indexNo, const RanksHolder::Ptr& ranks) {
-	const auto indexType = nm_.getIndexType(indexNo);
+FtCtx::Ptr FtFunction::CreateCtx(NsFtFuncInterface nm, int indexNo, const RanksHolder::Ptr& ranks) {
+	const auto indexType = nm.getIndexType(indexNo);
 	assertrx_throw(IsFullText(indexType));
 	if (functions_.empty()) {
 		// we use this hack because ft always needs ctx to generate rank in response
-		return createFuncForRank(indexNo, ranks);
+		return createFuncForRank(nm, indexNo, ranks);
 	}
 	FtCtx::Ptr ctx;
 	if (IsComposite(indexType)) {
 		int fieldNo = 0;
-		int cjsonFieldIdx = nm_.getIndexesCount();
-		for (auto field : nm_.getIndexFields(indexNo)) {
+		int cjsonFieldIdx = cjsonFieldIdxBase_;
+		for (auto field : nm.getIndexFields(indexNo)) {
 			if (field == IndexValueType::SetByJsonPath) {
 				field = cjsonFieldIdx++;
 			}
 			auto it = functions_.find(field);
 			if (it != functions_.end()) {
 				it->second.fieldNo = fieldNo;
-				ctx = createCtx(it->second, ctx, indexType, ranks);
+				ctx = createCtx(nm, it->second, ctx, indexType, ranks);
 			}
 			fieldNo++;
 		}
@@ -148,10 +158,10 @@ FtCtx::Ptr FtFunction::CreateCtx(int indexNo, const RanksHolder::Ptr& ranks) {
 		auto it = functions_.find(indexNo);
 		if (it != functions_.end()) {
 			it->second.fieldNo = 0;
-			ctx = createCtx(it->second, ctx, indexType, ranks);
+			ctx = createCtx(nm, it->second, ctx, indexType, ranks);
 		}
 	}
-	return ctx ? ctx : createFuncForRank(indexNo, ranks);
+	return ctx ? ctx : createFuncForRank(nm, indexNo, ranks);
 }
 
 void FtFunctionsHolder::Process(LocalQueryResults& res) const {
@@ -183,7 +193,7 @@ void FtFunctionsHolder::Process(LocalQueryResults& res) const {
 	res.nonCacheableData = changed;
 }
 
-bool FtFunction::ProcessItem(ItemRef& res, PayloadType& pl_type, std::vector<key_string>& stringsHolder) {
+bool FtFunction::ProcessItem(ItemRef& res, const PayloadType& pl_type, std::vector<key_string>& stringsHolder) {
 	bool changed = false;
 	for (auto& func : functions_) {
 		if (func.second.ctx &&
@@ -194,7 +204,8 @@ bool FtFunction::ProcessItem(ItemRef& res, PayloadType& pl_type, std::vector<key
 	return changed;
 }
 
-FtCtx::Ptr FtFunction::createCtx(FtFuncStruct& data, FtCtx::Ptr ctx, IndexType index_type, const RanksHolder::Ptr& ranks) {
+FtCtx::Ptr FtFunction::createCtx(NsFtFuncInterface nm, FtFuncStruct& data, FtCtx::Ptr ctx, IndexType index_type,
+								 const RanksHolder::Ptr& ranks) {
 	if (IsFullText(index_type)) {
 		if (!ctx) {
 			switch (FtFuncType(data.func.index())) {
@@ -239,7 +250,7 @@ FtCtx::Ptr FtFunction::createCtx(FtFuncStruct& data, FtCtx::Ptr ctx, IndexType i
 			}
 			data.ctx = std::move(ctx);
 		}
-		const std::string& indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);
+		const std::string& indexName = (data.indexNo >= cjsonFieldIdxBase_) ? data.field : nm.getIndexName(data.indexNo);
 		data.ctx->AddFunction(indexName, FtFuncType(data.func.index()));
 	}
 	return data.ctx;

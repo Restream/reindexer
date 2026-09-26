@@ -11,7 +11,7 @@ static inline constexpr unsigned kQuantizationParamsVersion = 1;
 
 std::pair<float, float> FindNthMinMax(auto&& s, size_t dataSize, float quantile) {
 	float min, max;
-	const size_t n = 0.5f * (1 - quantile) * dataSize;
+	const size_t n = static_cast<size_t>(0.5 * (1.0 - double(quantile)) * double(dataSize));
 	size_t cnt = 0;
 	reindexer::fast_hash_set<size_t> scannedIndexes;
 	do {

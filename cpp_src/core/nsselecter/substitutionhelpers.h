@@ -37,19 +37,19 @@ public:
 
 	void Add(int field, const std::vector<int>& composites, unsigned entry) {
 		assertrx_throw(entry < std::numeric_limits<uint16_t>::max());
-		const auto compositesBeg = ns_.indexes_.firstCompositePos();
-		const auto compositesEnd = compositesBeg + ns_.indexes_.compositeIndexesSize();
+		const auto compositesBeg = ns_.indexes().firstCompositePos();
+		const auto compositesEnd = compositesBeg + ns_.indexes().compositeIndexesSize();
 		for (auto composite : composites) {
 			if (composite < compositesBeg || composite >= compositesEnd) [[unlikely]] {
 				// TODO: this may be removed later (somewhere around v3.31/v3.32) after some extra investigations (relates to #1830)
 				logFmt(LogError,
 					   "<assertion failed>: Unexpected composite index identifier during substitution attempt: {}. Composites range is "
 					   "[{}, {});\n(field: {}; {})",
-					   composite, compositesBeg, compositesEnd, field, ns_.payloadType_.Field(field).ToString());
+					   composite, compositesBeg, compositesEnd, field, ns_.payloadType().Field(field).ToString());
 				assertrx_dbg(false);
 				continue;
 			}
-			auto compositePtr = ns_.indexes_[composite].get();
+			auto compositePtr = ns_.indexes()[composite].get();
 			const auto idxType = compositePtr->Type();
 			if (idxType != IndexCompositeBTree && idxType != IndexCompositeHash) {
 				continue;
@@ -82,7 +82,7 @@ public:
 		unsigned maxSize = 0;
 		for (int i = 0; i < int(d_.size()); ++i) {
 			auto& data = d_[i];
-			const auto& idxFields = ns_.indexes_[data.idx]->Fields();
+			const auto& idxFields = ns_.indexes()[data.idx]->Fields();
 			// If all of the composite fields were found in query
 			const auto dfCnt = data.fields.count();
 			if (dfCnt == idxFields.size() && idxFields.contains(data.fields)) {

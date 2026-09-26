@@ -5,6 +5,8 @@
 
 namespace reindexer_tests {
 
+using reindexer::Variant;
+
 class [[nodiscard]] TtlIndexApi : public ReindexerApi {
 public:
 	void SetUp() override {

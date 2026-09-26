@@ -35,7 +35,15 @@ logger:
   corelog: /var/log/reindexer/reindexer_server.log
   httplog: /var/log/reindexer/reindexer_server.log
   rpclog: ""
+  grpclog: ""
+  # Default log level for all loggers.
   loglevel: info
+  # Use component-specific *_loglevel options below to override it for a particular logger.
+  # server_loglevel: info
+  # core_loglevel: info
+  # http_loglevel: info
+  # rpc_loglevel: info
+  # grpc_loglevel: info
 
 # System options
 system:
@@ -61,4 +69,3 @@ metrics:
   collect_period: 1000
   # Clients connections statistic
   clientsstats: false
-

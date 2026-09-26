@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <optional>
 
@@ -405,7 +407,16 @@ public:
 	bool cached = false;
 
 	static size_t GetMergeSortCost(size_t idsCount, size_t idsetsCount) noexcept { return idsCount * idsetsCount; }
-	static size_t GetGenericSortCost(size_t idsCount) noexcept { return idsCount * log2(idsCount) + 2 * idsCount; }
+	static size_t GetGenericSortCost(size_t idsCount) noexcept {
+		if (idsCount < 2) {
+			return 2 * idsCount;
+		}
+		const double cost = double(idsCount) * std::log2(double(idsCount)) + 2.0 * double(idsCount);
+		if (!std::isfinite(cost) || cost >= double(std::numeric_limits<size_t>::max())) {
+			return std::numeric_limits<size_t>::max();
+		}
+		return static_cast<size_t>(cost);
+	}
 	static bool IsGenericSortRecommended(size_t idsetsCount, size_t idsCount, size_t maxIterations) noexcept {
 		return idsetsCount >= kMinSetsForGenericSort && idsCount &&
 			   GetGenericSortCost(idsCount) < GetMergeSortCost(maxIterations, idsetsCount);

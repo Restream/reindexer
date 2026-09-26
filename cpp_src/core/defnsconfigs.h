@@ -46,6 +46,7 @@ constexpr std::string_view kDefNamespacesConfig = R"json({
 				"tx_vec_insertion_threads":4,
 				"optimization_timeout_ms":800,
 				"optimization_sort_workers":4,
+				"ft_cleanup_timeout_ms":50,
 				"wal_size":4000000,
 				"min_preselect_size":1000,
 				"max_preselect_size":1000,

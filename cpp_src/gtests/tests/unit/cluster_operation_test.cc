@@ -162,11 +162,9 @@ TEST_F(ClusterOperationApi, ForceAndWalSync) {
 		{
 			// Some update request with row-based replication mode
 			auto node = cluster.GetNode(leaderId);
-			BaseApi::QueryResultsType qr;
 			Query q =
 				Query(kNsSome).Where(kIdField, CondGe, int(10)).Where(kIdField, CondLe, int(12)).Set(kStringField, randStringAlph(15));
-			auto err = node->api.reindexer->Update(q, qr);
-			ASSERT_TRUE(err.ok()) << err.what();
+			BaseApi::QueryResultsType qr = node->api.Update(q);
 		}
 
 		// Check if the data were replicated after nodes restart
@@ -666,15 +664,13 @@ TEST_F(ClusterOperationApi, MultithreadSyncTest) {
 						int maxIdx = minIdx + 100;
 						Query q =
 							Query(ns).Where(kIdField, CondGe, minIdx).Where(kIdField, CondLe, maxIdx).Set(kStringField, randStringAlph(25));
-						q.type_ = QueryUpdate;
 						auto err = tx.Modify(std::move(q));
 						ASSERT_TRUE(err.ok()) << err.what();
 					}
 					for (size_t i = 0; i < 2; ++i) {
 						int minIdx = rand() % kMaxDataId;
 						int maxIdx = minIdx + 100;
-						Query q = Query(ns).Where(kIdField, CondGe, minIdx).Where(kIdField, CondLe, maxIdx);
-						q.type_ = QueryDelete;
+						Query q = Query(ns).Delete().Where(kIdField, CondGe, minIdx).Where(kIdField, CondLe, maxIdx);
 						auto err = tx.Modify(std::move(q));
 						ASSERT_TRUE(err.ok()) << err.what();
 					}
@@ -694,18 +690,16 @@ TEST_F(ClusterOperationApi, MultithreadSyncTest) {
 				if (counter++ % 2 == 0) {
 					// FT request, which must be valid
 					auto node = cluster.GetNode(leaderId);
-					BaseApi::QueryResultsType qr;
 					Query q = Query(ns).Where(kFTField, CondEq, "text");
-					auto err = node->api.reindexer->Select(q, qr);
-					ASSERT_TRUE(err.ok()) << err.what();
+					BaseApi::QueryResultsType qr = node->api.Select(q);
 				} else {
 					// Select from random node (node may be offline)
 					auto id = rand() % kClusterSize;
 					auto node = cluster.GetNode(id);
 					if (node) {
 						BaseApi::QueryResultsType qr;
-						auto err = node->api.reindexer->Select(Query(ns), qr);
-						(void)err;	// errors are acceptable here
+						// errors are acceptable here; ignore
+						std::ignore = node->api.SelectErr(Query(ns), qr);
 					}
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -718,31 +712,25 @@ TEST_F(ClusterOperationApi, MultithreadSyncTest) {
 				int maxIdx = minIdx + 300;
 				{
 					auto node = cluster.GetNode(leaderId);
-					BaseApi::QueryResultsType qr;
 					Query q =
 						Query(ns).Where(kIdField, CondGe, minIdx).Where(kIdField, CondLe, maxIdx).Set(kStringField, randStringAlph(15));
-					auto err = node->api.reindexer->Update(q, qr);
-					ASSERT_TRUE(err.ok()) << err.what();
+					node->api.Update(q);
 				}
 				if (newFields.size() >= 20) {
 					auto node = cluster.GetNode(leaderId);
-					BaseApi::QueryResultsType qr;
 					Query q = Query(ns);
 					for (size_t i = 0; i < newFields.size(); ++i) {
 						q.Drop(newFields[i]);
 					}
-					auto err = node->api.reindexer->Update(q, qr);
-					ASSERT_TRUE(err.ok()) << err.what();
+					node->api.Update(q);
 					newFields.clear();
 				}
 				{
 					newFields.emplace_back(randStringAlph(20));
 					auto node = cluster.GetNode(leaderId);
-					BaseApi::QueryResultsType qr;
 					Query q =
 						Query(ns).Where(kIdField, CondGe, minIdx).Where(kIdField, CondLe, maxIdx).Set(newFields.back(), randStringAlph(15));
-					auto err = node->api.reindexer->Update(q, qr);
-					ASSERT_TRUE(err.ok()) << err.what();
+					node->api.Update(q);
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds(50));
 			}
@@ -752,10 +740,8 @@ TEST_F(ClusterOperationApi, MultithreadSyncTest) {
 				int minIdx = rand() % kMaxDataId;
 				int maxIdx = minIdx + 200;
 				auto node = cluster.GetNode(leaderId);
-				BaseApi::QueryResultsType qr;
 				Query q = Query(ns).Where(kIdField, CondGe, minIdx).Where(kIdField, CondLe, maxIdx);
-				auto err = node->api.reindexer->Delete(q, qr);
-				ASSERT_TRUE(err.ok()) << err.what();
+				node->api.Delete(q);
 				std::this_thread::sleep_for(std::chrono::milliseconds(50));
 			}
 		});
@@ -943,7 +929,7 @@ TEST_F(ClusterOperationApi, NamespaceVersioning) {
 		const auto state = cluster.GetNode(leaderId)->GetState(std::string(kNsName));
 		ASSERT_EQ(latestNsState.lsn, state.lsn);
 		ASSERT_EQ(latestNsState.nsVersion, state.nsVersion);
-		ASSERT_EQ(latestNsState.dataHash, state.dataHash);
+		ASSERT_EQ(latestNsState.checksum, state.checksum);
 		ASSERT_EQ(latestNsState.dataCount, state.dataCount);
 	}));
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/nsselecter/joins/query_joins_table.h"
+#include "core/query/query_impl.h"
 #include "core/queryresults/itemref.h"
 #include "estl/fast_hash_map.h"
 
@@ -106,7 +107,7 @@ public:
 
 	/// Set Query joins table.
 	/// @param q - query with join queries.
-	void SetJoinsTable(const Query& q) { joinsTable_.emplace(q); }
+	void SetJoinsTable(ConstQueryImpl q) { joinsTable_.emplace(q); }
 
 	/// Set Query joins table.
 	/// @param joinsTable - query join context.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
 #include <type_traits>
 #include "core/cjson/tagsmatcher.h"
@@ -8,7 +9,6 @@
 #include "core/keyvalue/variant.h"
 #include "core/payload/payload_access.h"
 #include "fieldsset.h"
-#include "payload_checksum.h"
 #include "payloadfieldvalue.h"
 #include "payloadtype.h"
 #include "payloadvalue.h"
@@ -128,7 +128,7 @@ public:
 	void Get(std::string_view field, VariantArray&) const;
 
 	// Get element(s) by json path
-	void GetByJsonPath(std::string_view jsonPath, TagsMatcher& tagsMatcher, VariantArray&, KeyValueType expectedType) const;
+	void GetByJsonPath(std::string_view jsonPath, const TagsMatcher& tagsMatcher, VariantArray&, KeyValueType expectedType) const;
 	void GetByJsonPath(const TagsPath& jsonPath, VariantArray&, KeyValueType expectedType) const;
 	void GetByJsonPath(const IndexedTagsPath& jsonPath, VariantArray&, KeyValueType expectedType) const;
 	void GetByFieldsSet(const FieldsSet&, VariantArray&, KeyValueType expectedType,
@@ -159,7 +159,7 @@ public:
 	// Compare is EQ by field mask
 	bool IsEQ(const T& other, const FieldsSet& fields) const;
 	// Get hash of all document
-	PayloadChecksum GetChecksum(const std::function<uint64_t(unsigned int, ConstFloatVectorView, unsigned)>& getVectorHashF) const noexcept;
+	uint64_t GetChecksum(const std::function<uint64_t(unsigned int, ConstFloatVectorView, unsigned)>& getVectorHashF) const noexcept;
 
 	// Compare single field (indexed or non-indexed)
 	template <WithString, NotComparable, NullsHandling>

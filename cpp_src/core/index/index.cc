@@ -121,12 +121,13 @@ bool Index::IsFloatVector() const noexcept {
 }
 
 IndexPerfStat Index::GetIndexPerfStat() {
-	return IndexPerfStat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>());
+	return IndexPerfStat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>(), cleanPerfCounter_.Get<PerfStat>());
 }
 
 void Index::ResetIndexPerfStat() {
 	selectPerfCounter_.Reset();
 	commitPerfCounter_.Reset();
+	cleanPerfCounter_.Reset();
 }
 
 template <typename S>

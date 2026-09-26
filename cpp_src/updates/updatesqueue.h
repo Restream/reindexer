@@ -382,6 +382,7 @@ public:
 		}
 		return false;
 	}
+	bool IsEnabled() const noexcept { return allowList_.has_value(); }
 	template <typename ContainerT>
 	void Init(std::optional<ContainerT>&& allowList, const LoggerT* l) {
 		log_ = l;

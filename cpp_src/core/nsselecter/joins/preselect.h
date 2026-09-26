@@ -23,6 +23,7 @@ struct [[nodiscard]] PreSelect {
 		DisabledByCompositeIndex,
 		DisabledByJoinedFieldSort,
 		DisabledByNestedJoin,
+		DisabledByArithmeticExpression,
 		Enabled
 	};
 

@@ -62,7 +62,7 @@ private:
 	}
 
 	[[nodiscard]] RX_ALWAYS_INLINE uint8_t float2uint8t(float val) const noexcept {
-		return std::clamp((val - params_.minQ) / params_.alpha, 0.f, kSq8Range);
+		return static_cast<uint8_t>(std::clamp((val - params_.minQ) / params_.alpha, 0.f, kSq8Range));
 	}
 	[[nodiscard]] static RX_ALWAYS_INLINE float uint8t2floatImpl(uint8_t val, float alpha, float min) noexcept { return alpha * val + min; }
 

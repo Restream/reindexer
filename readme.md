@@ -85,6 +85,7 @@ This document describes the Go connector and its API. For information about the 
 - [Events subscription](#events-subscription)
 - [Logging, debug, profiling and tracing](#logging-debug-profiling-and-tracing)
   - [Turn on logger](#turn-on-logger)
+  - [Configure server logging via REST API](#configure-server-logging-via-rest-api)
   - [Slow actions logging](#slow-actions-logging)
   - [Debug queries](#debug-queries)
   - [Custom allocators support](#custom-allocators-support)
@@ -1260,6 +1261,21 @@ query := db.Query("items_with_join").
 	On("actors_names", reindexer.SET, "name")
 ```
 
+The query passed to `Join`, `InnerJoin`, or `LeftJoin` may contain subqueries in its `Where` conditions.
+
+```go
+visibleActorIDs := db.Query("actors").
+	Select("id").
+	WhereBool("is_visible", reindexer.EQ, true)
+
+actors := db.Query("actors").
+	Where("id", reindexer.SET, visibleActorIDs)
+
+query := db.Query("items_with_join").
+	Join(actors, "actors").
+	On("actors_ids", reindexer.SET, "id")
+```
+
 An `InnerJoin` combines data from two namespaces where there is a match on the joining fields in both namespaces. A `LeftJoin` returns all valid items from the namespaces on the left side of the `LeftJoin` keyword, along with the values from the table on the right side, or nothing if a matching item doesn't exist. `Join` is an alias for `LeftJoin`.
 
 `InnerJoins` can be used as a condition in `Where` clause:
@@ -1495,12 +1511,13 @@ for it.Next() {
 Join query details:
 
 1. Joins inside joins are supported for `SELECT` queries (including `SELECT` queries with `MERGE`).
-2. `UPDATE` and `DELETE` may use nested `INNER JOIN` queries as filters, but joined data is not returned from modification queries.
-3. To store `JOIN` results in a Go struct, the destination field must be exported and marked with the `reindex:"<field_name>,,joined"` struct tag. This tag is required for fields intended to receive joined data. Joined items may also be attached by implementing the `Joinable` interface or by using a custom `JoinHandler`.
-4. `JoinedObjects(field)` returns root-level joined fields. Joined objects returned by this method already contain their own nested joined data.
-5. Query options such as `Explain`, `Debug`, and `Strict` are applied recursively to joined queries at every depth.
-6. Older clients or servers that still use `QueryFormatV1` cannot serialize nested joins. The Go binding rejects such queries with `nested joins are not supported by QueryFormatV1`.
-7. For sharded namespaces, every joined query level must contain the required shard-key condition.
+2. Joined queries may contain subqueries in `Where` conditions at any join depth.
+3. `UPDATE` and `DELETE` may use nested `INNER JOIN` queries as filters, but joined data is not returned from modification queries.
+4. To store `JOIN` results in a Go struct, the destination field must be exported and marked with the `reindex:"<field_name>,,joined"` struct tag. This tag is required for fields intended to receive joined data. Joined items may also be attached by implementing the `Joinable` interface or by using a custom `JoinHandler`.
+5. `JoinedObjects(field)` returns root-level joined fields. Joined objects returned by this method already contain their own nested joined data.
+6. Query options such as `Explain`, `Debug`, and `Strict` are applied recursively to joined queries at every depth.
+7. Older clients or servers that still use `QueryFormatV1` cannot serialize nested joins. The Go binding rejects such queries with `nested joins are not supported by QueryFormatV1`.
+8. For sharded namespaces, every joined query level must contain the required shard-key condition.
 
 #### Anti-join
 
@@ -1848,7 +1865,7 @@ Filters.Project[1]('dns') = 'wink' AND Array[1](20) = 10
 4. Since the condition is met for index 0, this document satisfies the query condition.
 
 For conditions with parentheses, `EQUAL_POSITION(...)` applies to the conditions inside the parentheses. Multiple `EQUAL_POSITION` functions can be specified for a single set of parentheses.
-`EQUAL_POSITION` does not work for the following conditions: `IS NULL`, `IS EMPTY`, and `IN` (with an empty list of values).
+`EQUAL_POSITION` can't be combined with the following conditions: `IS NULL`, `IS EMPTY`, `IN` (with an empty list of values), `ALLSET`, `KNN`, and `DWithin`. Such queries return an error.
 Query examples:
 ```sql
 SELECT * FROM Namespace WHERE (f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2)) OR (f3 = 3 AND f4 < 4 AND f5 = 7 EQUAL_POSITION(f3,f4,f5));
@@ -2299,6 +2316,70 @@ func (Logger) Printf(level int, format string, msg ...interface{}) {
 ...
 	db.SetLogger (Logger{})
 ```
+
+### Configure server logging via REST API
+
+Reindexer server loggers can be configured at runtime via HTTP REST API.
+
+Logging configuration is kept until server restart. After restart loggers are initialized from CLI options, `server.yml`, or the configuration object.
+
+Server logging is split into components: `core`, `server`, `http`, `rpc`, and `grpc`.
+
+The `loglevel` option sets the default level for all enabled loggers. Component-specific levels override that default:
+
+| Component | `server.yml` option | CLI option |
+| --- | --- | --- |
+| `core` | `core_loglevel` | `--core-loglevel` |
+| `server` | `server_loglevel` | `--server-loglevel` |
+| `http` | `http_loglevel` | `--http-loglevel` |
+| `rpc` | `rpc_loglevel` | `--rpc-loglevel` |
+| `grpc` | `grpc_loglevel` | `--grpc-loglevel` |
+
+The gRPC request logger output is configured with `grpclog` in `server.yml` or `--grpclog` in CLI. It is disabled by default.
+
+If a component-specific level is set, it overrides `loglevel` only for that component. For example, with `loglevel: info` and `http_loglevel: error`, the `core`, `server`, `rpc`, and `grpc` loggers use `info`, and the `http` logger uses `error`.
+
+HTTP, RPC, and gRPC request logs are written with a level based on the request result: successful requests use `info`, failed requests use `error`.
+
+#### Update logging configuration
+
+Use the following endpoints to update the log level for a specific server component:
+
+```http
+PUT /api/v1/logging/core/config
+PUT /api/v1/logging/server/config
+PUT /api/v1/logging/http/config
+PUT /api/v1/logging/rpc/config
+PUT /api/v1/logging/grpc/config
+```
+
+The request format and restrictions are described in the [OpenAPI specification](cpp_src/server/contrib/server.yml).
+
+#### Get logging configuration
+
+Use the following endpoints to read current logger configuration for a specific server component:
+
+```http
+GET /api/v1/logging/core/config
+GET /api/v1/logging/server/config
+GET /api/v1/logging/http/config
+GET /api/v1/logging/rpc/config
+GET /api/v1/logging/grpc/config
+```
+
+Response fields:
+
+```json
+{
+  "level": "info",
+  "path": "stdout"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `level` | string | Current log level: `none`, `error`, `warning`, `info`, or `trace`. |
+| `path` | string | Current log output target. |
 
 ### Slow actions logging
 

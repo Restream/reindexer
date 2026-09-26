@@ -93,7 +93,7 @@ public:
 	std::vector<std::string> GetSuggestions(std::string_view path) const;
 	std::vector<std::string> GetPaths() const;
 	bool HasPath(std::string_view path, bool allowAdditionalFields) const noexcept;
-	Error BuildProtobufSchema(WrSerializer& schema, TagsMatcher& tm, PayloadType& pt) noexcept;
+	Error BuildProtobufSchema(WrSerializer& schema, TagsMatcher& tm, const PayloadType& pt) noexcept;
 
 	class PrefixTreeNode;
 	using map = fast_hash_map<std::string, std::unique_ptr<PrefixTreeNode>, hash_str, equal_str, less_str>;
@@ -136,7 +136,7 @@ public:
 	Error FromJSON(std::string_view json);
 	void GetJSON(WrSerializer&) const;
 	std::string_view GetJSON() const noexcept { return originalJson_; }
-	Error BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt);
+	Error BuildProtobufSchema(TagsMatcher& tm, const PayloadType& pt);
 	Error GetProtobufSchema(WrSerializer& schema) const;
 	int GetProtobufNsNumber() const noexcept { return protobufNsNumber_; }
 	const PrefixTree::PrefixTreeNode* GetRoot() const noexcept { return &paths_.root_; }

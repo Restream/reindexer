@@ -115,7 +115,7 @@ public:
 			auto srv = GetSrv(i);
 			auto& api = srv->api;
 			BaseApi::QueryResultsType res;
-			auto err = api.reindexer->Select(reindexer::Query(ns), res);
+			auto err = api.reindexer->Select(Query(ns), res);
 			EXPECT_TRUE(err.ok()) << err.what();
 			versions.emplace_back(res.GetTagsMatcher(0).version());
 		}

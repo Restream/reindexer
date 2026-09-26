@@ -152,13 +152,15 @@ void ClassifyDigitStartToken(h_vector<char, 20>& text, TokenType& type, std::str
 
 }  // namespace
 
-void Tokenizer::SkipSpace() noexcept {
+bool Token::IsKeyword(std::string_view kw) const noexcept { return type_ == TokenName && !quoted_ && iequals(Text(), kw); }
+
+void Tokenizer::SkipSpace(Flags flgs) noexcept {
 	for (;;) {
 		while (cur_ != q_.end() && std::isspace(*cur_)) {
 			cur_++;
 			pos_++;
 		}
-		if (cur_ != q_.end() && *cur_ == '-' && cur_ + 1 != q_.end() && *(cur_ + 1) == '-') {
+		if (!flgs.HasNoLineComments() && cur_ != q_.end() && *cur_ == '-' && cur_ + 1 != q_.end() && *(cur_ + 1) == '-') {
 			cur_ += 2;
 			pos_ += 2;
 			while (cur_ != q_.end() && *cur_ != '\n') {
@@ -172,7 +174,7 @@ void Tokenizer::SkipSpace() noexcept {
 }
 
 Token Tokenizer::NextToken(Flags flgs) {
-	SkipSpace();
+	SkipSpace(flgs);
 
 	if (cur_ == q_.end()) {
 		return Token(TokenEnd, pos_);
@@ -185,6 +187,7 @@ Token Tokenizer::NextToken(Flags flgs) {
 		ConsumeNameChars(cur_, pos_, q_.end(), res.text_, flgs, true);
 	} else if (*cur_ == '"') {
 		res.type_ = TokenName;
+		res.quoted_ = true;
 		const size_t startPos = ++pos_;
 		if (flgs.HasInOrderBy()) {
 			res.text_.push_back('"');
@@ -289,7 +292,7 @@ Token Tokenizer::NextToken(Flags flgs) {
 		++pos_;
 	}
 
-	SkipSpace();
+	SkipSpace(flgs);
 	return res;
 }
 

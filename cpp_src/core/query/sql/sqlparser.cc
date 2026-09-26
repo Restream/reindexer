@@ -1,18 +1,35 @@
 #include "sqlparser.h"
 #include <charconv>
+#include <type_traits>
 #include "core/formatters/tokenizer_range.h"
 #include "core/keyvalue/geometry.h"
 #include "core/nsselecter/joins/helpers.h"
-#include "core/query/query.h"
+#include "core/query/query_consts.h"
 #include "core/queryresults/aggregationresult.h"
 #include "core/type_consts_helpers.h"
 #include "estl/gift_str.h"
 #include "estl/tokenizer_range.h"
 #include "sqltokenmatching.h"
-#include "sqltokentype.h"
 #include "tools/stringstools.h"
 #include "vendor/double-conversion/double-conversion.h"
 #include "vendor/gason/gason.h"
+
+namespace {
+
+class [[nodiscard]] NextOp {
+public:
+	bool operator==(OpType other) const noexcept { return nextOp_ == other; }
+	NextOp& operator=(OpType other) noexcept {
+		nextOp_ = other;
+		return *this;
+	}
+	OpType Extract() noexcept { return std::exchange(nextOp_, OpAnd); }
+
+private:
+	OpType nextOp_{OpAnd};
+};
+
+}  // namespace
 
 namespace reindexer {
 
@@ -42,6 +59,27 @@ void validateNamespaceToken(Tokenizer& parser, const Token& tok) {
 		throw SqlParserError(range, "Unexpected '{}' in query, {}", tok.Text(), range);
 	}
 }
+
+bool isLiteralWhereOperand(const Token& tok) noexcept {
+	if (tok.Type() == TokenNumber || tok.Type() == TokenString) {
+		return true;
+	}
+	return tok.IsKeyword("true"sv) || tok.IsKeyword("false"sv) || tok.IsKeyword("null"sv);
+}
+
+bool isFieldNameToken(const Token& tok) noexcept {
+	return tok.Type() == TokenName && !tok.IsKeyword("true"sv) && !tok.IsKeyword("false"sv) && !tok.IsKeyword("null"sv);
+}
+
+std::string tokenAsExpressionText(const Token& tok) {
+	if (tok.Type() == TokenString) {
+		return "'" + std::string{tok.Text()} + "'";
+	}
+	if (tok.Quoted()) {
+		return "\"" + std::string{tok.Text()} + "\"";
+	}
+	return std::string{tok.Text()};
+}
 }  // namespace
 
 SQLParser::ErrorEOF::ErrorEOF() noexcept : Error(errLogic, "SQLParser eof is reached!") {}
@@ -49,7 +87,7 @@ SQLParser::ErrorEOF::ErrorEOF() noexcept : Error(errLogic, "SQLParser eof is rea
 Query SQLParser::Parse(std::string_view q) {
 	Tokenizer parser(q);
 	Query query;
-	std::ignore = SQLParser{query}.Parse(parser);
+	std::ignore = SQLParser{Impl(query)}.Parse(parser);
 	return query;
 }
 
@@ -92,41 +130,41 @@ int SQLParser::Parse(Tokenizer& parser) {
 	}
 	auto tok = peekSqlToken(parser, Start);
 	if (tok.Text() == "explain"sv) {
-		query_.Explain();
+		query_->Explain();
 		parser.SkipToken();
 		tok = peekSqlToken(parser, StartAfterExplain);
 		if (tok.Text() == "local"sv) {
-			query_.Local();
+			query_->Local();
 			parser.SkipToken();
 			tok = peekSqlToken(parser, StartAfterLocalExplain);
 		}
 	} else if (tok.Text() == "local"sv) {
-		query_.Local();
+		query_->Local();
 		parser.SkipToken();
 		tok = peekSqlToken(parser, StartAfterLocal);
 		if (tok.Text() == "explain"sv) {
-			query_.Explain();
+			query_->Explain();
 			parser.SkipToken();
 			tok = peekSqlToken(parser, StartAfterLocalExplain);
 		}
 	}
 
 	if (tok.Text() == "select"sv) {
-		query_.type_ = QuerySelect;
+		query_.Type(QuerySelect);
 		parser.SkipToken();
 		selectParse<Nested::No>(parser);
 	} else if (query_.IsLocal()) {
 		const auto range = parser.Where(tok);
 		throw SqlParserError(range, "Syntax error at or near '{}', {}; only SELECT query could be LOCAL", tok.Text(), range);
 	} else if (tok.Text() == "delete"sv) {
-		query_.type_ = QueryDelete;
+		query_.Type(QueryDelete);
 		tok = parser.NextToken();
 		deleteParse(parser);
 	} else if (tok.Text() == "update"sv) {
-		query_.type_ = QueryUpdate;
+		query_.Type(QueryUpdate);
 		updateParse(parser);
 	} else if (tok.Text() == "truncate"sv) {
-		query_.type_ = QueryTruncate;
+		query_.Type(QueryTruncate);
 		truncateParse(parser);
 	} else {
 		const auto range = parser.Where(tok);
@@ -161,7 +199,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 			if (name.Text() == "count"sv) {
 				query_.CalcTotal(ModeAccurateTotal);
 				if (!wasSelectFilter) {
-					query_.Limit(0);
+					query_->Limit(0);
 				}
 				tok = parser.NextToken();
 				if (tok.Text() != "*"sv) {
@@ -171,7 +209,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 			} else if (name.Text() == "count_cached"sv) {
 				query_.CalcTotal(ModeCachedTotal);
 				if (!wasSelectFilter) {
-					query_.Limit(0);
+					query_->Limit(0);
 				}
 				tok = parser.NextToken();
 				if (tok.Text() != "*"sv) {
@@ -179,15 +217,15 @@ void SQLParser::selectParse(Tokenizer& parser) {
 					throw SqlParserError(range, "Expected '*', but found '{}' in query, {}", tok.Text(), range);
 				}
 			} else if (name.Text() == "rank"sv) {
-				query_.WithRank();
+				query_->WithRank();
 			} else if (name.Text() == "vectors"sv) {
 				if (!query_.CanAddSelectFilter()) {
 					const auto range = parser.Where(name);
 					throw SqlParserError(range, kAggregationWithSelectFieldsMsgError);
 				}
-				query_.Limit(QueryEntry::kDefaultLimit);
+				query_->Limit(QueryEntry::kDefaultLimit);
 				wasSelectFilter = true;
-				query_.Select(FieldsNamesFilter::kAllVectorFieldsName);
+				query_->Select(FieldsNamesFilter::kAllVectorFieldsName);
 			} else {
 				AggType agg = AggregationResult::StrToAggType(name.Text());
 				if (agg != AggUnknown) {
@@ -211,15 +249,13 @@ void SQLParser::selectParse(Tokenizer& parser) {
 						fields.emplace_back(tok.Text());
 						tok = parser.NextToken();
 					}
-					AggregateEntry entry{agg, std::move(fields)};
+					SortingEntries sortingEntries;
+					auto limit = kQueryMaxLimit;
+					auto offset = kQueryMinOffset;
 					for (tok = parser.PeekToken(); tok.Text() != ")"sv; tok = parser.PeekToken()) {
 						if (tok.Text() == "order"sv) {
 							parser.SkipToken();
-							SortingEntries sortingEntries;
-							parseOrderBy(parser, entry);
-							for (auto s : sortingEntries) {
-								entry.AddSortingEntry(std::move(s));
-							}
+							parseOrderBy(parser, sortingEntries);
 						} else if (tok.Text() == "limit"sv) {
 							parser.SkipToken();
 							tok = parser.NextToken();
@@ -227,7 +263,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 								const auto range = parser.Where(tok);
 								throw SqlParserError(range, "Expected number, but found '{}' in query, {}", tok.Text(), range);
 							}
-							entry.SetLimit(stoi(tok.Text()));
+							limit = stoi(tok.Text());
 						} else if (tok.Text() == "offset"sv) {
 							parser.SkipToken();
 							tok = parser.NextToken();
@@ -235,12 +271,12 @@ void SQLParser::selectParse(Tokenizer& parser) {
 								const auto range = parser.Where(tok);
 								throw SqlParserError(range, "Expected number, but found '{}' in query, {}", tok.Text(), range);
 							}
-							entry.SetOffset(stoi(tok.Text()));
+							offset = stoi(tok.Text());
 						} else {
 							break;
 						}
 					}
-					query_.aggregations_.emplace_back(std::move(entry));
+					query_->Aggregate(agg, std::move(fields), std::move(sortingEntries), limit, offset);
 				} else {
 					const auto range = parser.Where(name);
 					throw SqlParserError(range, "Unknown function name SQL - '{}', {}", name.Text(), range);
@@ -258,17 +294,17 @@ void SQLParser::selectParse(Tokenizer& parser) {
 				const auto range = parser.Where(name);
 				throw SqlParserError(range, kAggregationWithSelectFieldsMsgError);
 			}
-			query_.Select(nameWithCase.Text());
-			query_.Limit(QueryEntry::kDefaultLimit);
+			query_->Select(nameWithCase.Text());
+			query_->Limit(QueryEntry::kDefaultLimit);
 			wasSelectFilter = true;
 		} else if (name.Text() == "*"sv) {
 			if (!query_.CanAddSelectFilter()) {
 				const auto range = parser.Where(name);
 				throw SqlParserError(range, kAggregationWithSelectFieldsMsgError);
 			}
-			query_.Limit(QueryEntry::kDefaultLimit);
+			query_->Limit(QueryEntry::kDefaultLimit);
 			wasSelectFilter = true;
-			query_.Select("*");
+			query_->Select("*");
 		}
 		if (tok.Text() != ","sv) {
 			break;
@@ -289,6 +325,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 	query_.SetNsName(nameWithCase.Text());
 	ctx_.updateLinkedNs(query_.NsName());
 
+	NextOp nextOp;
 	do {
 		tok = peekSqlToken(parser, nested == Nested::Yes ? NestedSelectConditionsStart : SelectConditionsStart);
 		if (tok.Text() == "where"sv) {
@@ -301,7 +338,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 				const auto range = parser.Where(tok);
 				throw SqlParserError(range, "Expected number, but found '{}' in query, {}", tok.Text(), range);
 			}
-			query_.Limit(stoi(tok.Text()));
+			query_->Limit(stoi(tok.Text()));
 		} else if (tok.Text() == "offset"sv) {
 			parser.SkipToken();
 			tok = parser.NextToken();
@@ -309,7 +346,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 				const auto range = parser.Where(tok);
 				throw SqlParserError(range, "Expected number, but found '{}' in query, {}", tok.Text(), range);
 			}
-			query_.Offset(stoi(tok.Text()));
+			query_->Offset(stoi(tok.Text()));
 		} else if (tok.Text() == "order"sv) {
 			parser.SkipToken();
 			parseOrderBy(parser, query_);
@@ -317,7 +354,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 		} else {
 			if (tok.Text() == "join"sv) {
 				parser.SkipToken();
-				parseJoin(JoinType::LeftJoin, parser);
+				parseJoin(nextOp.Extract(), JoinType::LeftJoin, parser);
 			} else if (tok.Text() == "left"sv) {
 				parser.SkipToken();
 				std::ignore = peekSqlToken(parser, LeftSqlToken);
@@ -326,7 +363,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 					const auto range = parser.Where(tok);
 					throw SqlParserError(range, "Expected JOIN, but found '{}' in query, {}", tok.Text(), range);
 				}
-				parseJoin(JoinType::LeftJoin, parser);
+				parseJoin(nextOp.Extract(), JoinType::LeftJoin, parser);
 			} else if (tok.Text() == "inner"sv) {
 				parser.SkipToken();
 				std::ignore = peekSqlToken(parser, InnerSqlToken);
@@ -335,9 +372,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 					const auto range = parser.Where(tok);
 					throw SqlParserError(range, "Expected JOIN, but found '{}' in query, {}", tok.Text(), range);
 				}
-				auto jtype = (query_.NextOp() == OpOr) ? JoinType::OrInnerJoin : JoinType::InnerJoin;
-				query_.And();
-				parseJoin(jtype, parser);
+				parseJoin(nextOp.Extract(), InnerJoin, parser);
 			} else if constexpr (nested == Nested::No) {
 				if (tok.Text() != "merge"sv && tok.Text() != "or"sv) {
 					break;
@@ -346,7 +381,7 @@ void SQLParser::selectParse(Tokenizer& parser) {
 				if (tok.Text() == "merge"sv) {
 					parseMerge(parser);
 				} else {
-					query_.Or();
+					nextOp = OpOr;
 				}
 			} else {
 				break;
@@ -403,15 +438,14 @@ Variant Token2kv(const Token& tok, Tokenizer& parser, CompositeAllowed allowComp
 		}
 	}
 
-	const std::string_view value = tok.Text();
 	if (tok.Type() == TokenName) {
-		if (iequals(value, "true"sv)) {
+		if (tok.IsKeyword("true"sv)) {
 			return Variant{true};
 		}
-		if (iequals(value, "false"sv)) {
+		if (tok.IsKeyword("false"sv)) {
 			return Variant{false};
 		}
-		if (iequals(value, "null"sv)) {
+		if (tok.IsKeyword("null"sv)) {
 			if (allowNull) {
 				return Variant{};
 			}
@@ -447,9 +481,9 @@ void SQLParser::parseOrderBy(Tokenizer& parser, Sortable& sortable) {
 			throw SqlParserError(range, "Order by expression should not be empty, {}", range);
 		}
 		tok = peekSqlToken(parser, SortDirectionSqlToken);
-		std::vector<Variant> forcedSortOrder;
+		VariantArray forcedSortOrder;
 		if (tok.Text() == "("sv && iequals(nameWithCase.Text(), "field"sv)) {
-			if constexpr (std::is_same_v<Sortable, AggregateEntry>) {
+			if constexpr (!std::is_same_v<Sortable, QueryImpl>) {
 				const auto range = parser.Where(tok);
 				throw SqlParserError(range, "Forced sort order is not available in aggregation sort");
 			}
@@ -476,15 +510,15 @@ void SQLParser::parseOrderBy(Tokenizer& parser, Sortable& sortable) {
 			tok = parser.PeekToken();
 		}
 
-		bool desc = false;
+		auto sortOrder = SortOrder::Asc;
 		if (tok.Text() == "asc"sv || tok.Text() == "desc"sv) {
-			desc = tok.Text() == "desc"sv;
+			sortOrder = tok.Text() == "desc"sv ? SortOrder::Desc : SortOrder::Asc;
 			parser.SkipToken();
 		}
-		if constexpr (std::is_same_v<Sortable, AggregateEntry>) {
-			sortable.Sort(std::move(sortExpression), desc);
+		if constexpr (concepts::OneOf<std::remove_cvref_t<Sortable>, QueryImpl>) {
+			sortable->Sort(std::move(sortExpression), sortOrder, std::move(forcedSortOrder));
 		} else {
-			sortable.Sort(std::move(sortExpression), desc, std::move(forcedSortOrder));
+			sortable.emplace_back(std::move(sortExpression), Desc{sortOrder == SortOrder::Desc});
 		}
 
 		tok = parser.PeekToken();
@@ -516,7 +550,7 @@ static void addUpdateValue(const Token& tok, Tokenizer& parser, UpdateEntry& upd
 	if (tok.Type() == TokenString) {
 		updateField.Values().push_back(Token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_False, NullAllowed_True));
 	} else {
-		if (tok.Text() == "null"sv) {
+		if (tok.IsKeyword("null"sv)) {
 			updateField.Values().push_back(Variant());
 		} else if (tok.Text() == "{"sv) {
 			try {
@@ -538,8 +572,8 @@ static void addUpdateValue(const Token& tok, Tokenizer& parser, UpdateEntry& upd
 					return true;
 				}
 				auto nextTok = parser.PeekToken();
-				bool result = (nextTok.Text() == "where"sv) || (nextTok.Text() == "order"sv) || (nextTok.Text() == "limit"sv) ||
-							  (nextTok.Text() == "offset"sv) || (!inArray && nextTok.Text() == "]"sv) ||
+				bool result = nextTok.IsKeyword("where"sv) || nextTok.IsKeyword("order"sv) || nextTok.IsKeyword("limit"sv) ||
+							  nextTok.IsKeyword("offset"sv) || (nextTok.Text() == ";"sv) || (!inArray && nextTok.Text() == "]"sv) ||
 							  (!inArray && nextTok.Text() == ","sv);
 				if (nextTok.Text() == "["sv && !inArray) {
 					inArray = true;
@@ -550,11 +584,11 @@ static void addUpdateValue(const Token& tok, Tokenizer& parser, UpdateEntry& upd
 				return result;
 			};
 			int count = 0;
-			std::string expression(tok.Text());
+			std::string expression = tokenAsExpressionText(tok);
 			bool inArray = false;
 			while (!eof(parser, inArray)) {
 				auto nextTok = parser.NextToken(Tokenizer::Flags::TreatSignAsToken);
-				expression += (nextTok.Type() == TokenString) ? ('\'' + std::string{nextTok.Text()} + '\'') : std::string{nextTok.Text()};
+				expression += tokenAsExpressionText(nextTok);
 				++count;
 			}
 			if (count > 0) {
@@ -591,7 +625,15 @@ void SQLParser::parseArray(Tokenizer& parser, const Token& tok, UpdateEntry* upd
 			throw SqlParserError(range, "Expected field value, but found ']' in query, {}", range);
 		}
 		if (updateField) {
+			if (isFieldNameToken(nextTok)) {
+				const auto range = parser.Where(nextTok);
+				throw SqlParserError(range, "Field references are not supported in array literals, {}", range);
+			}
 			addUpdateValue(nextTok, parser, *updateField);
+			if (updateField->IsExpression()) {
+				const auto range = parser.Where(nextTok);
+				throw SqlParserError(range, "Expressions are not supported in array literals, {}", range);
+			}
 		}
 		nextTok = parser.NextToken(Tokenizer::Flags::NoFlags);
 		if (nextTok.Text() == "]"sv) {
@@ -665,7 +707,7 @@ void SQLParser::parseCommand(Tokenizer& parser) const {
 		} else if (tok.Type() != TokenName) {
 			const auto range = parser.Where(tok);
 			throw SqlParserError(range, "Expected field name, but found {} in query, {}", tok.Text(), range);
-		} else if (tok.Text() == "array_remove"sv || tok.Text() == "array_remove_once"sv) {
+		} else if (tok.IsKeyword("array_remove"sv) || tok.IsKeyword("array_remove_once"sv)) {
 			parseCommand(parser);
 		}
 		tok = parser.PeekToken();
@@ -695,7 +737,7 @@ UpdateEntry SQLParser::parseUpdateField(Tokenizer& parser) {
 		std::ignore = updateField.Values().MarkArray();
 		parseArray(parser, tok, &updateField);
 		updateField.SetIsExpression(false);
-	} else if (tok.Text() == "array_remove"sv || tok.Text() == "array_remove_once"sv) {
+	} else if (tok.IsKeyword("array_remove"sv) || tok.IsKeyword("array_remove_once"sv)) {
 		parseCommand(parser);
 
 		updateField.SetIsExpression(true);
@@ -716,7 +758,7 @@ UpdateEntry SQLParser::parseUpdateField(Tokenizer& parser) {
 		if (tok.Type() != TokenName) {
 			const auto range = parser.Where(tok);
 			throw SqlParserError(range, "Expected field name, but found '{}' in query, {}", tok.Text(), range);
-		} else if (tok.Text() == "array_remove"sv || tok.Text() == "array_remove_once"sv) {
+		} else if (tok.IsKeyword("array_remove"sv) || tok.IsKeyword("array_remove_once"sv)) {
 			parseCommand(parser);
 		}
 		tok = parser.PeekToken();
@@ -744,7 +786,7 @@ void SQLParser::updateParse(Tokenizer& parser) {
 	if (tok.Text() == "set"sv) {
 		parser.SkipToken();
 		while (!parser.End()) {
-			query_.UpdateField(parseUpdateField(parser));
+			query_.Set(parseUpdateField(parser));
 			tok = parser.PeekToken();
 			if (tok.Text() != ","sv) {
 				break;
@@ -759,7 +801,7 @@ void SQLParser::updateParse(Tokenizer& parser) {
 				const auto range = parser.Where(tok);
 				throw SqlParserError(range, "Expected field name but found '{}' in query {}", tok.Text(), range);
 			}
-			query_.Drop(std::string(tok.Text()));
+			query_->Drop(tok.Text());
 			parser.SkipToken();
 			tok = parser.PeekToken();
 			if (tok.Text() != ","sv) {
@@ -788,7 +830,7 @@ void SQLParser::parseModifyConditions(Tokenizer& parser) {
 				const auto range = parser.Where(tok);
 				throw SqlParserError(range, "Expected number, but found '{}' in query, {}", tok.Text(), range);
 			}
-			query_.Limit(stoi(tok.Text()));
+			query_->Limit(stoi(tok.Text()));
 		} else if (tok.Text() == "offset"sv) {
 			parser.SkipToken();
 			tok = parser.NextToken();
@@ -796,7 +838,7 @@ void SQLParser::parseModifyConditions(Tokenizer& parser) {
 				const auto range = parser.Where(tok);
 				throw SqlParserError(range, "Expected number, but found '{}' in query, {}", tok.Text(), range);
 			}
-			query_.Offset(stoi(tok.Text()));
+			query_->Offset(stoi(tok.Text()));
 		} else if (tok.Text() == "order"sv) {
 			parser.SkipToken();
 			parseOrderBy(parser, query_);
@@ -823,7 +865,7 @@ RX_ALWAYS_INLINE static bool isCondition(std::string_view text) noexcept {
 
 Query SQLParser::parseSubQuery(Tokenizer& parser) {
 	Query subquery;
-	SQLParser subparser(subquery);
+	SQLParser subparser(Impl(subquery));
 	const ParserContextsAppendGuard guard{ctx_, subparser.ctx_};
 	if (ctx_.autocompleteMode) {
 		subparser.ctx_.suggestionsPos = ctx_.suggestionsPos;
@@ -864,7 +906,24 @@ VariantArray SQLParser::parseValues(Tokenizer& parser) const {
 
 CondType SQLParser::parseCondition(Tokenizer& parser, OpType& op) {
 	CondType condition;
+	if (parser.PeekToken().Type() == TokenEnd) {
+		if (ctx_.autocompleteMode) {
+			try {
+				std::ignore = peekSqlToken(parser, ConditionSqlToken);
+			} catch (const ErrorEOF&) {
+				if (ctx_.suggestionsPos + 1 >= parser.GetPos()) {
+					throw;
+				}
+			}
+		}
+		const auto range = parser.Where(parser.PeekToken());
+		throw SqlParserError(range, "Expected condition operator, but found end of query");
+	}
 	auto tok = peekSqlToken(parser, ConditionSqlToken);
+	if (tok.Quoted()) {
+		const auto range = parser.Where(tok);
+		throw SqlParserError(range, "Expected condition operator, but found '{}' in query, {}", tok.Text(), range);
+	}
 	if (tok.Text() == "<>"sv) {
 		condition = CondEq;
 		if (op == OpAnd) {
@@ -883,28 +942,31 @@ CondType SQLParser::parseCondition(Tokenizer& parser, OpType& op) {
 }
 
 template <typename T>
-void SQLParser::parseWhereCondition(Tokenizer& parser, T&& firstArg, OpType op) {
+void SQLParser::parseWhereCondition(Tokenizer& parser, T&& firstArg, OpType op, bool firstArgQuoted) {
 	std::optional<functions::FunctionVariant> function;
 
-	auto tryToParseFunction = [&](const auto& name) {
-		if (auto tok = parser.PeekToken(); tok.Text() == "(") {
+	auto tryToParseFunction = [&](const auto& name, bool quoted = false) {
+		if (auto tok = parser.PeekToken(); !quoted && tok.Text() == "(") {
 			function.emplace(functions::Function::FromSQL(name, parser));
 		}
 	};
 
 	if constexpr (std::is_constructible_v<std::string, T>) {
-		tryToParseFunction(firstArg);
+		tryToParseFunction(firstArg, firstArgQuoted);
 	}
 
 	auto setWhereCondition = [this, &firstArg, &function](OpType op, CondType condition, VariantArray&& values) {
 		if (function.has_value()) {
-			query_.NextOp(op).Where(std::move(function.value()), condition, std::move(values));
+			query_.AddConditionFunction(op, std::move(function.value()), condition, std::move(values));
+		} else if constexpr (std::is_same_v<std::remove_cvref_t<T>, Query>) {
+			query_.AddConditionSubQuery(op, std::forward<T>(firstArg), condition, std::move(values));
 		} else {
-			query_.NextOp(op).Where(std::forward<T>(firstArg), condition, std::move(values));
+			query_.AddCondition<QueryEntry>(op, std::forward<T>(firstArg), condition, std::move(values));
 		}
 	};
 
-	// Operator
+	// Operator. `IS` and `=` both map to CondEq; peek the raw token to keep `IS NULL` distinct from `= NULL`.
+	const bool isIsPredicate = parser.PeekToken().IsKeyword("is"sv);
 	CondType condition{parseCondition(parser, op)};
 
 	// Value
@@ -912,11 +974,22 @@ void SQLParser::parseWhereCondition(Tokenizer& parser, T&& firstArg, OpType op) 
 		std::ignore = peekSqlToken(parser, WhereFieldValueSqlToken, false);
 	}
 	auto tok = parser.NextToken();
-	if (iequals(tok.Text(), "null"sv) || iequals(tok.Text(), "empty"sv)) {
-		setWhereCondition(op, CondEmpty, VariantArray{});
-	} else if (iequals(tok.Text(), "not"sv)) {
+	if (tok.IsKeyword("null"sv) || tok.IsKeyword("empty"sv)) {
+		if (isIsPredicate) {
+			setWhereCondition(op, CondEmpty, VariantArray{});
+		} else if (tok.IsKeyword("null"sv)) {
+			setWhereCondition(op, condition, {Variant{}});
+		} else {
+			const auto range = parser.Where(tok);
+			throw SqlParserError(range, "Expected parameter, but found '{}' in query, {}", tok.Text(), range);
+		}
+	} else if (tok.IsKeyword("not"sv)) {
+		if (!isIsPredicate) {
+			const auto range = parser.Where(tok);
+			throw SqlParserError(range, "Expected parameter, but found '{}' in query, {}", tok.Text(), range);
+		}
 		tok = peekSqlToken(parser, WhereFieldNegateValueSqlToken, false);
-		if (!iequals(tok.Text(), "null"sv) && !iequals(tok.Text(), "empty"sv)) {
+		if (!tok.IsKeyword("null"sv) && !tok.IsKeyword("empty"sv)) {
 			const auto range = parser.Where(tok);
 			throw SqlParserError(range, "Expected NULL, but found '{}' in query, {}", tok.Text(), range);
 		}
@@ -927,48 +1000,83 @@ void SQLParser::parseWhereCondition(Tokenizer& parser, T&& firstArg, OpType op) 
 			if (iequals(peekSqlToken(parser, WhereFieldValueOrSubquerySqlToken, false).Text(), "select"sv) &&
 				!isCondition(parser.PeekSecondToken().Text())) {
 				if (function.has_value()) {
-					query_.NextOp(op).Where(std::move(function.value()), condition, parseSubQuery(parser));
+					query_.AddConditionFunctionSubQuery(op, std::move(function.value()), condition, parseSubQuery(parser));
 				} else {
-					query_.NextOp(op).Where(std::forward<T>(firstArg), condition, parseSubQuery(parser));
+					query_.AddConditionSubQuery(op, std::forward<T>(firstArg), condition, parseSubQuery(parser));
 				}
 				return;
 			}
 		}
 		VariantArray values{parseValues(parser)};
 		setWhereCondition(op, condition, std::move(values));
-	} else if (tok.Type() != TokenName || iequals(tok.Text(), "true"sv) || iequals(tok.Text(), "false"sv)) {
+	} else if (tok.Type() != TokenName || tok.IsKeyword("true"sv) || tok.IsKeyword("false"sv)) {
 		setWhereCondition(op, condition, {Token2kv(tok, parser, CompositeAllowed_True, FieldAllowed_False, NullAllowed_True)});
 	} else {
 		if constexpr (std::is_same_v<T, Query>) {
-			tryToParseFunction(tok.Text());
+			tryToParseFunction(tok.Text(), tok.Quoted());
 			if (function.has_value()) {
-				query_.NextOp(op).Where(std::forward<T>(firstArg), condition, std::move(function.value()));
+				query_.AddConditionSubQueryFunction(op, std::forward<T>(firstArg), condition, std::move(function.value()));
 			} else {
 				const auto range = parser.Where(tok);
 				throw SqlParserError(range, "Field cannot be after subquery. (text = '{}'  location = {})", tok.Text(), range);
 			}
 		} else {
+			static_assert(std::is_same_v<T, std::string>);
 			if (function.has_value()) {
-				query_.NextOp(op).Where(std::move(function.value()), condition, std::forward<T>(firstArg));
+				query_.AddConditionFunction(op, std::move(function.value()), condition, VariantArray::Create(std::forward<T>(firstArg)));
 			} else {
 				// Second field
-				tryToParseFunction(tok.Text());
+				tryToParseFunction(tok.Text(), tok.Quoted());
 				if (function.has_value()) {
-					query_.NextOp(op).Where(std::forward<T>(firstArg), condition, std::move(function.value()));
+					query_.AddConditionFunction(op, std::forward<T>(firstArg), condition, std::move(function.value()));
 				} else {
-					query_.NextOp(op).WhereBetweenFields(std::forward<T>(firstArg), condition, std::string{tok.Text()});
+					query_.AddCondition<BetweenFieldsQueryEntry>(op, std::forward<T>(firstArg), condition, std::string{tok.Text()});
 				}
 			}
 		}
 	}
 }
 
+void SQLParser::parseWhereConditionLeftValue(Tokenizer& parser, Variant left, OpType op) {
+	CondType condition{parseCondition(parser, op)};
+
+	if (ctx_.autocompleteMode) {
+		std::ignore = peekSqlToken(parser, WhereFieldValueSqlToken, false);
+	}
+	auto tok = parser.NextToken();
+	auto throwExpectedField = [&]() {
+		const auto range = parser.Where(tok);
+		throw SqlParserError(range, "Expected field or index name, but found '{}' in query, {}", tok.Text(), range);
+	};
+
+	if (tok.Text() == "("sv) {
+		if (iequals(peekSqlToken(parser, WhereFieldValueOrSubquerySqlToken, false).Text(), "select"sv) &&
+			!isCondition(parser.PeekSecondToken().Text())) {
+			query_.AddConditionSubQuery(op, parseSubQuery(parser), joins::InvertJoinCondition(condition), VariantArray{std::move(left)});
+			return;
+		}
+		throwExpectedField();
+	}
+
+	if (tok.IsKeyword("null"sv) || tok.IsKeyword("empty"sv) || tok.IsKeyword("not"sv) || !isFieldNameToken(tok)) {
+		throwExpectedField();
+	}
+
+	if (!tok.Quoted() && parser.PeekToken().Text() == "("sv) {
+		auto function = functions::Function::FromSQL(std::string{tok.Text()}, parser);
+		query_.AddConditionFunction(op, std::move(function), joins::InvertJoinCondition(condition), VariantArray{std::move(left)});
+		return;
+	}
+
+	query_.AddCondition<QueryEntry>(op, std::string{tok.Text()}, joins::InvertJoinCondition(condition), VariantArray{std::move(left)});
+}
+
 template <SQLParser::Nested nested>
 void SQLParser::parseWhere(Tokenizer& parser, TokenizerRange whereLocation) {
 	auto tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
 
-	OpType nextOp = OpAnd;
-	if (iequals(tok.Text(), "not"sv)) {
+	NextOp nextOp;
+	if (tok.IsKeyword("not"sv)) {
 		nextOp = OpNot;
 		parser.SkipToken();
 	}
@@ -983,7 +1091,7 @@ void SQLParser::parseWhere(Tokenizer& parser, TokenizerRange whereLocation) {
 	while (!parser.End()) {
 		tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
 		parser.SkipToken(Tokenizer::Flags::NoFlags);
-		while (tok.Type() == TokenName && iequals(tok.Text(), "equal_position"sv)) {
+		while (tok.IsKeyword("equal_position"sv)) {
 			parseEqualPositions(parser);
 			tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldSqlToken, false);
 			parser.SkipToken(Tokenizer::Flags::NoFlags);
@@ -992,18 +1100,17 @@ void SQLParser::parseWhere(Tokenizer& parser, TokenizerRange whereLocation) {
 		if (tok.Text() == "("sv) {
 			tok = peekSqlToken(parser, nested == Nested::Yes ? NestedWhereFieldSqlToken : WhereFieldOrSubquerySqlToken, false);
 			// isCondition(parser.peek_second_token().text() to distinguish the token type operator 'select' or field with name 'select'
-			if (nested == Nested::No && iequals(tok.Text(), "select"sv) && !isCondition(parser.PeekSecondToken().Text())) {
-				parseWhereCondition(parser, parseSubQuery(parser), nextOp);
-				nextOp = OpAnd;
+			if (tok.IsKeyword("select"sv) && !isCondition(parser.PeekSecondToken().Text())) {
+				parseWhereCondition(parser, parseSubQuery(parser), nextOp.Extract());
 			} else {
-				if (nextOp != OpAnd && iequals(tok.Text(), "left"sv)) {
+				if (nextOp != OpAnd && tok.IsKeyword("left"sv)) {
 					const auto range = parser.Where(tok);
-					throw SqlParserError(range, "Left join with {} operation, {}", OpTypeToStr(nextOp), range);
+					throw SqlParserError(range, "Left join with {} operation, {}", OpTypeToStr(nextOp.Extract()), range);
 				}
-				query_.NextOp(nextOp);
-				query_.OpenBracket();
+				query_.NextOp(nextOp.Extract());
+				query_->OpenBracket();
 				++openBracketsCount;
-				if (iequals(tok.Text(), "not"sv)) {
+				if (tok.IsKeyword("not"sv)) {
 					nextOp = OpNot;
 					parser.SkipToken();
 				} else {
@@ -1013,17 +1120,20 @@ void SQLParser::parseWhere(Tokenizer& parser, TokenizerRange whereLocation) {
 			}
 		} else if (tok.Type() == TokenName) {
 			const auto nextToken = parser.PeekToken();
-			if (iequals(tok.Text(), "st_dwithin"sv) && nextToken.Text() == "("sv) {
-				parseDWithin(parser, nextOp);
-			} else if (iequals(tok.Text(), "knn"sv) && nextToken.Text() == "("sv) {
-				parseKnn(parser, nextOp);
+			if (isLiteralWhereOperand(tok)) {
+				parseWhereConditionLeftValue(parser, Token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_False, NullAllowed_True),
+											 nextOp.Extract());
+			} else if (tok.IsKeyword("st_dwithin"sv) && nextToken.Text() == "("sv) {
+				parseDWithin(nextOp.Extract(), parser);
+			} else if (tok.IsKeyword("knn"sv) && nextToken.Text() == "("sv) {
+				parseKnn(nextOp.Extract(), parser);
 			} else {
-				if (iequals(tok.Text(), "join"sv)) {
-					parseJoin(JoinType::LeftJoin, parser);
-				} else if (iequals(tok.Text(), "left"sv)) {
+				if (tok.IsKeyword("join"sv)) {
+					parseJoin(nextOp.Extract(), JoinType::LeftJoin, parser);
+				} else if (tok.IsKeyword("left"sv)) {
 					if (nextOp != OpAnd) {
 						const auto range = parser.Where(tok);
-						throw SqlParserError(range, "Left join with {} operation, {}", OpTypeToStr(nextOp), range);
+						throw SqlParserError(range, "Left join with {} operation, {}", OpTypeToStr(nextOp.Extract()), range);
 					}
 					std::ignore = peekSqlToken(parser, LeftSqlToken);
 					tok = parser.NextToken();
@@ -1031,32 +1141,35 @@ void SQLParser::parseWhere(Tokenizer& parser, TokenizerRange whereLocation) {
 						const auto range = parser.Where(tok);
 						throw SqlParserError(range, "Expected JOIN, but found '{}' in query, {}", tok.Text(), range);
 					}
-					parseJoin(JoinType::LeftJoin, parser);
-				} else if (iequals(tok.Text(), "inner"sv)) {
+					parseJoin(nextOp.Extract(), JoinType::LeftJoin, parser);
+				} else if (tok.IsKeyword("inner"sv)) {
 					std::ignore = peekSqlToken(parser, InnerSqlToken);
 					tok = parser.NextToken();
 					if (tok.Text() != "join"sv) {
 						const auto range = parser.Where(tok);
 						throw SqlParserError(range, "Expected JOIN, but found '{}' in query, {}", tok.Text(), range);
 					}
-					auto jtype = nextOp == OpOr ? JoinType::OrInnerJoin : JoinType::InnerJoin;
-					query_.NextOp(nextOp);
-					parseJoin(jtype, parser);
+					parseJoin(nextOp.Extract(), InnerJoin, parser);
 				} else {
-					parseWhereCondition(parser, std::string{tok.Text()}, nextOp);
+					parseWhereCondition(parser, std::string{tok.Text()}, nextOp.Extract(), tok.Quoted());
 				}
 			}
-			nextOp = OpAnd;
 		} else if (tok.Type() == TokenNumber || tok.Type() == TokenString) {
-			const auto range = parser.Where(tok);
-			throw SqlParserError(range, "{} is invalid at this location. (text = '{}'  location = {})",
-								 tok.Type() == TokenNumber ? "Number" : "String", tok.Text(), range);
+			const auto condTok = parser.PeekToken();
+			if (condTok.Quoted() || !isCondition(condTok.Text())) {
+				const auto range = parser.Where(tok);
+				throw SqlParserError(range, "{} is invalid at this location. (text = '{}'  location = {})",
+									 tok.Type() == TokenNumber ? "Number" : "String", tok.Text(), range);
+			}
+			parseWhereConditionLeftValue(parser, Token2kv(tok, parser, CompositeAllowed_False, FieldAllowed_False, NullAllowed_True),
+										 nextOp.Extract());
+			nextOp = OpAnd;
 		} else {
 			expectSecondLogicalOperand = true;
 		}
 
 		tok = parser.PeekToken();
-		while (tok.Text() == "equal_position"sv) {
+		while (tok.IsKeyword("equal_position"sv)) {
 			parser.SkipToken();
 			parseEqualPositions(parser);
 			tok = parser.PeekToken();
@@ -1064,11 +1177,11 @@ void SQLParser::parseWhere(Tokenizer& parser, TokenizerRange whereLocation) {
 
 		while (openBracketsCount > 0 && tok.Text() == ")"sv) {
 			throwIfExpectSecondLogicalOperand();
-			query_.CloseBracket();
+			query_->CloseBracket();
 			--openBracketsCount;
 			parser.SkipToken();
 			tok = parser.PeekToken();
-			while (tok.Text() == "equal_position"sv) {
+			while (tok.IsKeyword("equal_position"sv)) {
 				parser.SkipToken();
 				parseEqualPositions(parser);
 				tok = parser.PeekToken();
@@ -1076,25 +1189,25 @@ void SQLParser::parseWhere(Tokenizer& parser, TokenizerRange whereLocation) {
 		}
 
 		tok = peekSqlToken(parser, WhereOpSqlToken, false);
-		if (iequals(tok.Text(), "and"sv)) {
+		if (tok.IsKeyword("and"sv)) {
 			throwIfExpectSecondLogicalOperand();
 			nextOp = OpAnd;
 			expectSecondLogicalOperand = true;
 			parser.SkipToken();
 			tok = peekSqlToken(parser, nested == Nested::Yes ? NestedAndSqlToken : AndSqlToken, false);
-			if (iequals(tok.Text(), "not"sv)) {
+			if (tok.IsKeyword("not"sv)) {
 				parser.SkipToken();
 				nextOp = OpNot;
 			} else {
 				continue;
 			}
-		} else if (iequals(tok.Text(), "or"sv)) {
+		} else if (tok.IsKeyword("or"sv)) {
 			throwIfExpectSecondLogicalOperand();
 			parser.SkipToken();
 			std::ignore = peekSqlToken(parser, FieldNameSqlToken);
 			nextOp = OpOr;
 			expectSecondLogicalOperand = true;
-		} else if (!iequals(tok.Text(), "join"sv) && !iequals(tok.Text(), "inner"sv) && !iequals(tok.Text(), "left"sv)) {
+		} else if (!tok.IsKeyword("join"sv) && !tok.IsKeyword("inner"sv) && !tok.IsKeyword("left"sv)) {
 			break;
 		}
 	}
@@ -1129,7 +1242,7 @@ void SQLParser::parseEqualPositions(Tokenizer& parser) {
 			throw SqlParserError(range, "Expected ',', but found '{}', {}", tok.Text(), range);
 		}
 	}
-	query_.EqualPositions(std::move(fieldNames));
+	query_->EqualPositions(std::move(fieldNames));
 }
 
 Point SQLParser::parseGeomFromText(Tokenizer& parser) const {
@@ -1289,7 +1402,7 @@ KnnSearchParams SQLParser::parseKnnParams(Tokenizer& parser) {
 	}
 }
 
-void SQLParser::parseKnn(Tokenizer& parser, OpType nextOp) {
+void SQLParser::parseKnn(OpType nextOp, Tokenizer& parser) {
 	auto tok = parser.NextToken();
 	if (tok.Text() != "("sv) {
 		const auto range = parser.Where(tok);
@@ -1321,7 +1434,7 @@ void SQLParser::parseKnn(Tokenizer& parser, OpType nextOp) {
 				const auto range = parser.Where(tok);
 				throw SqlParserError(range, "Expected ',' or ')', but found '{}', {}", tok.Text(), range);
 			}
-			query_.NextOp(nextOp).WhereKNN(std::move(field), std::move(value), params);
+			query_.AddCondition<KnnQueryEntry>(nextOp, std::move(field), std::move(value), params);
 			return;	 // NOTE: stop processing
 		}
 
@@ -1369,10 +1482,10 @@ void SQLParser::parseKnn(Tokenizer& parser, OpType nextOp) {
 		throw SqlParserError(range, "Expected ',' or ')', but found '{}', {}", tok.Text(), range);
 	}
 
-	query_.NextOp(nextOp).WhereKNN(std::move(field), vecView, params);
+	query_.AddCondition<KnnQueryEntry>(nextOp, std::move(field), vecView, params);
 }
 
-void SQLParser::parseDWithin(Tokenizer& parser, OpType nextOp) {
+void SQLParser::parseDWithin(OpType nextOp, Tokenizer& parser) {
 	auto tok = parser.NextToken();
 	if (tok.Text() != "("sv) {
 		const auto range = parser.Where(tok);
@@ -1433,12 +1546,12 @@ void SQLParser::parseDWithin(Tokenizer& parser, OpType nextOp) {
 		const auto range = parser.Where(tok);
 		throw SqlParserError(range, "Expected ')', but found '{}', {}", tok.Text(), range);
 	}
-	query_.NextOp(nextOp).DWithin(field, point, distance.As<double>());
+	query_.AddCondition<QueryEntry>(nextOp, field, CondDWithin, VariantArray::Create(point, distance.As<double>()));
 }
 
-void SQLParser::parseJoin(JoinType type, Tokenizer& parser) {
+void SQLParser::parseJoin(OpType op, JoinType type, Tokenizer& parser) {
 	JoinedQuery jquery;
-	SQLParser jparser(jquery);
+	SQLParser jparser(Impl(jquery));
 	const ParserContextsAppendGuard guard{ctx_, jparser.ctx_};
 	if (ctx_.autocompleteMode) {
 		jparser.ctx_.suggestionsPos = ctx_.suggestionsPos;
@@ -1464,19 +1577,20 @@ void SQLParser::parseJoin(JoinType type, Tokenizer& parser) {
 			throw SqlParserError(range, "Expected ')', but found '{}', {}", tok.Text(), range);
 		}
 	} else {
+		QueryImpl jqueryImpl = Impl(jquery);
 		validateNamespaceToken(parser, nameWithCase);
-		jquery.SetNsName(nameWithCase.Text());
-		ctx_.updateLinkedNs(jquery.NsName());
+		jqueryImpl.SetNsName(nameWithCase.Text());
+		ctx_.updateLinkedNs(jqueryImpl.NsName());
 	}
-	jquery.joinType = type;
+	JoinedImpl(jquery).SetJoinType(type);
 	jparser.parseJoinEntries(parser, query_.NsName(), jquery);
 
-	query_.Join(std::move(jquery));
+	query_.Join(op, std::move(jquery));
 }
 
 void SQLParser::parseMerge(Tokenizer& parser) {
 	JoinedQuery mquery;
-	SQLParser mparser(mquery);
+	SQLParser mparser(Impl(mquery));
 	const ParserContextsAppendGuard guard{ctx_, mparser.ctx_};
 	if (ctx_.autocompleteMode) {
 		mparser.ctx_.suggestionsPos = ctx_.suggestionsPos;
@@ -1501,9 +1615,9 @@ void SQLParser::parseMerge(Tokenizer& parser) {
 			throw SqlParserError(range, "Expected ')', but found '{}', {}", tok.Text(), range);
 		}
 	}
-	mquery.joinType = JoinType::Merge;
+	JoinedImpl(mquery).SetJoinType(JoinType::Merge);
 
-	query_.Merge(std::move(mquery));
+	query_->Merge(std::move(mquery));
 }
 
 std::string SQLParser::parseJoinedFieldName(Tokenizer& parser, std::string& name) {
@@ -1530,6 +1644,7 @@ std::string SQLParser::parseJoinedFieldName(Tokenizer& parser, std::string& name
 }
 
 void SQLParser::parseJoinEntries(Tokenizer& parser, const std::string& mainNs, JoinedQuery& jquery) {
+	ConstQueryImpl jqueryImpl = Impl(jquery);
 	auto tok = peekSqlToken(parser, OnSqlToken);
 	if (tok.Text() != "on"sv) {
 		const auto range = parser.Where(tok);
@@ -1544,20 +1659,21 @@ void SQLParser::parseJoinEntries(Tokenizer& parser, const std::string& mainNs, J
 		parser.SkipToken();
 	}
 
+	NextOp nextOp;
 	while (!parser.End()) {
 		tok = peekSqlToken(parser, OpSqlToken);
 		if (tok.Text() == "or"sv) {
-			jquery.Or();
+			nextOp = OpOr;
 			parser.SkipToken();
 			tok = parser.PeekToken();
 		} else if (tok.Text() == "and"sv) {
-			jquery.And();
+			nextOp = OpAnd;
 			parser.SkipToken();
 			tok = parser.PeekToken();
 		}
 
 		if (tok.Text() == "not"sv) {
-			jquery.Not();
+			nextOp = OpNot;
 			parser.SkipToken();
 			tok = parser.PeekToken();
 		}
@@ -1567,27 +1683,26 @@ void SQLParser::parseJoinEntries(Tokenizer& parser, const std::string& mainNs, J
 			return;
 		}
 
-		std::string ns1 = mainNs, ns2 = jquery.NsName();
+		std::string ns1 = mainNs, ns2 = jqueryImpl.NsName();
 		std::string fld1 = parseJoinedFieldName(parser, ns1);
 		const auto condTok = parser.NextToken();
 		CondType condition = getCondType(condTok, parser.Where(condTok));
 		std::string fld2 = parseJoinedFieldName(parser, ns2);
-		bool reverseNamespacesOrder{false};
+		ReverseNsOrder reverseNamespacesOrder{ReverseNsOrder_False};
 
-		if (ns1 != mainNs || ns2 != jquery.NsName()) {
-			if (ns2 == mainNs && ns1 == jquery.NsName()) {
+		if (ns1 != mainNs || ns2 != jqueryImpl.NsName()) {
+			if (ns2 == mainNs && ns1 == jqueryImpl.NsName()) {
 				std::swap(fld1, fld2);
 				condition = joins::InvertJoinCondition(condition);
-				reverseNamespacesOrder = true;
+				reverseNamespacesOrder = ReverseNsOrder_True;
 			} else {
 				const auto range = parser.Where();
 				throw SqlParserError(range, "Unexpected tables with ON statement: ('{}' and '{}') but expected ('{}' and '{}'), {}", ns1,
-									 ns2, mainNs, jquery.NsName(), range);
+									 ns2, mainNs, jqueryImpl.NsName(), range);
 			}
 		}
 
-		jquery.joinEntries_.emplace_back(jquery.NextOp(), condition, std::move(fld1), std::move(fld2), reverseNamespacesOrder);
-		jquery.And();
+		JoinedImpl(jquery).EmplaceBackOnEntry(nextOp.Extract(), std::move(fld1), condition, std::move(fld2), reverseNamespacesOrder);
 		if (!brackets) {
 			return;
 		}
@@ -1614,6 +1729,9 @@ CondType SQLParser::getCondType(const Token& condToken, TokenizerRange tokenPosi
 		return CondLike;
 	} else if (iequals(cond, "allset"sv)) {
 		return CondAllSet;
+	}
+	if (cond.empty()) {
+		throw SqlParserError(tokenPosition, "Expected condition operator, but found end of query");
 	}
 	throw SqlParserError(tokenPosition, "Expected condition operator, but found '{}' in query", cond);
 }

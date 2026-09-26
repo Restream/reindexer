@@ -1,8 +1,10 @@
 #pragma once
 
+#include <span>
 #include <vector>
 #include "core/dbconfig.h"
 #include "core/embedding/embeddingconfig.h"
+#include "core/embedding/protocol/iembed_protocol.h"
 #include "core/keyvalue/float_vector.h"
 #include "core/namespace/namespacestat.h"
 #include "core/storage/storagetype.h"
@@ -16,25 +18,28 @@ class chunk;
 class EmbeddersLRUCache;
 
 namespace embedding {
-using ValueT = h_vector<FloatVector, 1>;
+
 using StrorageKeyT = std::string;
 using BaseKeyT = std::string;
 
 class [[nodiscard]] Adapter final {
 public:
-	static Error VectorsFromJSON(const StrorageKeyT& json, ValueT& result) noexcept;
+	static Error VectorsFromJSON(const StrorageKeyT& json, EmbedderConfig::Protocol protocol, ValueT& result) noexcept;
 
-	explicit Adapter(const BaseKeyT& source);
-	explicit Adapter(std::span<const std::vector<std::pair<std::string, VariantArray>>> sources);
-	const StrorageKeyT& View() const& noexcept { return view_; }
+	explicit Adapter(const BaseKeyT& source, EmbedderConfig::Protocol protocol, std::string_view model);
+	explicit Adapter(std::span<const DocSource> sources, EmbedderConfig::Protocol protocol, EmbedderConfig::FieldsFormat fieldsFormat,
+					 std::string_view model);
+	const StrorageKeyT& View() const& noexcept { return request_.view; }
 	auto View() const&& = delete;
+	const StrorageKeyT& CacheKey() const& noexcept { return request_.cacheKey.empty() ? request_.view : request_.cacheKey; }
+	auto CacheKey() const&& = delete;
 	chunk Content() const;
 
 private:
-	static void vectorsFromJSON(const gason::JsonNode& root, ValueT& result);
-
-	StrorageKeyT view_;
+	PreparedEmbedderRequest request_;
+	EmbedderConfig::Protocol protocol_;
 };
+
 }  // namespace embedding
 
 class [[nodiscard]] EmbeddersCache final {

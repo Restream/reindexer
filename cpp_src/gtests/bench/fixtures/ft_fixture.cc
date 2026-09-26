@@ -3,17 +3,17 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <string_view>
 #include <thread>
 
 #include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/config/ftconfig.h"
+#include "core/system_ns_names.h"
 #include "tools/errors.h"
 
 namespace reindexer_benchmarks {
-
-#include <dlfcn.h>
 
 using benchmark::State;
 
@@ -44,7 +44,8 @@ FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
 	: BaseFixture(db, name, maxItems, 1, false),
 	  ftLowDiversityCfg_(1),
 	  lowWordsDiversityNsDef_("LowWordsDiversityNs"),
-	  shortSuffixPreselectNsDef_("ShortSuffixPreselectNs") {
+	  shortSuffixPreselectNsDef_("ShortSuffixPreselectNs"),
+	  suffixCleanupNsDef_("FtSuffixUpdatesAndCleanup") {
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	std::cout << "!!!REINDEXER WITH FT_EXTRA_DEBUG FLAG!!!!!" << std::endl;
 #endif
@@ -75,6 +76,11 @@ FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
 	shortSuffixPreselectNsDef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("year", "tree", "int", IndexOpts())
 		.AddIndex(kIndexTextPreselectName_, "text", "string", std::move(ftShortSuffixPreselectIndexOpts));
+	suffixCleanupNsDef_.AddIndex("id", "hash", "int", IndexOpts().PK())
+		.AddIndex("description", "-", "string", IndexOpts())
+		.AddIndex("year", "tree", "int", IndexOpts())
+		.AddIndex("countries", "tree", "string", IndexOpts().Array())
+		.AddIndex(kIndexTextName_, {"countries", "description"}, "text", "composite", IndexOpts().Dense());
 }
 template <reindexer::FTConfig::Optimization opt>
 void FullText::UpdateIndex(State& state) {
@@ -87,8 +93,7 @@ void FullText::UpdateIndex(State& state) {
 	}
 
 	// Warm up the index
-	Query q(nsdef_.name);
-	q.Where(kIndexTextName_, CondEq, "lskfj");
+	const auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, "lskfj");
 	QueryResults qres;
 	auto err = db_->Select(q, qres);
 	if (!err.ok()) {
@@ -264,6 +269,21 @@ void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::o
 	wrapFast.SetOptions(Register("Fast2TypoWordMatch.Incremental", &FullText::Fast2TypoWordMatch, this));
 	wrapFast.SetOptions(Register("Fast1WordWithAreaHighDiversity.Incremental", &FullText::Fast1WordWithAreaHighDiversity, this));
 
+	// Heavy: rebuilds NS + background cleanup. Opt-in only:
+	//   REINDEXER_FT_SUFFIX_CLEANUP_BENCH=1 ./ft_benchmarking --benchmark_filter='.*WithUpdatesAndCleanup.*'
+	if (std::getenv("REINDEXER_FT_SUFFIX_CLEANUP_BENCH")) {
+		Register("InitForSuffixUpdatesAndCleanup.OptByMem", &FullText::InitForSuffixUpdatesAndCleanup<Mem>, this)
+			->Iterations(1)
+			->Unit(benchmark::kMicrosecond);
+		wrapSlow.SetOptions(
+			Register("Fast2SuffixMatchWithUpdatesAndCleanup.OptByMem", &FullText::Fast2SuffixMatchWithUpdatesAndCleanup, this));
+		Register("InitForSuffixUpdatesAndCleanup.OptByCPU", &FullText::InitForSuffixUpdatesAndCleanup<CPU>, this)
+			->Iterations(1)
+			->Unit(benchmark::kMicrosecond);
+		wrapSlow.SetOptions(
+			Register("Fast2SuffixMatchWithUpdatesAndCleanup.OptByCPU", &FullText::Fast2SuffixMatchWithUpdatesAndCleanup, this));
+	}
+
 	Register("InitForAlternatingUpdatesAndSelects.OptByMem", &FullText::InitForAlternatingUpdatesAndSelects<Mem>, this)
 		->Iterations(1)
 		->Unit(benchmark::kMicrosecond);
@@ -365,8 +385,7 @@ void FullText::BuildInsertIncremental(State& state) {
 	assertrx(itemsPerStep > 2);
 
 	auto execQuery = [&] {
-		Query q(nsdef_.name);
-		q.Where(kIndexTextName_, CondEq, RndWord1()).Limit(20);
+		const auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, RndWord1()).Limit(20);
 
 		QueryResults qres;
 		size_t memory = get_alloc_size();
@@ -421,8 +440,7 @@ void FullText::BuildCommonIndexes(benchmark::State& state) {
 	using namespace std::string_view_literals;
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where("year"sv, CondRange, {2010, 2016}).Limit(20).Sort("year"sv, false);
+		const auto q = Query(nsdef_.name).Where("year"sv, CondRange, {2010, 2016}).Limit(20).Sort("year"sv, SortOrder::Asc);
 		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
 		QueryResults qres;
@@ -451,8 +469,7 @@ void FullText::BuildInsertLowDiversityNs(State& state) {
 		idCounter++;
 	}
 
-	Query q(lowWordsDiversityNsDef_.name);
-	q.Where(kLowDiversityIndexName_, CondEq, words2_.at(0)).Limit(1);
+	const auto q = Query(lowWordsDiversityNsDef_.name).Where(kLowDiversityIndexName_, CondEq, words2_.at(0)).Limit(1);
 	QueryResults qres;
 	auto err = db_->Select(q, qres);
 	if (!err.ok()) {
@@ -660,8 +677,7 @@ void FullText::BuildFastTextIndex(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t mem = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(nsdef_.name);
-		q.Where(kIndexTextName_, CondEq, RndWord1()).Limit(20);
+		const auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, RndWord1()).Limit(20);
 
 		QueryResults qres;
 
@@ -684,9 +700,7 @@ void FullText::Fast1WordMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 
 		TIMEMEASURE();
-		Query q(nsdef_.name);
-
-		q.Where(kIndexTextName_, CondEq, RndWord1());
+		const auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, RndWord1());
 
 		QueryResults qres;
 
@@ -723,8 +737,7 @@ void FullText::Fast1PrefixMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
-		Query q(nsdef_.name);
-		q.Where(kIndexTextName_, CondEq, MakePrefixWord());
+		const auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, MakePrefixWord());
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -742,8 +755,7 @@ void FullText::Fast2PrefixMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
-		Query q(nsdef_.name);
-		q.Where(kIndexTextName_, CondEq, MakePrefixWord().append(" ").append(MakePrefixWord()));
+		const auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, MakePrefixWord().append(" ").append(MakePrefixWord()));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -761,8 +773,7 @@ void FullText::Fast1SuffixMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
-		Query q(nsdef_.name);
-		q.Where(kIndexTextName_, CondEq, MakeSuffixWord());
+		const auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, MakeSuffixWord());
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
@@ -779,13 +790,105 @@ void FullText::Fast2SuffixMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
-		Query q(nsdef_.name);
-		q.Where(kIndexTextName_, CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
+		const auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) {
 			state.SkipWithError(err.what());
+		}
+		cnt += qres.Count();
+	}
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+
+template <reindexer::FTConfig::Optimization opt>
+void FullText::InitForSuffixUpdatesAndCleanup(State& state) {
+	dropNamespace(suffixCleanupNs_, state);
+
+	reindexer::FTConfig ftCfg(1);
+	ftCfg.optimization = opt;
+	ftCfg.deletedDocsOptimizationThreshold = 0.0;
+	const auto it = std::find_if(suffixCleanupNsDef_.indexes.begin(), suffixCleanupNsDef_.indexes.end(),
+								 [this](const auto& idx) { return idx.Name() == kIndexTextName_; });
+	assertrx(it != suffixCleanupNsDef_.indexes.end());
+	auto opts = it->Opts();
+	std::ignore = opts.SetConfig(IndexCompositeFastFT, ftCfg.GetJSON({}));
+	it->SetOpts(std::move(opts));
+
+	auto err = db_->AddNamespace(suffixCleanupNsDef_);
+	if (!err.ok()) {
+		state.SkipWithError(err.what());
+		return;
+	}
+
+	const size_t docsCount = static_cast<size_t>(id_seq_->Count());
+	for (size_t i = 0; i < docsCount; ++i) {
+		auto item = db_->NewItem(suffixCleanupNs_);
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what());
+			return;
+		}
+		std::ignore = item.Unsafe(false);
+		item["id"] = static_cast<int>(i + 1);
+		item["description"] = CreatePhrase();
+		item["year"] = RndInt(2000, 2049);
+		item["countries"] = toArray<std::string>(GetRandomCountries());
+		err = db_->Insert(suffixCleanupNs_, item);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+			return;
+		}
+	}
+
+	Query warmup(suffixCleanupNs_);
+	warmup.Where(kIndexTextName_, CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
+	QueryResults qres;
+	err = db_->Select(warmup, qres);
+	if (!err.ok()) {
+		state.SkipWithError(err.what());
+		return;
+	}
+
+	setNamespaceOptimizationConfig(suffixCleanupNs_, 1, 4, state);
+}
+
+void FullText::Fast2SuffixMatchWithUpdatesAndCleanup(benchmark::State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	TIMETRACKER("Fast2SuffixMatchWithUpdatesAndCleanup.gist");
+	size_t cnt = 0;
+	const size_t updatesPerIteration = std::max<size_t>(1, id_seq_->Count() / 100);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		state.PauseTiming();
+		reindexer::Error err;
+		for (size_t i = 0; i < updatesPerIteration; ++i) {
+			auto item = db_->NewItem(suffixCleanupNs_);
+			std::ignore = item.Unsafe(false);
+			if (!item.Status().ok()) {
+				state.SkipWithError(item.Status().what());
+				return;
+			}
+			item["id"] = RndInt(1, static_cast<int>(id_seq_->Count()));
+			item["description"] = CreatePhrase();
+			item["year"] = RndInt(2000, 2049);
+			item["countries"] = toArray<std::string>(GetRandomCountries());
+			err = db_->Update(suffixCleanupNs_, item);
+			if (!err.ok()) {
+				state.SkipWithError(err.what());
+				return;
+			}
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+		state.ResumeTiming();
+
+		TIMEMEASURE();
+		Query q(suffixCleanupNs_);
+		q.Where(kIndexTextName_, CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
+		QueryResults qres;
+		err = db_->Select(q, qres);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+			return;
 		}
 		cnt += qres.Count();
 	}
@@ -862,8 +965,7 @@ void FullText::Fast1TypoWordMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
-		Query q(nsdef_.name);
-		q.Where(kIndexTextName_, CondEq, MakeTypoWord());
+		const auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, MakeTypoWord());
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -881,8 +983,7 @@ void FullText::Fast2TypoWordMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
-		Query q(nsdef_.name);
-		q.Where(kIndexTextName_, CondEq, MakeTypoWord().append(" ").append(MakeTypoWord()));
+		const auto q = Query(nsdef_.name).Where(kIndexTextName_, CondEq, MakeTypoWord().append(" ").append(MakeTypoWord()));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -1084,13 +1185,42 @@ void FullText::setIndexConfig(NamespaceDef& nsDef, std::string_view indexName, c
 	assertf(err.ok(), "err: {}", err.what());
 }
 
+void FullText::setNamespaceOptimizationConfig(std::string_view nsName, int optimizationTimeoutMs, int optimizationSortWorkers,
+											  benchmark::State& state) {
+	reindexer::WrSerializer ser;
+	reindexer::JsonBuilder jb(ser);
+
+	jb.Put("type", "namespaces");
+	auto nsArray = jb.Array("namespaces");
+	auto ns = nsArray.Object();
+	ns.Put("namespace", nsName);
+	ns.Put("optimization_timeout_ms", optimizationTimeoutMs);
+	ns.Put("optimization_sort_workers", optimizationSortWorkers);
+	ns.End();
+	nsArray.End();
+	jb.End();
+
+	auto item = db_->NewItem(reindexer::kConfigNamespace);
+	if (!item.Status().ok()) {
+		state.SkipWithError(item.Status().what());
+		return;
+	}
+	auto err = item.FromJSON(ser.Slice());
+	if (!err.ok()) {
+		state.SkipWithError(err.what());
+		return;
+	}
+	err = db_->Upsert(reindexer::kConfigNamespace, item);
+	if (!err.ok()) {
+		state.SkipWithError(err.what());
+	}
+}
+
 void FullText::dropNamespace(std::string_view name, benchmark::State& state) {
 	auto err = db_->DropNamespace(name);
-	if (!err.ok()) {
-		if (err.code() != errNotFound || err.what() != "Namespace '" + alternatingNs_ + "' does not exist") {
-			state.SkipWithError(err.what());
-			assertf(err.ok(), "{}", err.what());
-		}
+	if (!err.ok() && err.code() != errNotFound) {
+		state.SkipWithError(err.what());
+		assertf(err.ok(), "{}", err.what());
 	}
 }
 

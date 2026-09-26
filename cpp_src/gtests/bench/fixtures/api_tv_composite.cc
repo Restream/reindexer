@@ -1,6 +1,5 @@
 #include "api_tv_composite.h"
 #include "allocs_tracker.h"
-#include "core/keyvalue/variant.h"
 #include "core/query/query.h"
 #include "helpers.h"
 
@@ -141,7 +140,7 @@ void ApiTvComposite::RangeTreeInt(State& state) {
 
 void ApiTvComposite::RangeTreeStrCollateNumeric(State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		return Query(nsdef_.name).Where("sub_id", CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)}).Limit(1);
 	};
 	benchQuery(q, state);
@@ -158,7 +157,7 @@ void ApiTvComposite::RangeTreeDouble(State& state) {
 
 void ApiTvComposite::RangeTreeCompositeIntInt(State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		const auto leftYear = random<int>(2000, 2024);
 		const auto rightYear = random<int>(2025, 2049);
 		return Query(nsdef_.name)
@@ -171,7 +170,7 @@ void ApiTvComposite::RangeTreeCompositeIntInt(State& state) {
 
 void ApiTvComposite::RangeTreeCompositeIntStr(State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		const auto leftName = random<size_t>(0, names_.size() - 2);
 		const auto rightName = random<size_t>(leftName + 1, names_.size() - 1);
 		return Query(nsdef_.name)
@@ -184,7 +183,7 @@ void ApiTvComposite::RangeTreeCompositeIntStr(State& state) {
 
 void ApiTvComposite::RangeHashInt(State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		return Query(nsdef_.name).Where("id", CondRange, {idRange.first, idRange.second}).Limit(20);
 	};
 	benchQuery(q, state);
@@ -212,7 +211,7 @@ void ApiTvComposite::RangeHashStringCollateUTF8(State& state) {
 
 void ApiTvComposite::RangeHashCompositeIntInt(State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		const auto leftStartTime = random<int64_t>(0, 24999);
 		const auto rightStartTime = random<int64_t>(25000, 50000);
 		return Query(nsdef_.name)
@@ -225,7 +224,7 @@ void ApiTvComposite::RangeHashCompositeIntInt(State& state) {
 
 void ApiTvComposite::RangeHashCompositeIntStr(benchmark::State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		const auto leftGenre = std::to_string(random<int>(0, 24));
 		const auto rightGenre = std::to_string(random<int>(25, 49));
 		return Query(nsdef_.name)
@@ -238,26 +237,26 @@ void ApiTvComposite::RangeHashCompositeIntStr(benchmark::State& state) {
 
 void ApiTvComposite::RangeTreeIntSortByHashInt(State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		return Query(nsdef_.name).Where("id", CondRange, {idRange.first, idRange.second}).Sort("age"sv, false).Limit(20);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
+		return Query(nsdef_.name).Where("id"sv, CondRange, {idRange.first, idRange.second}).Sort("age"sv, SortOrder::Asc).Limit(20);
 	};
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeIntSortByTreeInt(State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-		return Query(nsdef_.name).Where("id"sv, CondRange, {idRange.first, idRange.second}).Sort("year"sv, false).Limit(20);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
+		return Query(nsdef_.name).Where("id"sv, CondRange, {idRange.first, idRange.second}).Sort("year"sv, SortOrder::Asc).Limit(20);
 	};
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeStrSortByHashInt(benchmark::State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		return Query(nsdef_.name)
 			.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)})
-			.Sort("age"sv, false)
+			.Sort("age"sv, SortOrder::Asc)
 			.Limit(20);
 	};
 	benchQuery(q, state);
@@ -265,10 +264,10 @@ void ApiTvComposite::RangeTreeStrSortByHashInt(benchmark::State& state) {
 
 void ApiTvComposite::RangeTreeStrSortByTreeInt(benchmark::State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		return Query(nsdef_.name)
 			.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)})
-			.Sort("year"sv, false)
+			.Sort("year"sv, SortOrder::Asc)
 			.Limit(20);
 	};
 	benchQuery(q, state);
@@ -278,7 +277,7 @@ void ApiTvComposite::RangeTreeDoubleSortByTreeInt(benchmark::State& state) {
 	const auto q = [&] {
 		const auto leftRate = random<double>(0.0, 4.99);
 		const auto rightRate = random<double>(5.0, 10.0);
-		return Query(nsdef_.name).Where("rate"sv, CondRange, {leftRate, rightRate}).Sort("year"sv, false).Limit(20);
+		return Query(nsdef_.name).Where("rate"sv, CondRange, {leftRate, rightRate}).Sort("year"sv, SortOrder::Asc).Limit(20);
 	};
 	benchQuery(q, state);
 }
@@ -287,17 +286,17 @@ void ApiTvComposite::RangeTreeDoubleSortByHashInt(benchmark::State& state) {
 	const auto q = [&] {
 		const auto leftRate = random<double>(0.0, 4.99);
 		const auto rightRate = random<double>(5.0, 10.0);
-		return Query(nsdef_.name).Where("rate"sv, CondRange, {leftRate, rightRate}).Sort("age"sv, false).Limit(20);
+		return Query(nsdef_.name).Where("rate"sv, CondRange, {leftRate, rightRate}).Sort("age"sv, SortOrder::Asc).Limit(20);
 	};
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::RangeTreeStrSortByHashStrCollateASCII(benchmark::State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		return Query(nsdef_.name)
 			.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)})
-			.Sort("location"sv, false)
+			.Sort("location"sv, SortOrder::Asc)
 			.Limit(20);
 	};
 	benchQuery(q, state);
@@ -305,27 +304,27 @@ void ApiTvComposite::RangeTreeStrSortByHashStrCollateASCII(benchmark::State& sta
 
 void ApiTvComposite::RangeTreeStrSortByHashStrCollateUTF8(benchmark::State& state) {
 	const auto q = [&] {
-		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		const auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() / 50);
 		return Query(nsdef_.name)
 			.Where("id"sv, CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)})
-			.Sort("name"sv, false)
+			.Sort("name"sv, SortOrder::Asc)
 			.Limit(20);
 	};
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByHashInt(benchmark::State& state) {
-	const auto q = Query(nsdef_.name).Sort("id"sv, false).Limit(20);
+	const auto q = Query(nsdef_.name).Sort("id"sv, SortOrder::Asc).Limit(20);
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::ForcedSortByHashInt(benchmark::State& state) {
-	const auto q = Query(nsdef_.name).Sort("id"sv, false, {10, 20, 30, 40, 50}).Limit(20);
+	const auto q = Query(nsdef_.name).Sort("id"sv, SortOrder::Asc, {10, 20, 30, 40, 50}).Limit(20);
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::ForcedSortWithSecondCondition(benchmark::State& state) {
-	const auto q = Query(nsdef_.name).Sort("id"sv, false, {10, 20, 30, 40, 50}).Sort("location"sv, false).Limit(20);
+	const auto q = Query(nsdef_.name).Sort("id"sv, SortOrder::Asc, {10, 20, 30, 40, 50}).Sort("location"sv, SortOrder::Asc).Limit(20);
 	benchQuery(q, state);
 }
 
@@ -341,32 +340,32 @@ void ApiTvComposite::Query2CondIdSetComposite(benchmark::State& state) {
 }
 
 void ApiTvComposite::SortByHashStrCollateASCII(benchmark::State& state) {
-	const auto q = Query(nsdef_.name).Sort("location"sv, false).Limit(20);
+	const auto q = Query(nsdef_.name).Sort("location"sv, SortOrder::Asc).Limit(20);
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByHashStrCollateUTF8(benchmark::State& state) {
-	const auto q = Query(nsdef_.name).Sort("name"sv, false).Limit(20);
+	const auto q = Query(nsdef_.name).Sort("name"sv, SortOrder::Asc).Limit(20);
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByHashCompositeIntInt(benchmark::State& state) {
-	const auto q = Query(nsdef_.name).Sort("id+start_time"sv, false).Limit(20);
+	const auto q = Query(nsdef_.name).Sort("id+start_time"sv, SortOrder::Asc).Limit(20);
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByHashCompositeIntStr(benchmark::State& state) {
-	const auto q = Query(nsdef_.name).Sort("id+genre"sv, false).Limit(20);
+	const auto q = Query(nsdef_.name).Sort("id+genre"sv, SortOrder::Asc).Limit(20);
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByTreeCompositeIntInt(benchmark::State& state) {
-	const auto q = Query(nsdef_.name).Sort("id+year"sv, false).Limit(20);
+	const auto q = Query(nsdef_.name).Sort("id+year"sv, SortOrder::Asc).Limit(20);
 	benchQuery(q, state);
 }
 
 void ApiTvComposite::SortByTreeCompositeIntStrCollateUTF8(benchmark::State& state) {
-	const auto q = Query(nsdef_.name).Sort("id+name"sv, false).Limit(20);
+	const auto q = Query(nsdef_.name).Sort("id+name"sv, SortOrder::Asc).Limit(20);
 	benchQuery(q, state);
 }
 

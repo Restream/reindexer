@@ -1,4 +1,5 @@
 #pragma once
+#include <utility>
 #include "core/ft/areaholder.h"
 #include "core/index/ft_preselect.h"
 #include "dataholder.h"
@@ -20,6 +21,28 @@ RX_ALWAYS_INLINE void InitFrom(PositionsVector&& source, PositionsVector& dest) 
 }
 
 RX_ALWAYS_INLINE void InitFrom(const PositionsVector& source, PositionsVector& dest) { dest = source; }
+
+inline const PositionsVector& OccurencePositions(const IdRelType& occ) noexcept { return occ.Pos(); }
+inline PositionsVector& OccurencePositions(IdRelType& occ) noexcept { return occ.Pos(); }
+inline PositionsVector& OccurencePositions(IdRelTypePacked& occ) { return occ.Pos(); }
+
+inline size_t OccurenceSize(const IdRelType& occ) noexcept { return occ.size(); }
+inline size_t OccurenceSize(IdRelType& occ) noexcept { return occ.size(); }
+inline size_t OccurenceSize(IdRelTypePacked& occ) { return occ.size(); }
+
+// Materialize positions for merge; prefer PeekSimplePos when there is a single hit.
+template <typename OccurenceT>
+RX_ALWAYS_INLINE PositionsVector TakeOccurencePos(OccurenceT&& occ) {
+	PositionsVector positions;
+	if (occ.IsSimple()) {
+		positions.emplace_back(occ.PeekSimplePos());
+	} else if constexpr (std::is_same_v<std::remove_cvref_t<OccurenceT>, IdRelTypePacked>) {
+		InitFrom(occ.TakePos(), positions);
+	} else {
+		InitFrom(std::forward<OccurenceT>(occ).Pos(), positions);
+	}
+	return positions;
+}
 
 template <typename PosTypeT>
 int MergePositionsWithDist(const PositionsVector& positions, const PositionsVector& newWordPos, unsigned int dist, PosTypeT& res,
@@ -299,6 +322,7 @@ public:
 	using InfoType = typename MergeDataType::InfoType;
 	using DocumentDataType = PhraseMergerDocumentData<MergeDataType>;
 	using BitsetType = DynamicBitset<64>;
+	static constexpr MergeOffsetT kNotInMerge = std::numeric_limits<MergeOffsetT>::max();
 
 	PhraseMerger(size_t totalNumDocs, FTConfig* cfg, FtMergeStatuses::Statuses& docsExcluded, size_t fieldSize, int maxAreasInDoc,
 				 bool inTransaction, const RdxContext& ctx)
@@ -360,11 +384,8 @@ private:
 		mergeData_.reserve(maxMergedDocs_);
 		mergeDataExtended_.reserve(maxMergedDocs_);
 
-		if (phrase.NumTerms() > 1) {
-			idoffsets_.resize(totalNumDocs_, maxMergedDocs_);
-		}
+		idoffsets_.assign(totalNumDocs_, kNotInMerge);
 
-		maxDocId_ = totalNumDocs_;
 		phraseProc_ = phrase.CalcProc16();
 	}
 
@@ -372,7 +393,8 @@ private:
 	void preselectDocsContainingAllTerms(PhraseResults<IdCont>& phrase, const DocsStatsGetter& docsStatsGetter);
 
 	template <typename Bm25T, typename DocsStatsGetter>
-	void mergePhraseTerm(TermResults<IdCont>& termRes, bool firstTerm, const DocsStatsGetter& docsStatsGetter);
+	void mergePhraseTerm(TermResults<IdCont>& term, bool isFirstTerm, unsigned distance, const h_vector<FtDslFieldOpts, 8>& fieldsOpts,
+						 const DocsStatsGetter& docsStatsGetter);
 
 	uint16_t phraseProc_ = 0;
 
@@ -388,7 +410,6 @@ private:
 	size_t fieldSize_ = 0;
 	int maxAreasInDoc_ = 0;
 	uint32_t maxMergedDocs_ = 0;
-	index_t maxDocId_ = 0;
 
 	bool inTransaction_ = false;
 	const RdxContext& ctx_;

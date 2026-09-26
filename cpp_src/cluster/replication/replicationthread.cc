@@ -1,11 +1,12 @@
+#include <exception>
 #include "asyncreplthread.h"
 #include "cluster/consts.h"
 #include "cluster/sharding/shardingcontrolrequest.h"
 #include "clusterreplthread.h"
-#include "core/formatters/checksum_fmt.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 #include "estl/algorithm.h"
+#include "estl/expected.h"
 #include "estl/gift_str.h"
 #include "ns_sync_scheduler.h"
 #include "sharedsyncstate.h"
@@ -31,11 +32,14 @@ using updates::MetaReplicationRecord;
 using updates::QueryReplicationRecord;
 using updates::SchemaReplicationRecord;
 using updates::AddNamespaceReplicationRecord;
-using updates::RenameNamespaceReplicationRecord;
 using updates::NodeNetworkCheckRecord;
 using updates::SaveNewShardingCfgRecord;
 using updates::ApplyNewShardingCfgRecord;
 using updates::ResetShardingCfgRecord;
+
+static bool isNsLifecycleRecord(updates::URType type) noexcept {
+	return type == updates::URType::AddNamespace || type == updates::URType::DropNamespace || type == updates::URType::CloseNamespace;
+}
 
 ReplThreadConfig::ReplThreadConfig(const ReplicationConfigData& baseConfig, const AsyncReplConfigData& config) {
 	AppName = config.appName;
@@ -106,15 +110,19 @@ void Node::Reconnect(net::ev::dynamic_loop& loop, const ReplThreadConfig& config
 }  // namespace repl_thread_impl
 
 template <typename BehaviourParamT>
-bool UpdateApplyStatus::IsHaveToResync() const noexcept {
+bool UpdateApplyStatus::NeedsSingleNsResync() const noexcept {
 	static_assert(std::is_same_v<BehaviourParamT, AsyncThreadParam> || std::is_same_v<BehaviourParamT, ClusterThreadParam>,
 				  "Unexpected param type");
 	if constexpr (std::is_same_v<BehaviourParamT, ClusterThreadParam>) {
-		return type == updates::URType::ResyncNamespaceGeneric || type == updates::URType::ResyncOnUpdatesDrop;
+		return type == updates::URType::ResyncNamespaceGeneric;
 	} else {
-		return type == updates::URType::ResyncNamespaceGeneric || type == updates::URType::ResyncNamespaceLeaderInit ||
-			   type == updates::URType::ResyncOnUpdatesDrop;
+		return type == updates::URType::ResyncNamespaceGeneric || type == updates::URType::ResyncNamespaceLeaderInit;
 	}
+}
+
+template <typename BehaviourParamT>
+bool UpdateApplyStatus::IsHaveToResync() const noexcept {
+	return NeedsSingleNsResync<BehaviourParamT>() || type == updates::URType::ResyncOnUpdatesDrop;
 }
 
 template <typename BehaviourParamT>
@@ -469,9 +477,9 @@ Expected<std::vector<NamespaceDef>> ReplThread<BehaviourParamT>::generateSyncNss
 }
 
 template <typename BehaviourParamT>
-Error ReplThread<BehaviourParamT>::namespacesSyncImpl(Node& node, const std::vector<NamespaceDef>& nsList) {
+Error ReplThread<BehaviourParamT>::namespacesSyncImpl(Node& node, std::span<const NamespaceDef> nsList, SyncMode syncMode) {
 	std::set<NamespaceName> nssToSync;
-	for (auto& ns : nsList) {
+	for (const auto& ns : nsList) {
 		nssToSync.emplace(ns.name);
 	}
 
@@ -500,7 +508,7 @@ Error ReplThread<BehaviourParamT>::namespacesSyncImpl(Node& node, const std::vec
 		assertrx_dbg(removed == 1);
 
 		// Delay allows other routines to get tokens for better rearranging
-		if (isFirstNs) {
+		if (isFirstNs && nsList.size() > 1) {
 			loop.sleep(std::chrono::milliseconds(10));
 		} else {
 			loop.yield();
@@ -508,7 +516,7 @@ Error ReplThread<BehaviourParamT>::namespacesSyncImpl(Node& node, const std::vec
 
 		logInfo("{}:{} Creating new sync routine to sync '{}'", serverId_, node.uid, routineCtx->ns.Name());
 		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
-		loop.spawn(localWg, [this, &integralError, &node, routineCtx = std::move(routineCtx)]() mutable noexcept {
+		loop.spawn(localWg, [this, &integralError, &node, syncMode, routineCtx = std::move(routineCtx)]() mutable noexcept {
 			// 3.1) Perform wal-sync/force-sync for specified namespace in separated routine
 			try {
 				auto logGrd = MakeScopeGuard(
@@ -562,18 +570,15 @@ Error ReplThread<BehaviourParamT>::namespacesSyncImpl(Node& node, const std::vec
 						if (!nsExists) {
 							replState = ReplicationStateV2();
 						}
-						err = syncNamespace(node, ns.Name(), replState);
+						err = syncNamespace(node, ns.Name(), replState, syncMode);
 						if (!err.ok()) {
 							logWarn("{}:{}:{} Namespace sync error: {}", serverId_, node.uid, ns.Name(), err.whatStr());
-							if (err.code() == errNotFound) {
-								err = Error();
-								logWarn("{}:{} Expecting drop namespace record for '{}'", serverId_, node.uid, ns.Name());
-							} else if (err.code() == errDataHashMismatch || needForceSyncOnLogicError(err)) {
+							if (err.code() == errChecksumMismatch || needForceSyncOnLogicError(err)) {
 								replState = ReplicationStateV2();
-								err = syncNamespace(node, ns.Name(), replState);
+								err = syncNamespace(node, ns.Name(), replState, syncMode);
 								if (!err.ok()) {
 									logWarn("{}:{}:{} Namespace sync error (resync due to {}): {}", serverId_, node.uid, ns.Name(),
-											err.code() == errDataHashMismatch ? "datahash missmatch" : "logic error", err.whatStr());
+											err.code() == errChecksumMismatch ? "checksum mismatch" : "logic error", err.whatStr());
 								}
 							}
 						}
@@ -605,19 +610,53 @@ Error ReplThread<BehaviourParamT>::namespacesSyncImpl(Node& node, const std::vec
 template <typename BehaviourParamT>
 Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node, const std::vector<NamespaceDef>& nsList) {
 	node.requireResync = false;
-	logTrace("{}:{} Performing ns data cleanup...", serverId_, node.uid);
-	for (auto nsDataIt = node.namespaceData.begin(); nsDataIt != node.namespaceData.end();) {
-		if (!nsDataIt->second.tx.IsFree()) {
-			auto err = node.client.WithLSN(lsn_t(0, serverId_)).RollBackTransaction(nsDataIt->second.tx);
-			logInfo("{}:{} Rollback transaction result: {}", serverId_, node.uid,
-					err.ok() ? "OK" : ("Error:" + std::to_string(err.code()) + ". " + err.whatStr()));
-			nsDataIt->second.tx = client::CoroTransaction();
-		}
-		if (nsDataIt->second.isClosed) {
-			nsDataIt->second.requiresTmUpdate = true;
+	logTrace("{}:{} Performing ns data reconciliation...", serverId_, node.uid);
+	NsNamesHashSetT openOnLeader(nsList.size());
+	for (const auto& ns : nsList) {
+		openOnLeader.emplace(ns.name);
+	}
+	for (auto nsDataIt = node.NsData().cbegin(); nsDataIt != node.NsData().cend();) {
+		if (nsDataIt->first.empty()) {
+			assertrx_dbg(false);
 			++nsDataIt;
-		} else {
-			nsDataIt = node.namespaceData.erase(nsDataIt);
+			continue;
+		}
+		rollbackNamespaceTx(node, nsDataIt->first);
+		if (openOnLeader.find(nsDataIt->first) != openOnLeader.end()) {
+			nsDataIt = node.EraseNsData(nsDataIt);
+			continue;
+		}
+		ReindexerImpl::NamespacePresence presence{};
+		const RdxDeadlineContext deadlineCtx(kLocalCallsTimeout);
+		if (auto err = thisNode.GetNamespacePresence(nsDataIt->first, presence, RdxContext().WithCancelCtx(deadlineCtx)); !err.ok()) {
+			return err;
+		}
+		switch (presence) {
+			case ReindexerImpl::NamespacePresence::Open:
+				nsDataIt = node.EraseNsData(nsDataIt);
+				break;
+			case ReindexerImpl::NamespacePresence::ClosedWithStorage: {
+				auto& nsData = node.NsData(nsDataIt->first);
+				nsData.isClosed = true;
+				nsData.requiresTmUpdate = true;
+				++nsDataIt;
+			} break;
+			case ReindexerImpl::NamespacePresence::Absent: {
+				// Lost Drop (or never-created ns). Cluster forbids Close without drop, so the same
+				// reconstruction applies to both async and RAFT threads.
+				logInfo("{}:{}:{} Namespace is absent on leader. Dropping it on follower (reconciliation)", serverId_, node.uid,
+						nsDataIt->first);
+				auto err = node.client.WithLSN(lsn_t(0, serverId_)).DropNamespace(nsDataIt->first);
+				if (!err.ok() && err.code() != errNotFound) {
+					logWarn("{}:{}:{} Unable to drop absent namespace on follower: {}", serverId_, node.uid, nsDataIt->first, err.what());
+					return err;
+				}
+				nsDataIt = node.EraseNsData(nsDataIt);
+				loop.yield();
+				break;
+			}
+			default:
+				std::abort();
 		}
 	}
 
@@ -629,7 +668,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node, const std::ve
 	}
 
 	// 3) Perform wal-sync/force-sync for node's namespaces
-	if (auto err = namespacesSyncImpl(node, nsList); !err.ok()) {
+	if (auto err = namespacesSyncImpl(node, nsList, SyncMode::FullSync); !err.ok()) {
 		logError("{}:{} Unable to sync remote namespaces: {}", serverId_, node.uid, err.what());
 		return err;
 	}
@@ -685,7 +724,66 @@ std::tuple<bool, UpdateApplyStatus> ReplThread<BehaviourParamT>::handleNetworkCh
 }
 
 template <typename BehaviourParamT>
-Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName& nsName, const ReplicationStateV2& followerState) {
+Error ReplThread<BehaviourParamT>::handleMissingLeaderNs(Node& node, client::CoroReindexer& client, const NamespaceName& nsName,
+														 std::string_view stage, bool& retrySync, ReplicationStateV2& retryLeaderState,
+														 bool allowOpenRetry) {
+	using Presence = ReindexerImpl::NamespacePresence;
+	retrySync = false;
+
+	auto loadPresence = [this, &nsName](Presence& presence) -> Error {
+		presence = Presence{};
+		const RdxDeadlineContext deadlineCtx(kLocalCallsTimeout);
+		return thisNode.GetNamespacePresence(nsName, presence, RdxContext().WithCancelCtx(deadlineCtx));
+	};
+
+	Presence presence{};
+	if (auto err = loadPresence(presence); !err.ok()) {
+		return err;
+	}
+
+	if (presence == Presence::Open && allowOpenRetry) {
+		const RdxDeadlineContext deadlineCtx(kLocalCallsTimeout);
+		auto err = thisNode.GetReplState(nsName, retryLeaderState, RdxContext().WithCancelCtx(deadlineCtx));
+		if (err.ok()) {
+			logInfo("{}:{}:{} Namespace reappeared on leader at {}. Retrying sync", serverId_, node.uid, nsName, stage);
+			retrySync = true;
+			return Error();
+		}
+		if (err.code() != errNotFound) {
+			return err;
+		}
+		if (auto probeErr = loadPresence(presence); !probeErr.ok()) {
+			return probeErr;
+		}
+	}
+
+	switch (presence) {
+		case Presence::Open:
+			return Error(errLogic, "{}:{}:{} Namespace is open on leader at {} but GetReplState failed", serverId_, node.uid, nsName,
+						 stage);
+		case Presence::ClosedWithStorage:
+			node.NsData(nsName).isClosed = true;
+			logInfo("{}:{}:{} Namespace is missing on leader at {} (closed with storage). Keeping follower data", serverId_, node.uid,
+					nsName, stage);
+			return Error();
+		case Presence::Absent: {
+			logInfo("{}:{}:{} Namespace is absent on leader ({}). Dropping it on follower", serverId_, node.uid, nsName, stage);
+			rollbackNamespaceTx(node, node.NsData(nsName));
+			auto dropRes = client.WithLSN(lsn_t(0, serverId_)).DropNamespace(nsName);
+			if (!dropRes.ok() && dropRes.code() != errNotFound) {
+				return dropRes;
+			}
+			node.EraseNsData(nsName);
+			return Error();
+		}
+		default:
+			std::abort();
+	}
+}
+
+template <typename BehaviourParamT>
+Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName& nsName, const ReplicationStateV2& followerState,
+												 SyncMode syncMode) {
 	try {
 		class [[nodiscard]] TmpNsGuard {
 		public:
@@ -714,6 +812,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 		if (!bhvParam_.IsLeader()) {
 			return Error(errParams, "Leader was switched");
 		}
+		const auto hwm = updates_->GetNextUpdateID();
 		SyncTimeCounter timeCounter(SyncTimeCounter::Type::WalSync, statsCollector_);
 
 		ReplicationStateV2 localState;
@@ -726,38 +825,29 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 		RdxDeadlineContext deadlineCtx(kLocalCallsTimeout);
 		auto err = thisNode.GetReplState(nsName, localState, RdxContext().WithCancelCtx(deadlineCtx));
 		if (!err.ok()) {
-			if (err.code() == errNotFound) {
-				if (requiredLsn.IsEmpty()) {
-					logInfo("{}:{}: Namespace '{}' does not exist on both follower and leader", serverId_, node.uid, nsName);
-					return Error();
-				}
-				if (node.namespaceData[nsName].isClosed) {
-					logInfo("{}:{} Namespace '{}' is closed on leader. Skipping it", serverId_, node.uid, nsName);
-					return Error();
-				} else {
-					logInfo(
-						"{}:{} Namespace '{}' does not exist on leader, but exist on follower. Trying to "
-						"remove it...",
-						serverId_, node.uid, nsName);
-					auto dropRes = client.WithLSN(lsn_t(0, serverId_)).DropNamespace(nsName);
-					if (dropRes.ok()) {
-						logInfo("{}:{} Namespace '{}' was removed", serverId_, node.uid, nsName);
-					} else {
-						logInfo("{}:{} Unable to remove namespace '{}': {}", serverId_, node.uid, nsName, dropRes.what());
-						return dropRes;
-					}
-				}
+			if (err.code() != errNotFound) {
+				return err;
 			}
-			return err;
+			if (syncMode == SyncMode::OnlineSingleNs) {
+				logInfo("{}:{} Namespace '{}' is not found on leader during online resync. Skipping it", serverId_, node.uid, nsName);
+				return Error();
+			}
+			bool retrySync = false;
+			err = handleMissingLeaderNs(node, client, nsName, "repl_state", retrySync, localState);
+			if (!err.ok()) {
+				return err;
+			}
+			if (!retrySync) {
+				return Error();
+			}
 		}
 		const ExtendedLsn localLsn(localState.nsVersion, localState.lastLsn);
 
 		logInfo(
-			"{}:{} ReplState for '{}': {{ local: {{ ns_version: {}, lsn: {}, data_hash: {} }}, remote: {{ "
-			"ns_version: {}, lsn: {}, data_hash: {} }} }}",
-			serverId_, node.uid, nsName, localState.nsVersion, localState.lastLsn, localState.dataHash, followerState.nsVersion,
-			followerState.lastLsn, followerState.dataHash);
-		assertrx_dbg(localState.dataHash.hashV2.has_value());
+			"{}:{} ReplState for '{}': {{ local: {{ ns_version: {}, lsn: {}, checksum: {} }}, remote: {{ "
+			"ns_version: {}, lsn: {}, checksum: {} }} }}",
+			serverId_, node.uid, nsName, localState.nsVersion, localState.lastLsn, localState.checksum, followerState.nsVersion,
+			followerState.lastLsn, followerState.checksum);
 
 		if (!requiredLsn.IsEmpty() && localLsn.IsCompatibleByNsVersion(requiredLsn)) {
 			if (requiredLsn.LSN().Counter() > localLsn.LSN().Counter()) {
@@ -769,9 +859,9 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 				logWarn("{}:{}:{} unexpected follower's lsn: {}. Local lsn: {}. LSNs have different server ids", serverId_, node.uid,
 						nsName, requiredLsn.LSN(), localLsn.LSN());
 				requiredLsn = ExtendedLsn();
-			} else if (requiredLsn.LSN() == localLsn.LSN() && !followerState.dataHash.IsEqualByAnyVersionTo(localState.dataHash)) {
-				logWarn("{}:{}:{} Datahash missmatch. Expected: {}, actual: {}", serverId_, node.uid, nsName, localState.dataHash,
-						followerState.dataHash);
+			} else if (requiredLsn.LSN() == localLsn.LSN() && followerState.checksum != localState.checksum) {
+				logWarn("{}:{}:{} Checksum mismatch. Expected: {}, actual: {}", serverId_, node.uid, nsName, localState.checksum,
+						followerState.checksum);
 				assertrx_dbg(0 && "Does not expect checksum missmatch in debug build");
 				requiredLsn = ExtendedLsn();
 			}
@@ -781,7 +871,31 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 		err = thisNode.GetSnapshot(nsName, SnapshotOpts(requiredLsn, config_.MaxWALDepthOnForceSync), snapshot,
 								   RdxContext().WithCancelCtx(deadlineCtx));
 		if (!err.ok()) {
-			return err;
+			if (err.code() != errNotFound) {
+				return err;
+			}
+			if (syncMode == SyncMode::OnlineSingleNs) {
+				logInfo("{}:{} Namespace '{}' is not found on leader while taking snapshot. Skipping it", serverId_, node.uid, nsName);
+				return Error();
+			}
+			bool retrySync = false;
+			err = handleMissingLeaderNs(node, client, nsName, "snapshot", retrySync, localState);
+			if (!err.ok()) {
+				return err;
+			}
+			if (!retrySync) {
+				return Error();
+			}
+			deadlineCtx = RdxDeadlineContext(kLocalCallsTimeout);
+			err = thisNode.GetSnapshot(nsName, SnapshotOpts(requiredLsn, config_.MaxWALDepthOnForceSync), snapshot,
+									   RdxContext().WithCancelCtx(deadlineCtx));
+			if (err.code() == errNotFound) {
+				constexpr bool allowOpenRetry = false;
+				return handleMissingLeaderNs(node, client, nsName, "snapshot", retrySync, localState, allowOpenRetry);
+			}
+			if (!err.ok()) {
+				return err;
+			}
 		}
 		if (snapshot.HasRawData()) {
 			logInfo("{}:{}:{} Snapshot has RAW data, creating tmp namespace (performing FORCE sync)", serverId_, node.uid, nsName);
@@ -817,7 +931,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 		for (auto& it : snapshot) {
 			if (terminate_) {
 				logInfo("{}:{}:{} Terminated, while syncing namespace", serverId_, node.uid, nsName);
-				return Error();
+				return Error(errCanceled, "{}:{}:{} Terminated, while syncing namespace", serverId_, node.uid, nsName);
 			}
 			if (!bhvParam_.IsLeader()) {
 				return Error(errParams, "Leader was switched");
@@ -834,26 +948,23 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 			return err;
 		}
 		logInfo(
-			"{}:{}:{} Sync done. {{ snapshot: {{ ns_version: {}, lsn: {}, data_hash: {}, data_count: {} }}, remote: {{ ns_version: {}, "
+			"{}:{}:{} Sync done. {{ snapshot: {{ ns_version: {}, lsn: {}, checksum: {}, data_count: {} }}, remote: {{ ns_version: {}, "
 			"lsn: "
-			"{}, data_hash: {}, data_count: {} }} }}",
-			serverId_, node.uid, nsName, snapshot.NsVersion(), snapshot.LastLSN(), snapshot.ExpectedDataHash(),
-			snapshot.ExpectedDataCount(), replState.nsVersion, replState.lastLsn, replState.dataHash, replState.dataCount);
+			"{}, checksum: {}, data_count: {} }} }}",
+			serverId_, node.uid, nsName, snapshot.NsVersion(), snapshot.LastLSN(), snapshot.ExpectedChecksum(),
+			snapshot.ExpectedDataCount(), replState.nsVersion, replState.lastLsn, replState.checksum, replState.dataCount);
 
 		const bool versionMissmatch = (!snapshot.LastLSN().isEmpty() && snapshot.LastLSN() != replState.lastLsn) ||
 									  (!snapshot.NsVersion().isEmpty() && snapshot.NsVersion() != replState.nsVersion);
-		if (versionMissmatch || !replState.dataHash.IsEqualByAnyVersionTo(snapshot.ExpectedDataHash()) ||
-			snapshot.ExpectedDataCount() != replState.dataCount) {
+		if (versionMissmatch || replState.checksum != snapshot.ExpectedChecksum() || snapshot.ExpectedDataCount() != replState.dataCount) {
 			logInfo("{}:{}:{} Snapshot dump on data missmatch: {}", serverId_, node.uid, nsName, snapshot.Dump());
-			return Error(
-				errDataHashMismatch,
-				"{}:{}:{}: Datahash or datacount missmatcher after sync. Actual: {{ data_hash: {}, data_count: {}, ns_version: {}, "
-				"lsn: {} }}; expected: {{ data_hash: {}, data_count: {}, ns_version: {}, lsn: {} }}",
-				serverId_, node.uid, nsName, replState.dataHash, replState.dataCount, replState.nsVersion, replState.lastLsn,
-				snapshot.ExpectedDataHash(), snapshot.ExpectedDataCount(), snapshot.NsVersion(), snapshot.LastLSN());
+			return Error(errChecksumMismatch,
+						 "{}:{}:{}: Checksum or datacount mismatch after sync. Actual: {{ checksum: {}, data_count: {}, ns_version: {}, "
+						 "lsn: {} }}; expected: {{ checksum: {}, data_count: {}, ns_version: {}, lsn: {} }}",
+						 serverId_, node.uid, nsName, replState.checksum, replState.dataCount, replState.nsVersion, replState.lastLsn,
+						 snapshot.ExpectedChecksum(), snapshot.ExpectedDataCount(), snapshot.NsVersion(), snapshot.LastLSN());
 		}
 
-		node.namespaceData[nsName].latestLsn = ExtendedLsn(replState.nsVersion, replState.lastLsn);
 		if (createTmpNamespace) {
 			logInfo("{}:{}:{} Renaming: {} -> {}", serverId_, node.uid, nsName, replNsName, nsName);
 			err = client.WithLSN(lsn_t(0, serverId_)).RenameNamespace(replNsName, nsName);
@@ -862,8 +973,42 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const NamespaceName
 			}
 			tmpNsGuard.tmpNsName.clear();
 		}
-	} catch (Error& err) {
-		return err;
+		auto& committedNsData = node.NsData(nsName);
+		committedNsData.latestLsn = ExtendedLsn(replState.nsVersion, replState.lastLsn);
+		committedNsData.isClosed = false;
+		committedNsData.syncedAtQueueId = hwm;
+	} catch (std::exception& err) {
+		return std::move(err);
+	}
+	return Error();
+}
+
+template <typename BehaviourParamT>
+void ReplThread<BehaviourParamT>::rollbackNamespaceTx(Node& node, NamespaceData& nsData) {
+	if (nsData.tx.IsFree()) {
+		return;
+	}
+	auto err = node.client.WithLSN(lsn_t(0, serverId_)).RollBackTransaction(nsData.tx);
+	logInfo("{}:{} Rollback transaction result: {}", serverId_, node.uid,
+			err.ok() ? "OK" : ("Error:" + std::to_string(err.code()) + ". " + err.whatStr()));
+	nsData.tx = client::CoroTransaction();
+}
+
+template <typename BehaviourParamT>
+Error ReplThread<BehaviourParamT>::resyncSingleNamespace(Node& node, const NamespaceName& nsName) noexcept {
+	try {
+		rollbackNamespaceTx(node, nsName);
+
+		statsCollector_.OnEnqueueNamespacesSync(node.uid, 1);
+		const NamespaceDef def(nsName, NamespaceDef::NameOnly{});
+		if (auto err = namespacesSyncImpl(node, std::span<const NamespaceDef>(&def, 1), SyncMode::OnlineSingleNs); !err.ok()) {
+			return err;
+		}
+		node.NsData(nsName).requiresTmUpdate = true;
+		updateNodeStatus(node.uid, NodeStats::Status::Online);
+		statsCollector_.OnSyncStateChanged(node.uid, NodeStats::SyncState::OnlineReplication);
+	} catch (std::exception& err) {
+		return std::move(err);
 	}
 	return Error();
 }
@@ -939,6 +1084,9 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 					 node.nextUpdateId, updatePtr->ID(), updatePtr->Count());
 			node.nextUpdateId = updatePtr->ID() > node.nextUpdateId ? updatePtr->ID() : node.nextUpdateId;
 			for (uint16_t offset = node.nextUpdateId - updatePtr->ID(); offset < updatePtr->Count(); ++offset) {
+				if (terminate_) [[unlikely]] {
+					break;
+				}
 				if (updatePtr->IsInvalidated()) {
 					logInfo("{}:{} Current update is invalidated", serverId_, node.uid);
 					break;
@@ -955,6 +1103,31 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 					continue;
 				}
 				const auto& nsName = it.NsName();
+				if (nsName.empty()) {
+					assertrx_dbg(it.IsDbRecord());
+					res = batcher.AwaitBatchedUpdates();
+					if (!res.err.ok()) {
+						--node.nextUpdateId;  // Have to read this update again
+						break;
+					}
+
+					logTrace("{}:{} Applying db-level update with type {} (empty ns name), id: {}, ns version: {}, lsn: {}", serverId_,
+							 node.uid, int(it.Type()), updatePtr->ID() + offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN());
+					NamespaceData dummy;
+					res = applyUpdate(it, node, dummy);
+					logTrace("{}:{} Apply db-level update result (id: {}, ns version: {}, lsn: {}): {}. Replicas: {}", serverId_, node.uid,
+							 updatePtr->ID() + offset, it.ExtLSN().NsVersion(), it.ExtLSN().LSN(),
+							 (res.err.ok() ? "OK" : "ERROR:" + res.err.whatStr()), upd.GetCounters().replicas + 1);
+
+					const auto replRes = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset,
+																	it.EmitterServerID() == node.serverId, res.err);
+					if (res.err.ok()) {
+						bhvParam_.OnUpdateSucceed(node.uid, updatePtr->ID() + offset);
+						continue;
+					}
+					requireReelections = requireReelections || (replRes == updates::ReplicationResult::Error);
+					break;
+				}
 				if constexpr (!isClusterReplThread()) {
 					if (!bhvParam_.IsNamespaceInConfig(node.uid, nsName)) {
 						std::ignore = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
@@ -967,7 +1140,24 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 					bhvParam_.OnNewNsAppearance(nsName);
 				}
 
-				auto& nsData = node.namespaceData[nsName];
+				auto& nsData = node.NsData(nsName);
+				const uint64_t eventId = updatePtr->ID() + offset;
+				if (eventId < nsData.syncedAtQueueId) {
+					logTrace("{}:{}:{} Skipping update with type {}, id: {} (covered by snapshot synced at {})", serverId_, node.uid,
+							 nsName, int(it.Type()), eventId, nsData.syncedAtQueueId);
+					std::ignore = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset,
+															 it.EmitterServerID() == node.serverId, Error());
+					bhvParam_.OnUpdateSucceed(node.uid, updatePtr->ID() + offset);
+					continue;
+				}
+				if (nsData.isClosed && !isNsLifecycleRecord(it.Type())) {
+					logTrace("{}:{}:{} Skipping update with type {}, id: {} (namespace is closed on leader)", serverId_, node.uid, nsName,
+							 int(it.Type()), eventId);
+					std::ignore = updatePtr->OnUpdateHandled(node.uid, consensusCnt_, requiredReplicas_, offset,
+															 it.EmitterServerID() == node.serverId, Error());
+					bhvParam_.OnUpdateSucceed(node.uid, updatePtr->ID() + offset);
+					continue;
+				}
 				const bool isOutdatedRecord = !it.ExtLSN().HasNewerCounterThan(nsData.latestLsn) || nsData.latestLsn.IsEmpty();
 				if ((!it.IsDbRecord() && isOutdatedRecord) || it.IsEmptyRecord()) {
 					logTrace(
@@ -991,11 +1181,14 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 					// Explicitly update tm for this namespace
 					// TODO: Find better solution?
 					logTrace("{}:{}:{} Executing select to update tm...", serverId_, node.uid, nsName);
-					client::CoroQueryResults qr;
-					res = node.client.WithShardId(ShardingKeyType::ProxyOff, false).Select(Query(nsName).Limit(0), qr);
-					if (!res.err.ok()) {
-						--node.nextUpdateId;  // Have to read this update again
-						break;
+					{
+						client::CoroQueryResults qr;
+						const auto q = Query(nsName).Limit(0);
+						res = node.client.WithShardId(ShardingKeyType::ProxyOff, false).Select(q, qr);
+						if (!res.err.ok()) {
+							--node.nextUpdateId;  // Have to read this update again
+							break;
+						}
 					}
 				}
 				if (it.IsBatchingAllowed()) {
@@ -1036,14 +1229,24 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 
 				if (!res.err.ok()) {
 					break;
-				} else if (res.IsHaveToResync<BehaviourParamT>()) {
-					logTrace("{}:{} Resync was requested", serverId_, node.uid);
-					break;
+				} else if (res.NeedsSingleNsResync<BehaviourParamT>()) {
+					assertrx(batcher.BatchedUpdatesCount() == 0);  // Batched updates have to be drained before resync
+					logInfo("{}:{} Resync was requested for '{}'", serverId_, node.uid, nsName);
+					Error err = resyncSingleNamespace(node, nsName);
+					if (!err.ok()) {
+						logError("{}:{}:{} Single-namespace resync error: {}", serverId_, node.uid, nsName, err.whatStr());
+						res = UpdateApplyStatus(std::move(err));
+						break;
+					}
+					logInfo("{}:{}:{} Single-namespace resync completed", serverId_, node.uid, nsName);
+					// Must clear type: leftover Generic/LeaderInit would re-enter full nodeReplicationImpl.
+					res = UpdateApplyStatus();
+					continue;
 				}
 			}
 
 			if (batcher.BatchedUpdatesCount()) {
-				assert(!res.IsHaveToResync<BehaviourParamT>());	 // In this cases batchedUpdatesCount has to be 0
+				assertrx(!res.IsHaveToResync<BehaviourParamT>());  // In this cases batchedUpdatesCount has to be 0
 				auto batchedRes = batcher.AwaitBatchedUpdates();
 				if (res.err.ok()) {
 					res = std::move(batchedRes);
@@ -1105,15 +1308,12 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 				continue;
 			}
 			const auto& nsName = it.NsName();
-			if (!bhvParam_.IsNamespaceInConfig(node.uid, nsName)) {
+			if (!nsName.empty() && !bhvParam_.IsNamespaceInConfig(node.uid, nsName)) {
 				continue;
 			}
 
 			if (it.Type() == updates::URType::AddNamespace || it.Type() == updates::URType::DropNamespace) {
-				node.namespaceData[nsName].isClosed = false;
 				bhvParam_.OnNewNsAppearance(nsName);
-			} else if (it.Type() == updates::URType::CloseNamespace) {
-				node.namespaceData[nsName].isClosed = true;
 			}
 
 			if (updatePtr->IsInvalidated()) {
@@ -1165,7 +1365,7 @@ Error ReplThread<BehaviourParamT>::checkIfReplicationAllowed(Node& node, LogLeve
 		}
 		logLevel = LogError;
 		logWarn("{}:{} Checking if replication is allowed for this node", serverId_, node.uid);
-		const Query q = Query(std::string(kReplicationStatsNamespace)).Where("type", CondEq, Variant(cluster::kClusterReplStatsType));
+		const Query q = Query(kReplicationStatsNamespace).Where("type", CondEq, Variant(cluster::kClusterReplStatsType));
 		client::CoroQueryResults qr;
 		err = node.client.Select(q, qr);
 		if (!err.ok()) {
@@ -1366,20 +1566,52 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 			}
 			case updates::URType::AddNamespace: {
 				auto& data = std::get<AddNamespaceReplicationRecord>(*rec.Data());
-				const auto sid = rec.ExtLSN().NsVersion().Server();
-				auto err =
-					client.WithLSN(lsn_t(0, sid)).AddNamespace(*data.def, NsReplicationOpts{{data.stateToken}, rec.ExtLSN().NsVersion()});
-				if (err.ok() && nsData.isClosed) {
-					nsData.isClosed = false;
-					logTrace("{}:{}:{} Namespace is closed on leader. Scheduling resync for followers", serverId_, node.uid, nsName);
-					return UpdateApplyStatus(Error(), updates::URType::ResyncNamespaceGeneric);	 // Perform resync on ns reopen
+				const lsn_t recNsVersion = rec.ExtLSN().NsVersion();
+				const auto sid = recNsVersion.Server();
+				if (nsData.isClosed) {
+					// Reopen after CloseNamespace. The record itself identifies the target incarnation
+					lsn_t followerNsVersion = nsData.latestLsn.NsVersion();
+					if (followerNsVersion.isEmpty()) {
+						ReplicationStateV2 followerState;
+						auto err = client.GetReplState(nsName, followerState);
+						if (err.ok()) {
+							followerNsVersion = followerState.nsVersion;
+						} else if (err.code() != errNotFound) {
+							return UpdateApplyStatus(std::move(err), rec.Type());
+						}
+					}
+					if (followerNsVersion.isEmpty()) {
+						// Missing on the follower — create it, then snapshot-resync.
+						auto err =
+							client.WithLSN(lsn_t(0, sid)).AddNamespace(*data.def, NsReplicationOpts{{data.stateToken}, recNsVersion});
+						if (!err.ok()) {
+							return UpdateApplyStatus(std::move(err), rec.Type());
+						}
+						logTrace("{}:{}:{} Namespace was reopened on leader. Scheduling resync for followers", serverId_, node.uid, nsName);
+						return UpdateApplyStatus(Error(), updates::URType::ResyncNamespaceGeneric);
+					}
+					if (followerNsVersion == recNsVersion) {
+						// Same incarnation already present (storage Close does not drop the follower).
+						logTrace("{}:{}:{} Namespace already exists on follower with the same incarnation. Scheduling resync", serverId_,
+								 node.uid, nsName);
+						return UpdateApplyStatus(Error(), updates::URType::ResyncNamespaceGeneric);
+					}
+					// New incarnation (in-memory reopen)
+					rollbackNamespaceTx(node, nsData);
+					if (auto err = client.WithLSN(lsn_t(0, serverId_)).DropNamespace(nsName); !err.ok() && err.code() != errNotFound) {
+						return UpdateApplyStatus(std::move(err), rec.Type());
+					}
+					nsData.syncedAtQueueId = 0;
 				}
-				nsData.isClosed = false;
+				auto err = client.WithLSN(lsn_t(0, sid)).AddNamespace(*data.def, NsReplicationOpts{{data.stateToken}, recNsVersion});
 				if constexpr (!isClusterReplThread()) {
 					if (err.ok()) {
 						err = client.WithEmitterServerId(serverId_).SetClusterOperationStatus(
 							nsName, ClusterOperationStatus{serverId_, ClusterOperationStatus::Role::SimpleReplica});
 					}
+				}
+				if (err.ok()) {
+					nsData.isClosed = false;
 				}
 				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
@@ -1387,12 +1619,15 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 				lsn.SetServer(serverId_);
 				auto err = client.WithLSN(lsn).DropNamespace(nsName);
 				nsData.isClosed = false;
+				nsData.syncedAtQueueId = 0;
 				if (!err.ok() && err.code() == errNotFound) {
 					return UpdateApplyStatus(Error(), rec.Type());
 				}
 				return UpdateApplyStatus(std::move(err), rec.Type());
 			}
 			case updates::URType::CloseNamespace: {
+				// Record has no storage vs in-memory flag. Keep follower data here; in-memory Close ≡ Drop
+				// is reconstructed on FullSync (GetNamespacePresence -> Absent).
 				nsData.isClosed = true;
 				logTrace("{}:{}:{} Namespace was closed on leader", serverId_, node.uid, nsName);
 				return UpdateApplyStatus(Error(), rec.Type());
@@ -1457,11 +1692,8 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const updates::Update
 	} catch (std::bad_variant_access& e) {
 		assert(false);
 		return Error(errLogic, "Bad variant access: {}", e.what());
-	} catch (const std::exception& err) {
-		return Error(err, errLogic);
-	} catch (...) {
-		assert(false);
-		return Error(errLogic, "Unknown exception during UpdateRecord handling");
+	} catch (std::exception& err) {
+		return Error(std::move(err), errLogic);
 	}
 	return Error();
 }

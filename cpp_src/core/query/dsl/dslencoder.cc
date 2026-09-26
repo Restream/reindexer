@@ -2,9 +2,7 @@
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/p_string.h"
-#include "core/query/query.h"
 #include "core/queryresults/aggregationresult.h"
-#include "dslparser.h"
 #include "vendor/frozen/unordered_map.h"
 
 namespace reindexer {
@@ -70,13 +68,13 @@ static void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& bui
 	}
 }
 
-static void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder);
+static void encodeSingleJoinQuery(ConstJoinedQueryImpl joinQuery, JsonBuilder& builder);
 
-static void encodeJoins(const Query& query, JsonBuilder& builder) {
-	for (const auto& joinQuery : query.GetJoinQueries()) {
-		if (joinQuery.joinType == LeftJoin) {
+static void encodeJoins(ConstQueryImpl query, JsonBuilder& builder) {
+	for (const auto& joinQuery : query.JoinQueries()) {
+		if (JoinedImpl(joinQuery).GetJoinType() == LeftJoin) {
 			auto node = builder.Object();
-			encodeSingleJoinQuery(joinQuery, node);
+			encodeSingleJoinQuery(JoinedImpl(joinQuery), node);
 		}
 	}
 }
@@ -96,21 +94,21 @@ static void encodeEqualPositions(const EqualPositions_t& equalPositions, JsonBui
 	}
 }
 
-static void encodeFilters(const Query& query, JsonBuilder& builder) {
+static void encodeFilters(ConstQueryImpl query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("filters"sv);
-	query.Entries().ToDsl(query, arrNode);
+	query.Entries().ToDsl(*query, arrNode);
 	encodeJoins(query, arrNode);
 	encodeEqualPositions(query.Entries().equalPositions, arrNode);
 }
 
-static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder);
+static void toDsl(ConstQueryImpl query, QueryScope scope, JsonBuilder& builder);
 
-static void encodeMergedQueries(const Query& query, JsonBuilder& builder) {
+static void encodeMergedQueries(ConstQueryImpl query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("merge_queries"sv);
 
-	for (const Query& mq : query.GetMergeQueries()) {
+	for (const auto& mq : query.MergeQueries()) {
 		auto node = arrNode.Object();
-		toDsl(mq, QueryScope::Main, node);
+		toDsl(Impl(mq), QueryScope::Main, node);
 	}
 }
 
@@ -130,17 +128,17 @@ static void encodeSelectFilter(const FieldsNamesFilter& filter, JsonBuilder& bui
 	}
 }
 
-static void encodeSelectFunctions(const Query& query, JsonBuilder& builder) {
+static void encodeSelectFunctions(ConstQueryImpl query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("select_functions"sv);
-	for (auto& str : query.selectFunctions_) {
+	for (auto& str : query.SelectFunctions()) {
 		arrNode.Put(TagName::Empty(), str);
 	}
 }
 
-static void encodeAggregationFunctions(const Query& query, JsonBuilder& builder) {
+static void encodeAggregationFunctions(ConstQueryImpl query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("aggregations"sv);
 
-	for (const auto& entry : query.aggregations_) {
+	for (const auto& entry : query.Aggregations()) {
 		auto aggNode = arrNode.Object();
 		aggNode.Put("type"sv, AggTypeToStr(entry.Type()));
 		switch (entry.Type()) {
@@ -178,26 +176,27 @@ static void encodeJoinEntry(const QueryJoinEntry& joinEntry, JsonBuilder& builde
 	builder.Put("cond"sv, get(kCondMap, joinEntry.Condition()));
 }
 
-static void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
+static void encodeSingleJoinQuery(ConstJoinedQueryImpl joinQuery, JsonBuilder& builder) {
 	auto node = builder.Object("join_query"sv);
 
-	node.Put("type"sv, get(kJoinTypes, joinQuery.joinType));
-	node.Put("namespace"sv, joinQuery.NsName());
-	node.Put("limit"sv, joinQuery.Limit());
-	node.Put("offset"sv, joinQuery.Offset());
+	ConstQueryImpl joinQueryImpl = Impl(*joinQuery);
+	node.Put("type"sv, get(kJoinTypes, joinQuery.GetJoinType()));
+	node.Put("namespace"sv, joinQueryImpl.NsName());
+	node.Put("limit"sv, joinQueryImpl.Limit());
+	node.Put("offset"sv, joinQueryImpl.Offset());
 
-	encodeFilters(joinQuery, node);
-	encodeSorting(joinQuery.GetSortingEntries(), node, joinQuery.ForcedSortOrder());
+	encodeFilters(joinQueryImpl, node);
+	encodeSorting(joinQueryImpl.GetSortingEntries(), node, joinQueryImpl.ForcedSortOrder());
 
 	auto arr1 = node.Array("on"sv);
 
-	for (auto& joinEntry : joinQuery.joinEntries_) {
+	for (auto& joinEntry : joinQuery.JoinEntries()) {
 		auto obj1 = arr1.Object();
 		encodeJoinEntry(joinEntry, obj1);
 	}
 	arr1.End();	 // Close array
 
-	encodeSelectFilter(joinQuery.SelectFilters(), node);
+	encodeSelectFilter(joinQueryImpl.SelectFilters(), node);
 }
 
 static void putValues(JsonBuilder& builder, const VariantArray& values) {
@@ -282,7 +281,38 @@ static void encodeFilter(const QueryFunctionEntry& qentry, JsonBuilder& builder)
 	}
 }
 
-static void encodeDropFields(const Query& query, JsonBuilder& builder) {
+static void encodeFilter(const QueryArithmeticEntry& qentry, JsonBuilder& builder) {
+	builder.Put("cond"sv, get(kCondMap, CondType(qentry.Condition())));
+	{
+		auto expression = builder.Object("left_expression");
+		if (qentry.GetLeftKind() == QueryArithmeticEntry::LeftKind::Field) {
+			expression.Put("type"sv, get(kExpressionTypeMap, ExpressionTypeField));
+			expression.Put("value"sv, qentry.LeftField().FieldName());
+		} else {
+			expression.Put("type"sv, get(kExpressionTypeMap, ExpressionTypeExpression));
+			expression.Put("value"sv, qentry.LeftExpr().Dump());
+		}
+	}
+	{
+		auto expression = builder.Object("right_expression");
+		switch (qentry.GetRightKind()) {
+			case QueryArithmeticEntry::RightKind::Values:
+				expression.Put("type"sv, get(kExpressionTypeMap, ExpressionTypeValues));
+				putValues(expression, qentry.Values());
+				break;
+			case QueryArithmeticEntry::RightKind::Field:
+				expression.Put("type"sv, get(kExpressionTypeMap, ExpressionTypeField));
+				expression.Put("value"sv, qentry.RightField().FieldName());
+				break;
+			case QueryArithmeticEntry::RightKind::Arithmetic:
+				expression.Put("type"sv, get(kExpressionTypeMap, ExpressionTypeExpression));
+				expression.Put("value"sv, qentry.RightExpr().Dump());
+				break;
+		}
+	}
+}
+
+static void encodeDropFields(ConstQueryImpl query, JsonBuilder& builder) {
 	auto dropFields = builder.Array("drop_fields"sv);
 	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
 		if (updateEntry.Mode() == FieldModeDrop) {
@@ -291,7 +321,7 @@ static void encodeDropFields(const Query& query, JsonBuilder& builder) {
 	}
 }
 
-static void encodeUpdateFields(const Query& query, JsonBuilder& builder) {
+static void encodeUpdateFields(ConstQueryImpl query, JsonBuilder& builder) {
 	auto updateFields = builder.Array("update_fields"sv);
 	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
 		if (updateEntry.Mode() == FieldModeSet || updateEntry.Mode() == FieldModeSetJson) {
@@ -318,7 +348,7 @@ static void encodeUpdateFields(const Query& query, JsonBuilder& builder) {
 	}
 }
 
-static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
+static void toDsl(ConstQueryImpl query, QueryScope scope, JsonBuilder& builder) {
 	switch (query.Type()) {
 		case QueryType::QuerySelect: {
 			builder.Put("namespace"sv, query.NsName());
@@ -354,6 +384,7 @@ static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 			builder.Put("namespace"sv, query.NsName());
 			builder.Put("explain"sv, query.NeedExplain());
 			builder.Put("type"sv, "update"sv);
+			encodeSelectFilter(query.SelectFilters(), builder);
 			encodeFilters(query, builder);
 			bool withDropEntries = false, withUpdateEntries = false;
 			for (const UpdateEntry& updateEntry : query.UpdateFields()) {
@@ -376,6 +407,7 @@ static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 			builder.Put("namespace"sv, query.NsName());
 			builder.Put("explain"sv, query.NeedExplain());
 			builder.Put("type"sv, "delete"sv);
+			encodeSelectFilter(query.SelectFilters(), builder);
 			encodeFilters(query, builder);
 			break;
 		}
@@ -387,7 +419,7 @@ static void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 	}
 }
 
-std::string toDsl(const Query& query) {
+std::string toDsl(ConstQueryImpl query) {
 	WrSerializer ser;
 	JsonBuilder builder(ser);
 	toDsl(query, QueryScope::Main, builder);
@@ -399,26 +431,27 @@ std::string toDsl(const Query& query) {
 }  // namespace dsl
 
 void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& parentQuery, JsonBuilder& builder) {
+	const auto parentQueryImpl = Impl(parentQuery);
 	for (; it != to; ++it) {
 		auto node = builder.Object();
 		node.Put("op"sv, dsl::get(dsl::kOpMap, it->operation));
 		it->Visit([](const AlwaysFalse&) { throw Error(errLogic, "Unexpected 'AlwaysFalse' query entry in DSL"); },
 				  [](const AlwaysTrue&) { throw Error(errLogic, "Unexpected 'AlwaysTrue' query entry in DSL"); },
-				  [&node, &parentQuery](const SubQueryEntry& sqe) {
+				  [&node, parentQueryImpl](const SubQueryEntry& sqe) {
 					  node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
 					  {
 						  auto subquery = node.Object("subquery"sv);
-						  dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
+						  dsl::toDsl(Impl(parentQueryImpl.SubQueries()[sqe.QueryIndex()]), dsl::QueryScope::Subquery, subquery);
 					  }
 					  dsl::putValues(node, sqe.Values());
 				  },
-				  [&node, &parentQuery](const SubQueryFieldEntry& sqe) {
+				  [&node, parentQueryImpl](const SubQueryFieldEntry& sqe) {
 					  node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
 					  dsl::encodeLeftExpression(ExpressionTypeField, sqe.FieldName(), node);
 					  auto subquery = node.Object("subquery"sv);
-					  dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
+					  dsl::toDsl(Impl(parentQueryImpl.SubQueries()[sqe.QueryIndex()]), dsl::QueryScope::Subquery, subquery);
 				  },
-				  [&node, &parentQuery](const SubQueryFunctionEntry& sqe) {
+				  [&node, parentQueryImpl](const SubQueryFunctionEntry& sqe) {
 					  node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(sqe.Condition())));
 					  auto fields = node.Array("fields");
 					  for (size_t i = 0; i < sqe.Fields(); ++i) {
@@ -426,7 +459,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 					  }
 					  fields.End();
 					  auto subquery = node.Object("subquery"sv);
-					  dsl::toDsl(parentQuery.GetSubQuery(sqe.QueryIndex()), dsl::QueryScope::Subquery, subquery);
+					  dsl::toDsl(Impl(parentQueryImpl.SubQueries()[sqe.QueryIndex()]), dsl::QueryScope::Subquery, subquery);
 				  },
 				  [&it, &node, &parentQuery](const QueryEntriesBracket& bracket) {
 					  auto arrNode = node.Array("filters"sv);
@@ -435,9 +468,10 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				  },
 				  [&node](const QueryEntry& qe) { dsl::encodeFilter(qe, node); },
 				  [&node](const QueryFunctionEntry& qe) { dsl::encodeFilter(qe, node); },
-				  [&node, &parentQuery](const JoinQueryEntry& jqe) {
-					  assertrx(jqe.joinIndex < parentQuery.GetJoinQueries().size());
-					  dsl::encodeSingleJoinQuery(parentQuery.GetJoinQueries()[jqe.joinIndex], node);
+				  [&node](const QueryArithmeticEntry& qe) { dsl::encodeFilter(qe, node); },
+				  [&node, parentQueryImpl](const JoinQueryEntry& jqe) {
+					  assertrx(jqe.joinIndex < parentQueryImpl.JoinQueries().size());
+					  dsl::encodeSingleJoinQuery(JoinedImpl(parentQueryImpl.JoinQueries()[jqe.joinIndex]), node);
 				  },
 				  [&node](const BetweenFieldsQueryEntry& qe) {
 					  node.Put("cond"sv, dsl::get(dsl::kCondMap, CondType(qe.Condition())));

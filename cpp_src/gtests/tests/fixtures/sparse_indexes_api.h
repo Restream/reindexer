@@ -4,6 +4,8 @@
 
 namespace reindexer_tests {
 
+using reindexer::Variant;
+
 class [[nodiscard]] SparseIndexesApi : public ReindexerApi {
 protected:
 	void SetUp() override {

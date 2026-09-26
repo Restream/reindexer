@@ -1,12 +1,12 @@
 #include "queryresults.h"
+#include "core/namespace/indexes/index_names.h"
 #include "core/nsselecter/joins/item_context.h"
 #include "core/nsselecter/joins/items_processor.h"
 #include "core/nsselecter/joins/iterators.h"
 #include "core/nsselecter/joins/query_joins_table.h"
 #include "core/nsselecter/joins/results.h"
-#include "core/query/query.h"
+#include "core/query/query_impl.h"
 #include "core/sorting/sortexpression.h"
-#include "core/type_consts.h"
 #include "itemrefcache.h"
 #include "tools/catch_and_return.h"
 #include "tools/float_comparison.h"
@@ -15,7 +15,7 @@ namespace reindexer {
 
 struct [[nodiscard]] QueryResults::MergedData {
 	MergedData(const std::string& ns, bool _haveRank, bool _needOutputRank)
-		: pt(ns, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, IsArray_False)}),
+		: pt(ns, {PayloadFieldType(KeyValueType::String{}, ns_indexes::kTupleName, {}, IsArray_False)}),
 		  haveRank(_haveRank),
 		  needOutputRank(_needOutputRank) {}
 
@@ -57,7 +57,7 @@ struct [[nodiscard]] QueryResults::ItemDataStorage {
 };
 
 QueryResults::QueryData::QueryData(const Query& q)
-	: isWalQuery_{q.IsWALQuery()}, joinsTable_{q.HasJoinQueries() ? std::make_unique<joins::QueryJoinsTable>(q) : nullptr} {}
+	: isWalQuery_{q.IsWALQuery()}, joinsTable_{Impl(q).HasJoinQueries() ? std::make_unique<joins::QueryJoinsTable>(Impl(q)) : nullptr} {}
 QueryResults::QueryData::QueryData(QueryData&&) noexcept = default;
 QueryResults::QueryData& QueryResults::QueryData::operator=(QueryData&&) noexcept = default;
 QueryResults::QueryData::~QueryData() = default;
@@ -815,11 +815,11 @@ public:
 	FieldComparator(std::string fName, int idx, const NamespaceImpl& ns, const VariantArray& forcedValues)
 		: fieldName_{std::move(fName)}, fieldIdx_{idx} {
 		if (fieldIdx_ != IndexValueType::SetByJsonPath) {
-			const auto& jsonPaths = ns.payloadType_.Field(fieldIdx_).JsonPaths();
+			const auto& jsonPaths = ns.payloadType().Field(fieldIdx_).JsonPaths();
 			assertrx(jsonPaths.size() == 1);
 			fieldName_ = jsonPaths[0];
-			collateOpts_ = ns.indexes_[fieldIdx_]->Opts().collateOpts_;
-			if (ns.indexes_[fieldIdx_]->Opts().IsSparse()) {
+			collateOpts_ = ns.indexes()[fieldIdx_]->Opts().collateOpts_;
+			if (ns.indexes()[fieldIdx_]->Opts().IsSparse()) {
 				fieldIdx_ = IndexValueType::SetByJsonPath;
 			}
 		}
@@ -886,16 +886,16 @@ class [[nodiscard]] QueryResults::CompositeFieldForceComparator {
 
 public:
 	CompositeFieldForceComparator(int index, const VariantArray& forcedSortOrder, const NamespaceImpl& ns) {
-		fields_.reserve(ns.indexes_[index]->Fields().size());
-		const FieldsSet& fields = ns.indexes_[index]->Fields();
+		fields_.reserve(ns.indexes()[index]->Fields().size());
+		const FieldsSet& fields = ns.indexes()[index]->Fields();
 		size_t jsonPathsIndex = 0;
 		for (size_t j = 0, s = fields.size(); j < s; ++j) {
 			const auto f = fields[j];
 			if (f == IndexValueType::SetByJsonPath) {
 				fields_.emplace_back(ValuesByField{fields.getJsonPath(jsonPathsIndex++), f, {}});
 			} else {
-				assertrx(f < ns.indexes_.firstCompositePos());
-				fields_.emplace_back(ValuesByField{ns.indexes_[f]->Name(), f, {}});
+				assertrx(f < ns.indexes().firstCompositePos());
+				fields_.emplace_back(ValuesByField{ns.indexes()[f]->Name(), f, {}});
 			}
 		}
 		assertrx(fields_.size() > 1);
@@ -1031,7 +1031,7 @@ private:
 
 class [[nodiscard]] QueryResults::Comparator {
 public:
-	Comparator(QueryResults& qr, const Query& q, const NamespaceImpl& ns) : qr_{qr} {
+	Comparator(QueryResults& qr, ConstQueryImpl q, const NamespaceImpl& ns) : qr_{qr} {
 		assertrx(q.GetSortingEntries().size() > 0);
 		comparators_.reserve(q.GetSortingEntries().size());
 		for (size_t i = 0; i < q.GetSortingEntries().size(); ++i) {
@@ -1040,16 +1040,16 @@ public:
 			if (expr.ByField()) {
 				int index = IndexValueType::SetByJsonPath;
 				std::string field;
-				if (ns.tryGetIndexByName(se.expression, index) && index < ns.indexes_.firstCompositePos() &&
-					ns.indexes_[index]->Opts().IsSparse()) {
-					const auto& fields = ns.indexes_[index]->Fields();
+				if (ns.tryGetIndexByName(se.expression, index) && index < ns.indexes().firstCompositePos() &&
+					ns.indexes()[index]->Opts().IsSparse()) {
+					const auto& fields = ns.indexes()[index]->Fields();
 					assertrx(fields.getJsonPathsLength() == 1);
 					field = fields.getJsonPath(0);
 					index = IndexValueType::SetByJsonPath;
 				} else {
 					field = se.expression;
 				}
-				if (index == IndexValueType::SetByJsonPath || index < ns.indexes_.firstCompositePos()) {
+				if (index == IndexValueType::SetByJsonPath || index < ns.indexes().firstCompositePos()) {
 					if (i == 0 && !q.ForcedSortOrder().empty()) {
 						comparators_.emplace_back(FieldComparator{std::move(field), index, ns, q.ForcedSortOrder()}, se.desc);
 					} else {
@@ -1059,15 +1059,15 @@ public:
 					if (i == 0 && !q.ForcedSortOrder().empty()) {
 						comparators_.emplace_back(CompositeFieldForceComparator{index, q.ForcedSortOrder(), ns}, se.desc);
 					}
-					const auto& fields = ns.indexes_[index]->Fields();
+					const auto& fields = ns.indexes()[index]->Fields();
 					size_t jsonPathsIndex = 0;
 					for (size_t j = 0, s = fields.size(); j < s; ++j) {
 						const auto f = fields[j];
 						if (f == IndexValueType::SetByJsonPath) {
 							comparators_.emplace_back(FieldComparator{fields.getJsonPath(jsonPathsIndex++), f, ns, {}}, se.desc);
 						} else {
-							assertrx(f < ns.indexes_.firstCompositePos());
-							comparators_.emplace_back(FieldComparator{ns.indexes_[f]->Name(), f, ns, {}}, se.desc);
+							assertrx(f < ns.indexes().firstCompositePos());
+							comparators_.emplace_back(FieldComparator{ns.indexes()[f]->Name(), f, ns, {}}, se.desc);
 						}
 					}
 				}
@@ -1139,7 +1139,8 @@ private:
 	h_vector<std::pair<std::variant<SortExpressionComparator, FieldComparator, CompositeFieldForceComparator>, bool>, 1> comparators_;
 };
 
-void QueryResults::SetOrdering(const Query& q, const NamespaceImpl& ns, const RdxContext& ctx) {
+void QueryResults::SetOrdering(const Query& query, const NamespaceImpl& ns, const RdxContext& ctx) {
+	const auto q = Impl(query);
 	assertrx(!orderedQrs_);
 	if (!q.GetSortingEntries().empty()) {
 		auto lock = ns.rLock(ctx);

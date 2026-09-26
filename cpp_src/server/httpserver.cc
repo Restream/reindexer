@@ -1,6 +1,7 @@
 #include "httpserver.h"
 #include <exception>
 #include <string_view>
+#include "loggerregistry.h"
 
 #include "base64/base64.h"
 #include "core/cjson/csvbuilder.h"
@@ -9,14 +10,14 @@
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufschemabuilder.h"
 #include "core/dbconfig.h"
-#include "core/enums.h"
 #include "core/id_type.h"
 #include "core/nsselecter/joins/results.h"
+#include "core/query/query_impl.h"
+#include "core/query/sql/sql_helpers.h"
 #include "core/query/sql/sql_suggestions.h"
 #include "core/queryresults/queryresults.h"
 #include "core/queryresults/tableviewbuilder.h"
 #include "core/schema.h"
-#include "core/type_consts.h"
 #include "debug/crashqueryreporter.h"
 #include "estl/gift_str.h"
 #include "gason/gason.h"
@@ -42,6 +43,33 @@
 using namespace std::string_view_literals;
 
 namespace reindexer_server {
+namespace {
+Error parseLoggerSettings(http::Context& ctx, LoggerSettings& settings) noexcept {
+	try {
+		gason::JsonParser parser;
+		const auto body{ctx.body->Read()};
+		const auto root{parser.Parse(body)};
+		const auto level{root["level"sv]};
+		if (level.isEmpty()) {
+			return Error(errParams, "Required parameter 'level' is not found");
+		}
+		const auto levelStr{level.As<std::string_view>()};
+		const auto logLevel{logLevelFromString(levelStr)};
+		if (logLevel == LogNone && !iequals(levelStr, "none"sv)) {
+			return Error(errParams, "'level' value is incorrect, the following values are expected: none, error, warning, info, trace");
+		}
+		settings.level = logLevel;
+	} catch (const std::exception& ex) {
+		return Error(errParseJson, "Logger settings: {}", ex.what());
+	}
+	return {};
+}
+
+void serializeLoggerSettings(const LoggerSettings& settings, JsonBuilder& builder) {
+	builder.Put("level", reindexer::logLevelToString(settings.level));
+	builder.Put("path", settings.path.value_or(std::string{}));
+}
+}  // namespace
 
 constexpr size_t kTxIdLen = 20;
 constexpr auto kTxDeadlineCheckPeriod = std::chrono::seconds(1);
@@ -116,33 +144,34 @@ private:
 	size_t totalCount_;
 };
 
-HTTPServer::HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, Prometheus* prometheus,
-					   IStatsWatcher* statsWatcher)
+HTTPServer::HTTPServer(DBManager& dbMgr, LoggerWrapper& logger, const ServerConfig& serverConfig, ILoggerConfigurator& loggerConfigurator,
+					   Prometheus* prometheus, IStatsWatcher* statsWatcher)
 	: dbMgr_(dbMgr),
 	  serverConfig_(serverConfig),
+	  loggerConfigurator_(loggerConfigurator),
 	  prometheus_(prometheus),
 	  statsWatcher_(statsWatcher),
 	  webRoot_(reindexer::fs::JoinPath(serverConfig.WebRoot, "")),
 	  logger_(logger),
 	  startTs_(system_clock_w::now()) {}
 
-Error HTTPServer::execQueryByType(const reindexer::Query& query, reindexer::QueryResults& res, http::Context& ctx) {
+Error HTTPServer::execQueryByType(reindexer::ConstQueryImpl query, reindexer::QueryResults& res, http::Context& ctx) {
 	const std::string_view sharding = ctx.request->params.Get("sharding"sv, "on"sv);
 	switch (query.Type()) {
 		case QuerySelect: {
 			return (!isParameterSetOn(sharding) ? getDB<kRoleDataRead>(ctx).WithShardId(ShardingKeyType::ProxyOff, false)
 												: getDB<kRoleDataRead>(ctx))
-				.Select(query, res);
+				.Select(*query, res);
 		}
 		case QueryDelete: {
 			return (!isParameterSetOn(sharding) ? getDB<kRoleDataWrite>(ctx).WithShardId(ShardingKeyType::ProxyOff, false)
 												: getDB<kRoleDataWrite>(ctx))
-				.Delete(query, res);
+				.Delete(*query, res);
 		}
 		case QueryUpdate: {
 			return (!isParameterSetOn(sharding) ? getDB<kRoleDataWrite>(ctx).WithShardId(ShardingKeyType::ProxyOff, false)
 												: getDB<kRoleDataWrite>(ctx))
-				.Update(query, res);
+				.Update(*query, res);
 		}
 		case QueryTruncate: {
 			return (!isParameterSetOn(sharding) ? getDB<kRoleDBAdmin>(ctx).WithShardId(ShardingKeyType::ProxyOff, false)
@@ -184,13 +213,14 @@ int HTTPServer::GetSQLQuery(http::Context& ctx) {
 
 	reindexer::QueryResults res;
 	reindexer::ActiveQueryScope scope(sqlQuery);
-	reindexer::Query query;
+	Query query;
 	try {
-		query = reindexer::Query::FromSQL(sqlQuery);
+		query = Query::FromSQL(sqlQuery);
 	} catch (const SqlParserError& err) {
 		return status(ctx, http::HttpStatus(err.AsError()), PutLocation(err.Range()));
 	}
-	const auto err = execQueryByType(query, res, ctx);
+	reindexer::ApplySqlModifyDefaults(query);
+	const auto err = execQueryByType(Impl(query), res, ctx);
 	if (!err.ok()) {
 		return status(ctx, http::HttpStatus(err));
 	}
@@ -269,13 +299,14 @@ int HTTPServer::PostSQLQuery(http::Context& ctx) {
 	}
 	reindexer::QueryResults res;
 	reindexer::ActiveQueryScope scope(sqlQuery);
-	reindexer::Query query;
+	Query query;
 	try {
-		query = reindexer::Query::FromSQL(sqlQuery);
+		query = Query::FromSQL(sqlQuery);
 	} catch (const SqlParserError& err) {
 		return status(ctx, http::HttpStatus(err.AsError()), PutLocation(err.Range()));
 	}
-	const auto err = execQueryByType(query, res, ctx);
+	reindexer::ApplySqlModifyDefaults(query);
+	const auto err = execQueryByType(Impl(query), res, ctx);
 	if (!err.ok()) {
 		return status(ctx, http::HttpStatus(err));
 	}
@@ -306,22 +337,23 @@ int HTTPServer::queryConvert(http::Context& ctx, QueryFormat incomingFormat) {
 	}
 	const auto format = parseFormat(formatStr);
 	try {
-		const auto q = incomingFormat == QueryFormat::Sql ? reindexer::Query::FromSQL(strQuery) : reindexer::Query::FromJSON(strQuery);
+		const auto q = incomingFormat == QueryFormat::Sql ? Query::FromSQL(strQuery) : Query::FromJSON(strQuery);
+		ConstQueryImpl queryImpl = Impl(q);
 		WrSerializer ser(ctx.writer->GetChunk());
 		{
 			JsonBuilder builder(ser);
 			switch (format) {
 				case QueryFormat::Sql:
 					builder.Put("format", "sql");
-					builder.Put("query", q.GetSQL(q.Type()));
+					builder.Put("query", queryImpl.GetSQL(queryImpl.Type()));
 					break;
 				case QueryFormat::Dsl:
 					builder.Put("format", "dsl");
-					builder.Raw("query", q.GetJSON());
+					builder.Raw("query", queryImpl.GetJSON());
 					break;
 				case QueryFormat::PrettySql:
 					builder.Put("format", "pretty_sql");
-					builder.Put("query", q.GetSQL(q.Type(), Pretty_True));
+					builder.Put("query", queryImpl.GetSQL(queryImpl.Type(), Pretty_True));
 					break;
 				case QueryFormat::Unknown:
 					return status(ctx, http::HttpStatus(http::StatusBadRequest, "Unknown format '" + formatStr + '\''));
@@ -334,7 +366,7 @@ int HTTPServer::queryConvert(http::Context& ctx, QueryFormat incomingFormat) {
 }
 
 int HTTPServer::PostQuery(http::Context& ctx) {
-	reindexer::Query q;
+	Query q;
 	try {
 		q = Query::FromJSON(ctx.body->Read());
 	} catch (Error& err) {
@@ -344,7 +376,7 @@ int HTTPServer::PostQuery(http::Context& ctx) {
 	auto db = getDB<kRoleDataRead>(ctx);
 
 	reindexer::QueryResults res;
-	reindexer::ActiveQueryScope scope(q, QuerySelect);
+	reindexer::ActiveQueryScope scope(Impl(q), QuerySelect);
 	const auto err = db.Select(q, res);
 	if (!err.ok()) {
 		return status(ctx, http::HttpStatus(err));
@@ -353,7 +385,7 @@ int HTTPServer::PostQuery(http::Context& ctx) {
 }
 
 int HTTPServer::DeleteQuery(http::Context& ctx) {
-	reindexer::Query q;
+	Query q;
 	try {
 		q = Query::FromJSON(ctx.body->Read());
 	} catch (Error& err) {
@@ -363,7 +395,7 @@ int HTTPServer::DeleteQuery(http::Context& ctx) {
 	auto db = getDB<kRoleDataWrite>(ctx);
 
 	reindexer::QueryResults res;
-	reindexer::ActiveQueryScope scope(q, QueryDelete);
+	reindexer::ActiveQueryScope scope(Impl(q), QueryDelete);
 	const auto err = db.Delete(q, res);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
@@ -377,7 +409,7 @@ int HTTPServer::DeleteQuery(http::Context& ctx) {
 }
 
 int HTTPServer::UpdateQuery(http::Context& ctx) {
-	reindexer::Query q;
+	Query q;
 	try {
 		q = Query::FromJSON(ctx.body->Read());
 	} catch (Error& err) {
@@ -387,7 +419,7 @@ int HTTPServer::UpdateQuery(http::Context& ctx) {
 	auto db = getDB<kRoleDataWrite>(ctx);
 
 	reindexer::QueryResults res;
-	reindexer::ActiveQueryScope scope(q, QueryUpdate);
+	reindexer::ActiveQueryScope scope(Impl(q), QueryUpdate);
 	const auto err = db.Update(q, res);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
@@ -660,7 +692,7 @@ int HTTPServer::GetItems(http::Context& ctx) {
 		querySer << " OFFSET " << prepareOffset(offsetParam);
 	}
 
-	reindexer::Query query = Query::FromSQL(querySer.Slice());
+	auto query = Query::FromSQL(querySer.Slice());
 	if (ctx.request->params.Get("format"sv) != kCSVFileFmt) {
 		query.ReqTotal();
 	}
@@ -979,6 +1011,11 @@ int HTTPServer::Check(http::Context& ctx) {
 
 		size_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
 		size_t uptime = std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now() - startTs_).count();
+		const auto coreLog{loggerConfigurator_.GetSettings(LoggerComponent::Core)};
+		const auto serverLog{loggerConfigurator_.GetSettings(LoggerComponent::Server)};
+		const auto rpcLog{loggerConfigurator_.GetSettings(LoggerComponent::Rpc)};
+		const auto grpcLog{loggerConfigurator_.GetSettings(LoggerComponent::Grpc)};
+		const auto httpLog{loggerConfigurator_.GetSettings(LoggerComponent::Http)};
 		builder.Put("start_time", startTs);
 		builder.Put("uptime", uptime);
 		builder.Put("rpc_address", serverConfig_.RPCAddr);
@@ -987,11 +1024,17 @@ int HTTPServer::Check(http::Context& ctx) {
 		builder.Put("https_address", serverConfig_.HTTPsAddr);
 		builder.Put("urpc_address", serverConfig_.RPCUnixAddr);
 		builder.Put("storage_path", serverConfig_.StoragePath);
-		builder.Put("rpc_log", serverConfig_.RpcLog);
-		builder.Put("http_log", serverConfig_.HttpLog);
+		builder.Put("core_log", coreLog.path.value_or(serverConfig_.CoreLog));
+		builder.Put("server_log", serverLog.path.value_or(serverConfig_.ServerLog));
+		builder.Put("rpc_log", rpcLog.path.value_or(serverConfig_.RpcLog));
+		builder.Put("grpc_log", grpcLog.path.value_or(serverConfig_.GrpcLog));
+		builder.Put("http_log", httpLog.path.value_or(serverConfig_.HttpLog));
 		builder.Put("log_level", serverConfig_.LogLevel);
-		builder.Put("core_log", serverConfig_.CoreLog);
-		builder.Put("server_log", serverConfig_.ServerLog);
+		builder.Put("core_log_level", logLevelToString(coreLog.level));
+		builder.Put("server_log_level", logLevelToString(serverLog.level));
+		builder.Put("rpc_log_level", logLevelToString(rpcLog.level));
+		builder.Put("grpc_log_level", logLevelToString(grpcLog.level));
+		builder.Put("http_log_level", logLevelToString(httpLog.level));
 		{
 			auto heapWatcher = builder.Object("heap_watcher");
 			if (serverConfig_.AllocatorCacheLimit >= 0) {
@@ -1064,13 +1107,20 @@ int HTTPServer::DocHandler(http::Context& ctx) {
 	web web(webRoot_);
 
 	const auto stat = web.stat(path);
-	if (stat.fstatus == fs::StatFile) {
-		const bool enableCache = checkIfStartsWith("face/"sv, path);
-		return web.file(ctx, http::StatusOK, path, stat.isGzip, enableCache);
-	}
-
-	if (stat.fstatus == fs::StatDir && !endsWithSlash) {
-		return ctx.Redirect(path + "/");
+	switch (stat.fstatus) {
+		case fs::StatFile:
+			return web.file(ctx, http::StatusOK, path, stat.isGzip, checkIfStartsWith("face/"sv, path));
+		case fs::StatDir:
+			if (!endsWithSlash) {
+				return ctx.Redirect(path + "/");
+			}
+			break;
+		case fs::StatError:
+			return ctx.String(reindexer::net::http::StatusForbidden, "The access to the file is forbidden");
+		case fs::StatNotFound:
+			break;
+		default:
+			throw Error(errLogic, "Unexpected file status '{}' for path {}", int(stat.fstatus), path);
 	}
 
 	for (; !path.empty();) {
@@ -1160,6 +1210,17 @@ void HTTPServer::Start(const std::string& addr, ev::dynamic_loop& loop) {
 	router_.POST<HTTPServer, &HTTPServer::QueryConvertSql>("/api/v1/query/convert/sql", this);
 	router_.POST<HTTPServer, &HTTPServer::QueryConvertDsl>("/api/v1/query/convert/dsl", this);
 
+	router_.PUT<HTTPServer, &HTTPServer::PutCoreLoggingConfig>("/api/v1/logging/core/config", this);
+	router_.GET<HTTPServer, &HTTPServer::GetCoreLoggingConfig>("/api/v1/logging/core/config", this);
+	router_.PUT<HTTPServer, &HTTPServer::PutRpcLoggingConfig>("/api/v1/logging/rpc/config", this);
+	router_.GET<HTTPServer, &HTTPServer::GetRpcLoggingConfig>("/api/v1/logging/rpc/config", this);
+	router_.PUT<HTTPServer, &HTTPServer::PutGrpcLoggingConfig>("/api/v1/logging/grpc/config", this);
+	router_.GET<HTTPServer, &HTTPServer::GetGrpcLoggingConfig>("/api/v1/logging/grpc/config", this);
+	router_.PUT<HTTPServer, &HTTPServer::PutHttpLoggingConfig>("/api/v1/logging/http/config", this);
+	router_.GET<HTTPServer, &HTTPServer::GetHttpLoggingConfig>("/api/v1/logging/http/config", this);
+	router_.PUT<HTTPServer, &HTTPServer::PutServerLoggingConfig>("/api/v1/logging/server/config", this);
+	router_.GET<HTTPServer, &HTTPServer::GetServerLoggingConfig>("/api/v1/logging/server/config", this);
+
 	router_.GET<HTTPServer, &HTTPServer::GetRole>("/api/v1/user/role", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetDefaultConfigs>("/api/v1/db/default_configs", this);
@@ -1167,9 +1228,7 @@ void HTTPServer::Start(const std::string& addr, ev::dynamic_loop& loop) {
 	router_.OnResponse(this, &HTTPServer::OnResponse);
 	router_.Middleware<HTTPServer, &HTTPServer::CheckAuth>(this);
 
-	if (logger_) {
-		router_.Logger<HTTPServer, &HTTPServer::Logger>(this);
-	}
+	router_.Logger<HTTPServer, &HTTPServer::Logger>(this);
 
 	if (serverConfig_.DebugPprof) {
 		pprof_.Attach(router_);
@@ -1982,16 +2041,17 @@ unsigned HTTPServer::prepareOffset(std::string_view offsetParam, int offsetDefau
 	return static_cast<unsigned>(offset);
 }
 
-int HTTPServer::modifyQueryTxImpl(http::Context& ctx, const std::string& dbName, std::string_view txId, Query& q) {
+int HTTPServer::modifyQueryTxImpl(http::Context& ctx, const std::string& dbName, std::string_view txId, Query&& query) {
 	reindexer::QueryResults res;
 	auto tx = getTx(dbName, txId);
-	if (!q.GetMergeQueries().empty()) {
+	const auto q = Impl(query);
+	if (!q.MergeQueries().empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Merged sub-queries are not allowed inside TX"));
 	}
-	if (!q.GetJoinQueries().empty()) {
+	if (!q.JoinQueries().empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Joined sub-queries are not allowed inside TX"));
 	}
-	auto err = tx->Modify(std::move(q));
+	auto err = tx->Modify(std::move(query));
 	return status(ctx, http::HttpStatus(err));
 }
 
@@ -2258,15 +2318,17 @@ int HTTPServer::GetSQLQueryTx(http::Context& ctx) {
 
 	try {
 		auto q = Query::FromSQL(sqlQuery);
-		switch (q.type_) {
+		reindexer::ApplySqlModifyDefaults(q);
+		QueryImpl queryImpl = Impl(q);
+		switch (queryImpl.Type()) {
 			case QueryDelete:
 			case QueryUpdate:
-				return modifyQueryTxImpl(ctx, dbName, txId, q);
+				return modifyQueryTxImpl(ctx, dbName, txId, std::move(q));
 			case QuerySelect:
 			case QueryTruncate:
 				return status(ctx, http::HttpStatus(http::StatusInternalServerError, "Transactions support update/delete queries only"));
 		}
-		return status(ctx, http::HttpStatus(Error(errLogic, "Unexpected query type: {}", int(q.type_))));
+		return status(ctx, http::HttpStatus(Error(errLogic, "Unexpected query type: {}", int(queryImpl.Type()))));
 	} catch (const Error& e) {
 		return status(ctx, http::HttpStatus(e));
 	}
@@ -2277,7 +2339,7 @@ int HTTPServer::DeleteQueryTx(http::Context& ctx) {
 	auto db = getDB<kRoleDataWrite>(ctx, &dbName);
 	const std::string dsl = ctx.body->Read();
 
-	reindexer::Query q;
+	Query q;
 	try {
 		q = Query::FromJSON(dsl);
 	} catch (Error& err) {
@@ -2289,8 +2351,8 @@ int HTTPServer::DeleteQueryTx(http::Context& ctx) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
 	}
 
-	q.type_ = QueryDelete;
-	return modifyQueryTxImpl(ctx, dbName, txId, q);
+	Impl(q).Type(QueryDelete);
+	return modifyQueryTxImpl(ctx, dbName, txId, std::move(q));
 }
 
 int HTTPServer::PostMemReset(http::Context& ctx) {
@@ -2322,15 +2384,23 @@ int HTTPServer::GetMemInfo(http::Context& ctx) {
 }
 
 void HTTPServer::Logger(http::Context& ctx) {
+	const auto level{ctx.writer->RespCode() >= 400 ? spdlog::level::err : spdlog::level::info};
+	if (!logger_.should_log(level)) {
+		return;
+	}
+
+	WrSerializer ser;
 	HandlerStat statDiff = HandlerStat() - ctx.stat.allocStat;
 	auto clientData = reinterpret_cast<HTTPClientData*>(ctx.clientData.get());
+	ser << ctx.request->clientAddr << " - " << (clientData ? clientData->auth.Login() : "") << ' ' << ctx.request->method << ' '
+		<< ctx.request->uri << ' ' << ctx.writer->RespCode() << ' ' << ctx.writer->Written() << ' ' << statDiff.GetTimeElapsed() << "us";
 	if (serverConfig_.DebugAllocs) {
-		logger_.info("{} - {} {} {} {} {} {}us | allocs: {}, allocated: {} byte(s)", ctx.request->clientAddr,
-					 clientData ? clientData->auth.Login() : "", ctx.request->method, ctx.request->uri, ctx.writer->RespCode(),
-					 ctx.writer->Written(), statDiff.GetTimeElapsed(), statDiff.GetAllocsCnt(), statDiff.GetAllocsBytes());
+		ser << " | allocs: " << statDiff.GetAllocsCnt() << ", allocated: " << statDiff.GetAllocsBytes() << " byte(s)";
+	}
+	if (level == spdlog::level::err) {
+		logger_.error(ser.Slice());
 	} else {
-		logger_.info("{} - {} {} {} {} {} {}us", ctx.request->clientAddr, clientData ? clientData->auth.Login() : "", ctx.request->method,
-					 ctx.request->uri, ctx.writer->RespCode(), ctx.writer->Written(), statDiff.GetTimeElapsed());
+		logger_.info(ser.Slice());
 	}
 }
 
@@ -2386,6 +2456,35 @@ int HTTPServer::GetDefaultConfigs(http::Context& ctx) {
 	}
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
 }
+
+int HTTPServer::putLoggingConfig(http::Context& ctx, LoggerComponent component) {
+	LoggerSettings settings;
+	if (auto err = parseLoggerSettings(ctx, settings); !err.ok()) {
+		return status(ctx, http::HttpStatus(err));
+	}
+	Error err{loggerConfigurator_.ApplySettings(component, settings)};
+	return status(ctx, http::HttpStatus(err));
+}
+
+int HTTPServer::getLoggingConfig(http::Context& ctx, LoggerComponent component) {
+	auto ser{makeRestrictedWrSerializer(ctx)};
+	JsonBuilder builder{ser};
+	const auto settings{loggerConfigurator_.GetSettings(component)};
+	serializeLoggerSettings(settings, builder);
+	builder.End();
+	return ctx.JSON(http::StatusOK, ser.DetachChunk());
+}
+
+int HTTPServer::PutCoreLoggingConfig(http::Context& ctx) { return putLoggingConfig(ctx, LoggerComponent::Core); }
+int HTTPServer::PutServerLoggingConfig(http::Context& ctx) { return putLoggingConfig(ctx, LoggerComponent::Server); }
+int HTTPServer::PutHttpLoggingConfig(http::Context& ctx) { return putLoggingConfig(ctx, LoggerComponent::Http); }
+int HTTPServer::PutRpcLoggingConfig(http::Context& ctx) { return putLoggingConfig(ctx, LoggerComponent::Rpc); }
+int HTTPServer::PutGrpcLoggingConfig(http::Context& ctx) { return putLoggingConfig(ctx, LoggerComponent::Grpc); }
+int HTTPServer::GetCoreLoggingConfig(http::Context& ctx) { return getLoggingConfig(ctx, LoggerComponent::Core); }
+int HTTPServer::GetServerLoggingConfig(http::Context& ctx) { return getLoggingConfig(ctx, LoggerComponent::Server); }
+int HTTPServer::GetHttpLoggingConfig(http::Context& ctx) { return getLoggingConfig(ctx, LoggerComponent::Http); }
+int HTTPServer::GetRpcLoggingConfig(http::Context& ctx) { return getLoggingConfig(ctx, LoggerComponent::Rpc); }
+int HTTPServer::GetGrpcLoggingConfig(http::Context& ctx) { return getLoggingConfig(ctx, LoggerComponent::Grpc); }
 
 HTTPServer::DataFormat HTTPServer::dataFormatFromStr(std::string_view str) {
 	if (str.empty() || iequals(str, kJSONFmt)) {

@@ -121,8 +121,7 @@ void FullTextMergeLimit::Insert(State& state) {
 void FullTextMergeLimit::BuildFastTextIndex(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		reindexer::Query q(nsdef_.name);
-		q.Where(kIndexTextName_, CondEq, kWords_[0]).Limit(20);
+		const auto q = reindexer::Query(nsdef_.name).Where(kIndexTextName_, CondEq, kWords_[0]).Limit(20);
 
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -135,8 +134,7 @@ void FullTextMergeLimit::BuildFastTextIndex(benchmark::State& state) {
 void FullTextMergeLimit::FastTextIndexSelect(benchmark::State& state, const std::string& qs) {
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		reindexer::Query q(nsdef_.name);
-		q.Where(kIndexTextName_, CondEq, qs);
+		const auto q = reindexer::Query(nsdef_.name).Where(kIndexTextName_, CondEq, qs);
 
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);

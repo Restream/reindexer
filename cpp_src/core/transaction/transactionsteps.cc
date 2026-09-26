@@ -1,4 +1,5 @@
 #include "transactionsteps.h"
+#include "core/query/query_impl.h"
 #include "core/rdxcontext.h"
 
 namespace reindexer {
@@ -25,27 +26,30 @@ void TransactionSteps::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 }
 
 void TransactionSteps::Modify(Query&& query, lsn_t lsn) {
-	if (!query.GetJoinQueries().empty()) {
-		throw Error(errParams, "Query in transaction can not contain JOINs");
-	}
-	if (!query.GetMergeQueries().empty()) {
-		throw Error(errParams, "Query in transaction can not contain MERGEs");
-	}
-	if (!query.GetSubQueries().empty()) {
-		throw Error(errParams, "Query in transaction can not contain subqueries");
-	}
-	switch (query.Type()) {
-		case QueryUpdate:
-			updateQueriesCount_ += 1;
-			break;
-		case QueryDelete:
-			deleteQueriesCount_ += 1;
-			break;
-		case QuerySelect:
-			throw Error(errParams, "Transactions does not support SELECT queries");
-		case QueryTruncate:
-			throw Error(errParams, "Transactions does not support TRUNCATE queries");
-		default:;
+	{
+		const auto queryImpl = Impl(query);
+		if (!queryImpl.JoinQueries().empty()) {
+			throw Error(errParams, "Query in transaction can not contain JOINs");
+		}
+		if (!queryImpl.MergeQueries().empty()) {
+			throw Error(errParams, "Query in transaction can not contain MERGEs");
+		}
+		if (!queryImpl.SubQueries().empty()) {
+			throw Error(errParams, "Query in transaction can not contain subqueries");
+		}
+		switch (queryImpl.Type()) {
+			case QueryUpdate:
+				updateQueriesCount_ += 1;
+				break;
+			case QueryDelete:
+				deleteQueriesCount_ += 1;
+				break;
+			case QuerySelect:
+				throw Error(errParams, "Transactions does not support SELECT queries");
+			case QueryTruncate:
+				throw Error(errParams, "Transactions does not support TRUNCATE queries");
+			default:;
+		}
 	}
 	steps.emplace_back(std::move(query), lsn);
 }
@@ -77,7 +81,7 @@ size_t TransactionSteps::CalculateNewCapacity(size_t currentSize) const noexcept
 							  },
 							  [&](const TransactionQueryStep& s) noexcept {
 								  if (s.query) {
-									  switch (s.query->Type()) {
+									  switch (Impl(*s.query).Type()) {
 										  case QueryDelete:
 											  if (!haveTruncateQuery) {
 												  newCapacity = currentSize;

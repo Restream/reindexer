@@ -10,7 +10,6 @@
 namespace reindexer {
 
 class WrSerializer;
-class Query;
 
 class [[nodiscard]] SqlFormatterBase {
 protected:

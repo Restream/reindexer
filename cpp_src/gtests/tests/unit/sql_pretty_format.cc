@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <string_view>
-#include "core/enums.h"
-#include "core/query/query.h"
+#include "core/query/query_impl.h"
 
 namespace reindexer_tests {
 
@@ -111,11 +110,11 @@ ORDER BY
 
 	for (const auto& testCase : cases) {
 		auto query = reindexer::Query::FromSQL(testCase.oneLineSql);
-		EXPECT_EQ(query.GetSQL(QueryType::QuerySelect), testCase.oneLineSql);
-		EXPECT_EQ(query.GetSQL(QueryType::QuerySelect, reindexer::Pretty_True), testCase.prettySql);
+		EXPECT_EQ(Impl(query).GetSQL(QueryType::QuerySelect), testCase.oneLineSql);
+		EXPECT_EQ(Impl(query).GetSQL(QueryType::QuerySelect, reindexer::Pretty_True), testCase.prettySql);
 
 		query = reindexer::Query::FromSQL(testCase.prettySql);
-		EXPECT_EQ(query.GetSQL(QueryType::QuerySelect, reindexer::Pretty_True), testCase.prettySql);
+		EXPECT_EQ(Impl(query).GetSQL(QueryType::QuerySelect, reindexer::Pretty_True), testCase.prettySql);
 	}
 }
 

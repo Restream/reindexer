@@ -1,4 +1,6 @@
+#include <tuple>
 #include <vector>
+#include "core/query/query_impl.h"
 #include "core/query/sql/sql_suggestions.h"
 #include "gtest/gtest.h"
 #include "reindexer_api.h"
@@ -7,7 +9,6 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/defnsconfigs.h"
-#include "core/keyvalue/variant.h"
 #include "core/nsselecter/joins/iterators.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
@@ -31,6 +32,10 @@
 namespace reindexer_tests {
 
 using reindexer::IndexOpts;
+using reindexer::Error;
+using reindexer::Query;
+using reindexer::Variant;
+using reindexer::VariantArray;
 
 TEST(ReindexerTest, DeleteTemporaryNamespaceOnConnect) {
 	const auto kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/base_tests/DeleteTemporaryNamespaceOnConnect");
@@ -57,7 +62,7 @@ TEST(ReindexerTest, DeleteTemporaryNamespaceOnConnect) {
 		reindexer::Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_TRUE(reindexer::fs::Stat(temporaryNamespacePath) == reindexer::fs::StatError);
+		ASSERT_TRUE(reindexer::fs::Stat(temporaryNamespacePath) == reindexer::fs::StatNotFound);
 	}
 }
 
@@ -224,13 +229,14 @@ TEST_F(ReindexerApi, ConcurrentRenaming) {
 
 	auto selectionTh1 = [&](std::string_view ns, std::string_view otherNs) {
 		while (!done) {
-			executeAndValidate(ns, otherNs, Query(ns).Sort("hash()", false).Limit(10), 10);
+			executeAndValidate(ns, otherNs, Query(ns).Sort("hash()", SortOrder::Asc).Limit(10), 10);
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		}
 	};
 	auto selectionTh2 = [&](std::string_view ns, std::string_view otherNs) {
 		while (!done) {
-			executeAndValidate(ns, otherNs, Query(ns).InnerJoin("id", "id", CondEq, Query(ns)).Sort("hash()", false).Limit(10), 10);
+			executeAndValidate(ns, otherNs, Query(ns).InnerJoin(Query(ns), "id", CondEq, "id").Sort("hash()", SortOrder::Asc).Limit(10),
+							   10);
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		}
 	};
@@ -341,8 +347,7 @@ TEST_F(ReindexerApi, DistinctCompositeIndex) {
 		rt.Upsert(default_namespace, item);
 	}
 
-	Query q{default_namespace};
-	q.Distinct("v1+v2");
+	const auto q = Query(default_namespace).Distinct("v1+v2");
 	{
 		auto qr = rt.Select(q);
 		EXPECT_EQ(qr.Count(), 1);
@@ -762,6 +767,7 @@ TEST_F(ReindexerApi, CloseNamespace) {
 
 TEST_F(ReindexerApi, DropStorage) {
 	const std::string kBaseTestsStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/api_drop_storage/");
+	std::ignore = reindexer::fs::RmDirAll(kBaseTestsStoragePath);
 	auto rx = std::make_unique<Reindexer>();
 	auto err = rx->Connect("builtin://" + kBaseTestsStoragePath);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -778,9 +784,18 @@ TEST_F(ReindexerApi, DropStorage) {
 	ASSERT_EQ(item["storage_enabled"].As<bool>(), true);
 	ASSERT_EQ(item["storage_status"].As<std::string>(), "OK");
 
+	// Legacy leftover that DestroyDB does not remove (must not keep the ns directory after drop)
+	const auto placeholderPath = reindexer::fs::JoinPath(storagePath, ".rdx_placeholder");
+	ASSERT_GE(reindexer::fs::WriteFile(placeholderPath, "legacy"), 0);
+
 	err = rx->DropNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(reindexer::fs::Stat(storagePath) == reindexer::fs::StatError);
+	ASSERT_TRUE(reindexer::fs::Stat(storagePath) == reindexer::fs::StatNotFound);
+
+	rx.reset();
+	rx = std::make_unique<Reindexer>();
+	err = rx->Connect("builtin://" + kBaseTestsStoragePath);
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(ReindexerApi, DeleteNonExistingNamespace) {
@@ -808,7 +823,7 @@ TEST_F(ReindexerApi, GetItemFromQueryResults) {
 		item["value"] = data.back().second;
 		rt.Insert(default_namespace, item);
 	}
-	auto qr = rt.Select(Query(default_namespace).Sort("id", false));
+	auto qr = rt.Select(Query(default_namespace).Sort("id", SortOrder::Asc));
 	ASSERT_EQ(qr.Count(), kItemsCount);
 	// items in QueryResults are valid after the ns is destroyed
 	rt.TruncateNamespace(default_namespace);
@@ -1027,21 +1042,27 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	const size_t offset = 23;
 	const size_t limit = 61;
 
-	Query query{Query(default_namespace, offset, limit).Sort("column1", true).Sort("column2", false).Sort("column3", false)};
+	const Query query{Query(default_namespace)
+						  .Offset(offset)
+						  .Limit(limit)
+						  .Sort("column1", SortOrder::Desc)
+						  .Sort("column2", SortOrder::Asc)
+						  .Sort("column3", SortOrder::Asc)};
+	reindexer::ConstQueryImpl queryImpl = Impl(query);
 	auto qr = rt.Select(query);
 	EXPECT_EQ(qr.Count(), limit);
 
 	PrintQueryResults(default_namespace, qr);
 
-	std::vector<Variant> lastValues(query.GetSortingEntries().size());
+	std::vector<Variant> lastValues(queryImpl.GetSortingEntries().size());
 	for (auto& it : qr) {
 		Item item(it.GetItem(false));
 
-		std::vector<reindexer::ComparationResult> cmpRes(query.GetSortingEntries().size());
+		std::vector<reindexer::ComparationResult> cmpRes(queryImpl.GetSortingEntries().size());
 		std::fill(cmpRes.begin(), cmpRes.end(), reindexer::ComparationResult::Lt);
 
-		for (size_t j = 0; j < query.GetSortingEntries().size(); ++j) {
-			const reindexer::SortingEntry& sortingEntry(query.GetSortingEntries()[j]);
+		for (size_t j = 0; j < queryImpl.GetSortingEntries().size(); ++j) {
+			const reindexer::SortingEntry& sortingEntry(queryImpl.GetSortingEntries()[j]);
 			Variant sortedValue = item[sortingEntry.expression];
 			if (!lastValues[j].Type().Is<reindexer::KeyValueType::Null>()) {
 				cmpRes[j] = lastValues[j].Compare<reindexer::NotComparable::Return, reindexer::kDefaultNullsHandling>(sortedValue);
@@ -1092,7 +1113,7 @@ TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 	const size_t offset = 4;
 	const size_t limit = 3;
 
-	Query query{Query(default_namespace, offset, limit).Sort("f1", false).Sort("f2", false)};
+	Query query{Query(default_namespace).Offset(offset).Limit(limit).Sort("f1", SortOrder::Asc).Sort("f2", SortOrder::Asc)};
 	auto qr = rt.Select(query);
 	EXPECT_EQ(qr.Count(), limit) << qr.Count();
 
@@ -1117,8 +1138,7 @@ TEST_F(ReindexerApi, SortByHash) {
 	}
 
 	auto getIds = [&](const std::string& sortExpr, std::vector<int>& ids) {
-		Query q{default_namespace};
-		q.Sort(sortExpr, true);
+		const auto q = Query(default_namespace).Sort(sortExpr, SortOrder::Desc);
 		auto qr = rt.Select(q);
 		for (auto& it : qr) {
 			Item item(it.GetItem());
@@ -1186,11 +1206,11 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 		rt.Upsert(default_namespace, item);
 	}
 
-	bool descending = true;
+	const auto sortOrder = SortOrder::Desc;
 	const unsigned offset = 5;
 	const unsigned limit = 30;
 
-	auto sortByIntQr = rt.Select(Query(default_namespace, offset, limit).Sort("valueInt", descending));
+	auto sortByIntQr = rt.Select(Query(default_namespace).Offset(offset).Limit(limit).Sort("valueInt", sortOrder));
 
 	std::deque<int> selectedIntValues;
 	for (auto& it : sortByIntQr) {
@@ -1216,16 +1236,17 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 		}
 	};
 
-	auto sortByStrQr = rt.Select(Query(default_namespace).Sort("valueString", !descending));
+	const auto invertedSortOrder = sortOrder == SortOrder::Asc ? SortOrder::Desc : SortOrder::Asc;
+	auto sortByStrQr = rt.Select(Query(default_namespace).Sort("valueString", invertedSortOrder));
 	validateOrdering("valueString", sortByStrQr, allStrValues);
 
-	auto sortByASCIIStrQr = rt.Select(Query(default_namespace).Sort("valueStringASCII", !descending));
+	auto sortByASCIIStrQr = rt.Select(Query(default_namespace).Sort("valueStringASCII", invertedSortOrder));
 	validateOrdering("valueStringASCII", sortByASCIIStrQr, allStrValuesASCII);
 
-	auto sortByNumericStrQr = rt.Select(Query(default_namespace).Sort("valueStringNumeric", !descending));
+	auto sortByNumericStrQr = rt.Select(Query(default_namespace).Sort("valueStringNumeric", invertedSortOrder));
 	validateOrdering("valueStringNumeric", sortByNumericStrQr, allStrValuesNumeric);
 
-	auto sortByUTF8StrQr = rt.Select(Query(default_namespace).Sort("valueStringUTF8", !descending));
+	auto sortByUTF8StrQr = rt.Select(Query(default_namespace).Sort("valueStringUTF8", invertedSortOrder));
 	validateOrdering("valueStringUTF8", sortByUTF8StrQr, allStrValuesUTF8);
 }
 
@@ -1289,10 +1310,10 @@ TEST_F(ReindexerApi, LargeNumericStrings) {
 	// Ascending CollateNumeric order under naive int64 clamp. Order inside an equal group is unspecified.
 	const std::vector<std::vector<std::string>> kSortGroupsAsc = {kClampedToMin, {kMinInt32}, {kMaxInt32}, kClampedToMax};
 
-	auto expectSortedByGroups = [&](std::vector<std::string> got, bool desc, std::string_view ctx) {
+	auto expectSortedByGroups = [&](std::vector<std::string> got, SortOrder sortOrder, std::string_view ctx) {
 		SCOPED_TRACE(ctx);
 		auto groups = kSortGroupsAsc;
-		if (desc) {
+		if (sortOrder == SortOrder::Desc) {
 			std::reverse(groups.begin(), groups.end());
 		}
 		size_t pos = 0;
@@ -1338,9 +1359,10 @@ TEST_F(ReindexerApi, LargeNumericStrings) {
 			expectSameSet(collect(qr, field), kGreaterThanMinInt64, "CondGt min int64");
 		}
 
-		for (const bool desc : {false, true}) {
-			auto qr = rt.Select(Query(default_namespace).Sort(field, desc));
-			expectSortedByGroups(collect(qr, field), desc, desc ? "Sort desc by groups" : "Sort asc by groups");
+		for (const auto sortOrder : {SortOrder::Asc, SortOrder::Desc}) {
+			auto qr = rt.Select(Query(default_namespace).Sort(field, sortOrder));
+			expectSortedByGroups(collect(qr, field), sortOrder,
+								 sortOrder == SortOrder::Desc ? "Sort desc by groups" : "Sort asc by groups");
 		}
 	}
 }
@@ -1382,13 +1404,16 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 		rt.Upsert(default_namespace, item);
 	}
 
-	bool descending = true;
+	const auto sortOrder = SortOrder::Desc;
 	const unsigned offset = 10;
 	const unsigned limit = 40;
 
 	Query querySecondNamespace = Query(secondNamespace);
-	Query joinQuery{Query(default_namespace, offset, limit).Sort("id", descending)};
-	joinQuery.InnerJoin("fk", "pk", CondEq, std::move(querySecondNamespace));
+	const auto joinQuery = Query(default_namespace)
+							   .Offset(offset)
+							   .Limit(limit)
+							   .Sort("id", sortOrder)
+							   .InnerJoin(std::move(querySecondNamespace), "fk", CondEq, "pk");
 
 	auto queryResult = rt.Select(joinQuery);
 	for (auto& it : queryResult) {
@@ -1400,7 +1425,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 
 static void TestDSLParseCorrectness(const std::string& testDsl) {
 	try {
-		Query query = query.FromJSON(testDsl);
+		std::ignore = Query::FromJSON(testDsl);
 	} catch (Error& err) {
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
@@ -1430,16 +1455,16 @@ TEST_F(ReindexerApi, DslFieldsTest) {
 					"offset": 0,
 					"on": [
 						{
-							"left_field": "joined",
-							"right_field": "joined",
-							"cond": "lt",
-							"op": "OR"
-						},
-						{
 							"left_field": "joined2",
 							"right_field": "joined2",
 							"cond": "gt",
 							"op": "AND"
+						},
+						{
+							"left_field": "joined",
+							"right_field": "joined",
+							"cond": "lt",
+							"op": "OR"
 						}
 					]
 				}
@@ -1609,28 +1634,75 @@ TEST_F(ReindexerApi, DslFieldsTest) {
 TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {
 	constexpr std::string_view sql = "select distinct(country), distinct(city) from clients;";
 
-	Query q1 = Query::FromSQL(sql);
-	EXPECT_EQ(q1.Entries().Size(), 0);
-	ASSERT_EQ(q1.aggregations_.size(), 2);
-	EXPECT_EQ(q1.aggregations_[0].Type(), AggDistinct);
-	ASSERT_EQ(q1.aggregations_[0].Fields().size(), 1);
-	EXPECT_EQ(q1.aggregations_[0].Fields()[0], "country");
-	EXPECT_EQ(q1.aggregations_[1].Type(), AggDistinct);
-	ASSERT_EQ(q1.aggregations_[1].Fields().size(), 1);
-	EXPECT_EQ(q1.aggregations_[1].Fields()[0], "city");
+	auto q1 = Query::FromSQL(sql);
+	reindexer::ConstQueryImpl q1Impl = Impl(q1);
+	EXPECT_EQ(q1Impl.Entries().Size(), 0);
+	ASSERT_EQ(q1Impl.Aggregations().size(), 2);
+	const auto& agg0 = q1Impl.Aggregations()[0];
+	EXPECT_EQ(agg0.Type(), AggDistinct);
+	ASSERT_EQ(agg0.Fields().size(), 1);
+	EXPECT_EQ(agg0.Fields()[0], "country");
+	const auto& agg1 = q1Impl.Aggregations()[1];
+	EXPECT_EQ(agg1.Type(), AggDistinct);
+	ASSERT_EQ(agg1.Fields().size(), 1);
+	EXPECT_EQ(agg1.Fields()[0], "city");
 
-	std::string dsl = q1.GetJSON();
+	std::string dsl = q1Impl.GetJSON();
 	Query q2;
 	EXPECT_NO_THROW(q2 = Query::FromJSON(dsl));
 	EXPECT_EQ(q1, q2) << "q1: " << q1.GetSQL() << "\nq2: " << q2.GetSQL();
 
-	Query q3{Query(default_namespace).Distinct("name").Distinct("city").Where("id", CondGt, static_cast<int64_t>(10))};
+	const Query q3{Query(default_namespace).Distinct("name").Distinct("city").Where("id", CondGt, static_cast<int64_t>(10))};
 	std::string sql2 = q3.GetSQL();
 
 	Query q4;
 	EXPECT_NO_THROW(q4 = Query::FromSQL(sql2));
 	EXPECT_EQ(q3, q4) << "q3: " << q3.GetSQL() << "\nq4: " << q4.GetSQL();
 	EXPECT_EQ(sql2, q4.GetSQL());
+}
+
+// Binary format is used by the external bindings (e.g. reindexer-py), so it has to be available via public Query API
+TEST_F(ReindexerApi, QueryBinaryFormatRoundTrip) {
+	using namespace std::string_view_literals;
+	const Query queries[] = {
+		Query(default_namespace)
+			.Where("id", CondGt, 10)
+			.Or()
+			.Where("name", CondEq, "name_1"sv)
+			.Sort("id", SortOrder::Desc)
+			.Limit(5)
+			.Offset(2)
+			.ReqTotal(),
+		Query(default_namespace)
+			.OpenBracket()
+			.Where("id", CondSet, {1, 2, 3})
+			.Not()
+			.Where("name", CondAny, VariantArray{})
+			.CloseBracket()
+			.Select("id", "name")
+			.Strict(StrictModeIndexes),
+		Query(default_namespace).Aggregate(AggMax, {"id"}).Distinct("name").Explain(),
+		Query(default_namespace)
+			.InnerJoin(Query("joined_ns").Where("value", CondLt, 100), "id", CondEq, "joined_id")
+			.LeftJoin(Query("left_joined_ns"), "name", CondEq, "name")
+			.Merge(Query("merged_ns").Where("id", CondEq, 1)),
+		Query(default_namespace).Where("id", CondSet, Query("sub_ns").Select("id").Where("value", CondGe, 5)),
+		Query(default_namespace).Set("name", "new_name"sv).Where("id", CondEq, 1),
+	};
+	for (const auto format : {QueryFormatV1, QueryFormatV2}) {
+		for (const Query& q : queries) {
+			reindexer::WrSerializer wser;
+			q.Serialize(wser, format);
+			reindexer::Serializer rser(wser.Slice());
+			const Query deserialized = Query::Deserialize(rser, format);
+			EXPECT_TRUE(rser.Eof()) << "Format: " << int(format) << "; query: " << q.GetSQL();
+			EXPECT_EQ(q, deserialized) << "Format: " << int(format) << "\nOrigin query:\n"
+									   << q.GetSQL() << "\nDeserialized query:\n"
+									   << deserialized.GetSQL();
+			// Query type is not a part of the binary format. UPDATE is restored from the update fields
+			EXPECT_EQ(q.GetSQL(), deserialized.GetSQL()) << "Format: " << int(format);
+		}
+	}
 }
 
 class [[nodiscard]] CanceledRdxContext : public reindexer::IRdxCancelContext {
@@ -1754,18 +1826,19 @@ TEST_F(ReindexerApi, JoinConditionsSqlParserTest) {
 
 TEST_F(ReindexerApi, UpdateWithBoolParserTest) {
 	constexpr std::string_view sql = "UPDATE ns SET flag1 = true, flag2 = false WHERE id > 100";
-	Query query = Query::FromSQL(sql);
-	ASSERT_EQ(query.UpdateFields().size(), 2);
-	EXPECT_EQ(query.UpdateFields().front().Column(), "flag1");
-	EXPECT_EQ(query.UpdateFields().front().Mode(), FieldModeSet);
-	ASSERT_EQ(query.UpdateFields().front().Values().size(), 1);
-	EXPECT_TRUE(query.UpdateFields().front().Values().front().Type().Is<reindexer::KeyValueType::Bool>());
-	EXPECT_TRUE(query.UpdateFields().front().Values().front().As<bool>());
-	EXPECT_EQ(query.UpdateFields().back().Column(), "flag2");
-	EXPECT_EQ(query.UpdateFields().back().Mode(), FieldModeSet);
-	ASSERT_EQ(query.UpdateFields().back().Values().size(), 1);
-	EXPECT_TRUE(query.UpdateFields().back().Values().front().Type().Is<reindexer::KeyValueType::Bool>());
-	EXPECT_FALSE(query.UpdateFields().back().Values().front().As<bool>());
+	const auto query = Query::FromSQL(sql);
+	reindexer::ConstQueryImpl queryImpl = Impl(query);
+	ASSERT_EQ(queryImpl.UpdateFields().size(), 2);
+	EXPECT_EQ(queryImpl.UpdateFields().front().Column(), "flag1");
+	EXPECT_EQ(queryImpl.UpdateFields().front().Mode(), FieldModeSet);
+	ASSERT_EQ(queryImpl.UpdateFields().front().Values().size(), 1);
+	EXPECT_TRUE(queryImpl.UpdateFields().front().Values().front().Type().Is<reindexer::KeyValueType::Bool>());
+	EXPECT_TRUE(queryImpl.UpdateFields().front().Values().front().As<bool>());
+	EXPECT_EQ(queryImpl.UpdateFields().back().Column(), "flag2");
+	EXPECT_EQ(queryImpl.UpdateFields().back().Mode(), FieldModeSet);
+	ASSERT_EQ(queryImpl.UpdateFields().back().Values().size(), 1);
+	EXPECT_TRUE(queryImpl.UpdateFields().back().Values().front().Type().Is<reindexer::KeyValueType::Bool>());
+	EXPECT_FALSE(queryImpl.UpdateFields().back().Values().front().As<bool>());
 	EXPECT_EQ(query.GetSQL(), sql) << query.GetSQL();
 }
 
@@ -1774,17 +1847,17 @@ TEST_F(ReindexerApi, EqualPositionsSqlParserTest) {
 		"SELECT * FROM ns WHERE (f1 = 1 AND f2 = 2 OR f3 = 3 equal_position(f1, f2) equal_position(f1, f3)) OR (f4 = 4 AND f5 > 5 "
 		"equal_position(f4, f5))";
 
-// GCC 12 False positive warning in the expression tree
-#pragma GCC diagnostic ignored "-Warray-bounds"
+// GCC false positive in std::variant::index() inlined from IsSubTree (GCC 12/13).
 #pragma GCC diagnostic push
-	Query query = Query::FromSQL(sql);
-#pragma GCC diagnostic pop
+#pragma GCC diagnostic ignored "-Warray-bounds"
+	const auto query = Query::FromSQL(sql);
 	EXPECT_EQ(query.GetSQL(), sql);
-	EXPECT_TRUE(query.Entries().equalPositions.empty());
-	ASSERT_EQ(query.Entries().Size(), 7);
+	reindexer::ConstQueryImpl queryImpl = Impl(query);
+	EXPECT_TRUE(queryImpl.Entries().equalPositions.empty());
+	ASSERT_EQ(queryImpl.Entries().Size(), 7);
 
-	ASSERT_TRUE(query.Entries().IsSubTree(0));
-	const auto& ep1 = query.Entries().Get<reindexer::QueryEntriesBracket>(0).equalPositions;
+	ASSERT_TRUE(queryImpl.Entries().IsSubTree(0));
+	const auto& ep1 = queryImpl.Entries().Get<reindexer::QueryEntriesBracket>(0).equalPositions;
 	ASSERT_EQ(ep1.size(), 2);
 	ASSERT_EQ(ep1[0].size(), 2);
 	EXPECT_EQ(ep1[0][0], "f1");
@@ -1793,12 +1866,13 @@ TEST_F(ReindexerApi, EqualPositionsSqlParserTest) {
 	EXPECT_EQ(ep1[1][0], "f1");
 	EXPECT_EQ(ep1[1][1], "f3");
 
-	ASSERT_TRUE(query.Entries().IsSubTree(4));
-	const auto& ep2 = query.Entries().Get<reindexer::QueryEntriesBracket>(4).equalPositions;
+	ASSERT_TRUE(queryImpl.Entries().IsSubTree(4));
+	const auto& ep2 = queryImpl.Entries().Get<reindexer::QueryEntriesBracket>(4).equalPositions;
 	ASSERT_EQ(ep2.size(), 1);
 	ASSERT_EQ(ep2[0].size(), 2);
 	EXPECT_EQ(ep2[0][0], "f4");
 	EXPECT_EQ(ep2[0][1], "f5");
+#pragma GCC diagnostic pop
 }
 
 TEST_F(ReindexerApi, SchemaSuggestions) {
@@ -2065,6 +2139,16 @@ TEST_F(ReindexerApi, SqlSuggestionsValidateInvalidLastToken) {
 	}
 }
 
+TEST_F(ReindexerApi, SqlSuggestionsDoNotReportMissingOperatorAtEnd) {
+	constexpr std::string_view query = "SELECT * FROM ns WHERE field ";
+	reindexer::SQLSuggestions suggestions;
+	const auto err = rt.reindexer->GetSqlSuggestions(query, query.size() - 1, suggestions);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_TRUE(suggestions.errorMessage.empty()) << suggestions.errorMessage;
+	EXPECT_FALSE(suggestions.errorRange.has_value());
+	EXPECT_NE(std::find(suggestions.suggestions.begin(), suggestions.suggestions.end(), "="), suggestions.suggestions.end());
+}
+
 TEST_F(ReindexerApi, SqlSuggestionsSqlParsingErrorsMatchSqlParser) {
 	const std::string_view queries[] = {
 		"A ",
@@ -2202,34 +2286,36 @@ TEST_F(ReindexerApi, IntToStringIndexUpdate) {
 }
 
 TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
-	Query q;
+	using namespace std::string_view_literals;
+	{
+		Query q;
+		const auto sql = "select id, distinct(year) from test_namespace"sv;
+		EXPECT_NO_THROW(q = Query::FromSQL(sql));
 
-	std::string sql = "select id, distinct(year) from test_namespace";
-	EXPECT_NO_THROW(q = Query::FromSQL(sql));
-
-	Query qJSON;
-	EXPECT_NO_THROW(qJSON = Query::FromJSON(q.GetJSON()));
-
-	q = Query().Select({"id"});
-	EXPECT_NO_THROW(q.Aggregate(AggDistinct, {"year"}, {}));
-
-	sql = "select id, max(year) from test_namespace";
-	EXPECT_THROW(q = Query::FromSQL(sql), Error);
-	q = Query(default_namespace).Select({"id"});
-	q.aggregations_.emplace_back(reindexer::AggregateEntry{AggMax, {"year"}});
-	try {
-		std::ignore = Query::FromJSON(q.GetJSON());
-	} catch (Error& err) {
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), reindexer::kAggregationWithSelectFieldsMsgError);
+		Query qJSON;
+		EXPECT_NO_THROW(qJSON = Query::FromJSON(Impl(q).GetJSON()));
 	}
 
-	EXPECT_THROW(q.Aggregate(AggMax, {"price"}, {}), Error);
+	{
+		auto q = Query("ns").Select("id");
+		EXPECT_NO_THROW(q.Aggregate(AggDistinct, {"year"}, {}));
+	}
 
-	sql = "select facet(year), id, name from test_namespace";
-	EXPECT_THROW(q = Query::FromSQL(sql), Error);
-	q = Query(default_namespace).Select({"id", "name"});
-	EXPECT_THROW(q.Aggregate(AggFacet, {"year"}, {}), Error);
+	{
+		const auto sql = "select id, max(year) from test_namespace"sv;
+		EXPECT_THROW(std::ignore = Query::FromSQL(sql), Error);
+	}
+
+	{
+		const auto sql = "select facet(year), id, name from test_namespace"sv;
+		EXPECT_THROW(std::ignore = Query::FromSQL(sql), Error);
+	}
+
+	{
+		auto q = Query(default_namespace).Select("id", "name");
+		EXPECT_THROW(q.Aggregate(AggFacet, {"year"}, {}), Error);
+	}
+
 	try {
 		std::ignore = Query::FromJSON(fmt::format(R"({{"namespace":"{}",
 	"limit":-1,
@@ -2259,10 +2345,10 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 		EXPECT_EQ(err.what(), reindexer::kAggregationWithSelectFieldsMsgError);
 	}
 
-	EXPECT_THROW((void)Query::FromSQL("select max(id), * from test_namespace"), Error);
-	EXPECT_THROW((void)Query::FromSQL("select *, max(id) from test_namespace"), Error);
-	EXPECT_NO_THROW((void)Query::FromSQL("select *, count(*) from test_namespace"));
-	EXPECT_NO_THROW((void)Query::FromSQL("select count(*), * from test_namespace"));
+	EXPECT_THROW(std::ignore = Query::FromSQL("select max(id), * from test_namespace"), Error);
+	EXPECT_THROW(std::ignore = Query::FromSQL("select *, max(id) from test_namespace"), Error);
+	EXPECT_NO_THROW(std::ignore = Query::FromSQL("select *, count(*) from test_namespace"));
+	EXPECT_NO_THROW(std::ignore = Query::FromSQL("select count(*), * from test_namespace"));
 }
 
 TEST_F(ReindexerApi, InsertIncorrectItemWithJsonPathsDuplication) {
@@ -2367,7 +2453,7 @@ TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
 	}
 
 	{
-		auto qr = rt.Select(Query(default_namespace).Sort("id", false));
+		auto qr = rt.Select(Query(default_namespace).Sort("id", SortOrder::Asc));
 		ASSERT_EQ(qr.Count(), kItemsCount);
 
 		unsigned int i = 0;
@@ -2439,121 +2525,6 @@ TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
 	testImpl(Order::AddIndexThenUpdate);
 }
 
-TEST_F(ReindexerApi, MetaIndexTest) {
-	const auto storagePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/meta_index_test/");
-	std::ignore = reindexer::fs::RmDirAll(storagePath);
-
-	auto rx = std::make_unique<Reindexer>();
-	auto err = rx->Connect("builtin://" + storagePath);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rx->OpenNamespace(default_namespace, StorageOpts().Enabled().CreateIfMissing());
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	std::string readMeta;
-	std::vector<std::string> readKeys;
-	const std::string emptyValue;
-	const std::string unsettedKey = "unexpected#meta#key##name";
-	const std::vector<std::pair<std::string, std::string>> meta = {{"key1", "data1"}, {"key2", "data2"}};
-
-	// prepare state - clear meta in ns
-	err = rx->EnumMeta(default_namespace, readKeys);
-	ASSERT_TRUE(err.ok()) << err.what();
-	for (const auto& key : readKeys) {
-		err = rx->DeleteMeta(default_namespace, key);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
-
-	// empty key to operations
-	err = rx->GetMeta(default_namespace, emptyValue, readMeta);
-	ASSERT_FALSE(err.ok()) << err.what();
-
-	err = rx->PutMeta(default_namespace, emptyValue, emptyValue);
-	ASSERT_FALSE(err.ok()) << err.what();
-
-	err = rx->DeleteMeta(default_namespace, emptyValue);
-	ASSERT_FALSE(err.ok()) << err.what();
-
-	// before initialization - read\enum\delete on empty Meta
-	readMeta = "DEFAULT";
-	err = rx->GetMeta(default_namespace, meta.front().first, readMeta);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_EQ(readMeta, emptyValue);
-
-	readKeys.clear();
-	err = rx->EnumMeta(default_namespace, readKeys);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_EQ(readKeys, std::vector<std::string>{});
-
-	err = rx->DeleteMeta(default_namespace, unsettedKey);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	// initialization - store meta (overwrite first item)
-	for (const auto& item : meta) {
-		err = rx->PutMeta(default_namespace, item.first, item.second);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
-
-	// reload ns, check store\load meta from storage
-	err = rx->CloseNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rx->OpenNamespace(default_namespace, StorageOpts().Enabled().CreateIfMissing());
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	// check values - enumerate all data
-	readKeys.clear();
-	err = rx->EnumMeta(default_namespace, readKeys);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_EQ(readKeys.size(), meta.size());
-
-	// get shard meta
-	std::vector<reindexer::ShardedMeta> data;
-	err = rx->GetMeta(default_namespace, "key1", data);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_EQ(data.size(), 1);
-	ASSERT_EQ(data[0].data, "data1");
-	ASSERT_EQ(data[0].shardId, ShardingKeyType::NotSetShard);
-
-	for (const auto& key : readKeys) {
-		err = rx->GetMeta(default_namespace, key, readMeta);
-		ASSERT_TRUE(err.ok()) << err.what();
-		auto it =
-			std::find_if(meta.begin(), meta.end(), [&key](const std::pair<std::string, std::string>& elem) { return elem.first == key; });
-		ASSERT_TRUE(it != meta.end());
-		ASSERT_EQ(readMeta, it != meta.end() ? it->second : unsettedKey);
-	}
-
-	// deleting
-	err = rx->DeleteMeta(default_namespace, unsettedKey);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	for (const auto& item : meta) {
-		// first delete
-		err = rx->DeleteMeta(default_namespace, item.first);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		// read just removed
-		err = rx->GetMeta(default_namespace, item.first, readMeta);
-		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_EQ(readMeta, emptyValue);
-
-		// write back just removed
-		err = rx->PutMeta(default_namespace, item.first, item.second);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		// real delete
-		err = rx->DeleteMeta(default_namespace, item.first);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
-
-	// enum again
-	readKeys.push_back(unsettedKey);
-	err = rx->EnumMeta(default_namespace, readKeys);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_EQ(readKeys, std::vector<std::string>{});
-}
-
 TEST_F(ReindexerApi, QueryResultsLSNTest) {
 	using namespace std::string_view_literals;
 	constexpr int kDataCount = 10;
@@ -2596,12 +2567,10 @@ TEST_F(ReindexerApi, QueryResultsLSNTest) {
 		auto tx = rt.NewTransaction(default_namespace);
 
 		auto updQ = Query(default_namespace).Where("id", CondEq, 4).Set("data", {Variant{"modified_4"sv}});
-		updQ.type_ = QueryUpdate;
 		auto err = tx.Modify(std::move(updQ));
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		auto delQ = Query(default_namespace).Where("id", CondEq, 5);
-		delQ.type_ = QueryDelete;
+		auto delQ = Query(default_namespace).Where("id", CondEq, 5).Delete();
 		err = tx.Modify(std::move(delQ));
 		ASSERT_TRUE(err.ok()) << err.what();
 

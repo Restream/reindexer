@@ -40,6 +40,9 @@ private:
 };
 
 bool IndexOptimizer::IsOptimizationAvailable() const noexcept {
+	if (sortedIdsCorrupted_.load(std::memory_order_acquire)) {
+		return false;
+	}
 	const auto state = State();
 	return state != OptimizationState::Completed && state != OptimizationState::Error;
 }
@@ -50,6 +53,11 @@ void IndexOptimizer::AwaitIdle(const RdxContext& ctx) const {
 }
 
 void reindexer::IndexOptimizer::ScheduleOptimization(IndexOptimization requestedOptimization) noexcept {
+	if (sortedIdsCorrupted_.load(std::memory_order_acquire)) {
+		assertrx(optimizationState_.load(std::memory_order_acquire) == OptimizationState::Error);
+		return;
+	}
+
 	switch (requestedOptimization) {
 		case IndexOptimization::Full:
 			optimizationState_.store(OptimizationState::None);
@@ -65,11 +73,20 @@ void reindexer::IndexOptimizer::ScheduleOptimization(IndexOptimization requested
 	}
 }
 
-void IndexOptimizer::UpdateSortedIdxCount(IndexesSpan indexes) {
+void IndexOptimizer::UpdateSortedIdxCount(IndexesSpan indexes, std::string_view nsName) noexcept {
 	const unsigned sortedIdxCount = getSortedIdxCount(indexes);
-	for (auto& idx : indexes) {
-		idx->SetSortedIdxCount(sortedIdxCount);
+	try {
+		for (auto& idx : indexes) {
+			idx->SetSortedIdxCount(sortedIdxCount);
+		}
+	} catch (const std::exception& e) {
+		logFmt(LogError, "IndexOptimizer::UpdateSortedIdxCount[{}]: Unexpected error while updating the sorted indexes count: {}", nsName,
+			   e.what());
+		sortedIdsCorrupted_.store(true, std::memory_order_release);
+		optimizationState_.store(OptimizationState::Error);
+		return;
 	}
+	sortedIdsCorrupted_.store(false, std::memory_order_release);
 	ScheduleOptimization(IndexOptimization::Full);
 }
 
@@ -77,6 +94,11 @@ void IndexOptimizer::TryOptimize(const Context& ctx, const index::ICancelable& c
 	auto runningGuard = MakeScopeGuard([this]() noexcept { running_.fetch_add(1, std::memory_order_acq_rel); },
 									   [this]() noexcept {
 										   if (running_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+											   // Passing through idleMtx_ is required: otherwise AwaitIdle may observe running_ != 0
+											   // and block after this notification has already been sent
+											   {
+												   lock_guard lock(idleMtx_);
+											   }
 											   idleCond_.notify_all();
 										   }
 									   });
@@ -99,7 +121,7 @@ void IndexOptimizer::SetConfig(std::string_view nsName, IndexesSpan indexes, con
 	}
 	cfg_ = newCfg;
 	if (needReoptimizeIndexes) {
-		UpdateSortedIdxCount(indexes);
+		UpdateSortedIdxCount(indexes, nsName);
 	}
 }
 

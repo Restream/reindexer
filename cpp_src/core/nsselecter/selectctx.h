@@ -1,22 +1,23 @@
 #pragma once
 
-#include "core/enums.h"
-#include "core/query/query.h"
-#include "core/query/queryentry.h"
+#include <optional>
+#include "core/query/query_impl.h"
 #include "explaincalc.h"
-#include "selectctx_traits.h"
 #include "sortingcontext.h"
 
 namespace reindexer {
 
-class Query;
 class FtFunctionsHolder;
 class FloatVectorsHolderMap;
 
 struct [[nodiscard]] SelectCtx {
-	explicit SelectCtx(const Query& query_, const Query* parentQuery_, FloatVectorsHolderMap* fvHolder) noexcept
+	explicit SelectCtx(ConstQueryImpl query_, std::optional<ConstQueryImpl> parentQuery_, FloatVectorsHolderMap* fvHolder) noexcept
 		: query(query_), offset(query.Offset()), limit(query.Limit()), parentQuery(parentQuery_), floatVectorsHolder(fvHolder) {}
-	const Query& query;
+
+	SelectCtx& operator=(const SelectCtx&) = delete;
+	SelectCtx& operator=(SelectCtx&&) = delete;
+
+	ConstQueryImpl query;
 	std::span<joins::ItemsProcessor> joinItemsProcessors;
 	FtFunctionsHolder* functions = nullptr;
 	bool HasOffset() const noexcept { return offset != QueryEntry::kDefaultOffset; }
@@ -31,14 +32,13 @@ struct [[nodiscard]] SelectCtx {
 	bool reqMatchedOnceFlag = false;
 	bool contextCollectingMode = false;
 	bool inTransaction = false;
-	bool selectBeforeUpdate = false;
 	IsMergeQuery isMergeQuery = IsMergeQuery_False;
 	QueryRankType queryRankType = QueryRankType::NotSet;
 	QueryType crashReporterQueryType = QuerySelect;
 	unsigned offset = QueryEntry::kDefaultOffset;
 	unsigned limit = QueryEntry::kDefaultLimit;
 
-	const Query* parentQuery = nullptr;
+	std::optional<ConstQueryImpl> parentQuery;
 	Explain* explain = nullptr;
 	bool requiresCrashTracking = false;
 	std::vector<SubQueryExplain> subQueriesExplains;
@@ -49,7 +49,7 @@ struct [[nodiscard]] SelectCtx {
 
 template <typename JoinPreSelCtx>
 struct [[nodiscard]] SelectAndPreSelectCtx : public SelectCtx {
-	explicit SelectAndPreSelectCtx(const Query& query, const Query* parentQuery, JoinPreSelCtx preSel,
+	explicit SelectAndPreSelectCtx(ConstQueryImpl query, std::optional<ConstQueryImpl> parentQuery, JoinPreSelCtx preSel,
 								   FloatVectorsHolderMap* fvHolder) noexcept
 		: SelectCtx(query, parentQuery, fvHolder), preSelect{std::move(preSel)} {}
 	JoinPreSelCtx preSelect;
@@ -57,9 +57,10 @@ struct [[nodiscard]] SelectAndPreSelectCtx : public SelectCtx {
 
 template <>
 struct [[nodiscard]] SelectAndPreSelectCtx<void> : public SelectCtx {
-	explicit SelectAndPreSelectCtx(const Query& query, const Query* parentQuery, FloatVectorsHolderMap* fvHolder) noexcept
+	explicit SelectAndPreSelectCtx(ConstQueryImpl query, std::optional<ConstQueryImpl> parentQuery,
+								   FloatVectorsHolderMap* fvHolder) noexcept
 		: SelectCtx(query, parentQuery, fvHolder) {}
 };
-SelectAndPreSelectCtx(const Query&, const Query*, FloatVectorsHolderMap*) -> SelectAndPreSelectCtx<void>;
+SelectAndPreSelectCtx(ConstQueryImpl, std::optional<ConstQueryImpl>, FloatVectorsHolderMap*) -> SelectAndPreSelectCtx<void>;
 
 }  // namespace reindexer

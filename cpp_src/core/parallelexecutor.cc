@@ -30,9 +30,9 @@ Error ParallelExecutor::createIntegralError(std::vector<std::pair<Error, int>>& 
 	return Error(errors[0].first.code(), descr);
 }
 
-Error ParallelExecutor::ExecSelect(const Query& query, QueryResults& result, const sharding::ConnectionsVector& connections,
+Error ParallelExecutor::ExecSelect(ConstQueryImpl query, QueryResults& result, const sharding::ConnectionsVector& connections,
 								   const RdxContext& ctx,
-								   std::function<Error(const Query&, LocalQueryResults&, const RdxContext&)>&& localAction) {
+								   std::function<Error(ConstQueryImpl, LocalQueryResults&, const RdxContext&)>&& localAction) {
 	condition_variable cv;
 	mutex mtx;
 
@@ -60,7 +60,7 @@ Error ParallelExecutor::ExecSelect(const Query& query, QueryResults& result, con
 					})
 					.WithContext(ctx.GetCancelCtx());
 
-			Error err = clientData.connection.Select(query, clientData.results);
+			Error err = clientData.connection.Select(*query, clientData.results);
 			if (!err.ok()) {
 				lock_guard lck(mtx);
 				clientErrors.emplace_back(std::move(err), shardId);

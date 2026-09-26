@@ -1,12 +1,16 @@
 #include "expression.h"
 #include "core/function/function.h"
-#include "estl/fast_hash_map.h"
-#include "estl/fast_hash_set.h"
+#include "core/query/query_impl.h"
 #include "tools/serilize/serializer.h"
+
+#include <algorithm>
+#include <array>
+#include <span>
+#include <string>
 
 namespace reindexer::expressions {
 
-ExpressionValue Expression::Deserialize(Serializer& ser, QueryFormat queryFormat) {
+ExpressionValue Deserialize(Serializer& ser, QueryFormat queryFormat) {
 	const auto type{ser.GetVarUInt()};
 	switch (type) {
 		case ExpressionTypeField: {
@@ -14,65 +18,52 @@ ExpressionValue Expression::Deserialize(Serializer& ser, QueryFormat queryFormat
 		}
 		case ExpressionTypeValues: {
 			VariantArray va;
-			va.resize(ser.GetVarUInt());
-			for (size_t i = 0; i < va.size(); ++i) {
-				va[i] = ser.GetVariant();
+			const auto count = ser.GetVarUIntCount();
+			va.reserve(static_cast<size_t>(count));
+			for (auto left = count; left > 0; --left) {
+				va.emplace_back(ser.GetVariant().EnsureHold());
 			}
 			return va;
 		}
 		case ExpressionTypeExpression: {
 			return functions::Function::Deserialize(ser);
 		}
+		case ExpressionTypeArithmetic:
+			return ArithmeticExpression{ser.GetVString()};
 		case ExpressionTypeSubQuery: {
 			Serializer subQuery{ser.GetVString()};
-			return Query::Deserialize<Query>(subQuery, queryFormat);
+			return QueryImpl::Deserialize<Query>(subQuery, queryFormat);
 		}
 		default:
-			throw Error{errParams, "Error deserializing expression: type ({}) is not supported"};
+			throw Error{errParseBin, "Error deserializing expression: type ({}) is not supported", type};
 	}
 }
 
 void Field::Serialize(WrSerializer& ser) const {
-	ser.PutVarUint(Type());
+	ser.PutVarUint(ExpressionTypeField);
 	ser.PutVString(fieldName_);
 }
 
-const std::string& Field::Get() const { return fieldName_; }
-std::string Field::Dump() const { return fieldName_; }
-
 void Values::Serialize(WrSerializer& ser) const {
-	const auto& values{Get()};
-	ser.PutVarUint(Type());
-	ser.PutVarUint(values.size());
-	for (const auto& v : values) {
+	ser.PutVarUint(ExpressionTypeValues);
+	ser.PutVarUint(values_.size());
+	for (const auto& v : values_) {
 		ser.PutVariant(v);
 	}
 }
 
-const VariantArray& Values::Get() const { return values_; }
-std::string Values::Dump() const { return Get().Dump(); }
-
 void Function::Serialize(WrSerializer& ser) const {
-	ser.PutVarUint(Type());
-	std::visit([&ser](const auto& f) { f.Serialize(ser); }, Get());
-}
-
-const functions::FunctionVariant& Function::Get() const { return function_; }
-
-std::string Function::Dump() const {
-	return std::visit([](const auto& f) { return f.ToString(); }, Get());
+	ser.PutVarUint(ExpressionTypeExpression);
+	std::visit([&ser](const auto& f) { f.Serialize(ser); }, function_);
 }
 
 void SubQuery::Serialize(WrSerializer& ser) const {
-	ser.PutVarUint(Type());
+	ser.PutVarUint(ExpressionTypeSubQuery);
 	{
 		const auto sizePosSaver = ser.StartVString();
-		Get().Serialize(ser, Normal, queryFormat_);
+		Impl(subQuery_).Serialize(ser, Normal, queryFormat_);
 	}
 }
-
-const Query& SubQuery::Get() const { return subQuery_; }
-std::string SubQuery::Dump() const { return Get().GetSQL(); }
 
 ExpressionType GetValueType(const ExpressionValue& value) {
 	if (auto v = std::get_if<std::string>(&value); v) {
@@ -83,6 +74,8 @@ ExpressionType GetValueType(const ExpressionValue& value) {
 		return ExpressionTypeExpression;
 	} else if (auto v = std::get_if<Query>(&value); v) {
 		return ExpressionTypeSubQuery;
+	} else if (auto v = std::get_if<ArithmeticExpression>(&value); v) {
+		return ExpressionTypeArithmetic;
 	}
 	throw Error{errParseBin, "Unsupported type of expression: {}", value.index()};
 }
@@ -107,44 +100,75 @@ std::string_view ExpressionTypeToString(ExpressionType type) {
 		case ExpressionTypeValues:
 			return "values";
 		case ExpressionTypeExpression:
+		case ExpressionTypeArithmetic:
 			return "expression";
 		case ExpressionTypeSubQuery:
 			return "subquery";
 		default:
-			throw Error{errParams, "Type ({}) is not supported"};
+			throw Error{errParams, "Type ({}) is not supported", int(type)};
 	}
 }
 
 void ValidateExpressions(ExpressionType leftExpression, ExpressionType rightExpression, ValidationType type) {
-	static const fast_hash_map<ExpressionType, fast_hash_set<ExpressionType>> combinationsNoSubQueries = {
-		{ExpressionTypeField, {ExpressionTypeValues, ExpressionTypeExpression, ExpressionTypeField}},
-		{ExpressionTypeExpression, {ExpressionTypeValues}},
-	};
-	static const fast_hash_map<ExpressionType, fast_hash_set<ExpressionType>> combinationsAll = {
-		{ExpressionTypeField, {ExpressionTypeValues, ExpressionTypeExpression, ExpressionTypeField, ExpressionTypeSubQuery}},
-		{ExpressionTypeExpression, {ExpressionTypeValues, ExpressionTypeSubQuery}},
-		{ExpressionTypeSubQuery, {ExpressionTypeValues, ExpressionTypeExpression}},
-	};
+	const bool full = type == ValidationType::Full;
+	std::span<const ExpressionType> allowed;
+	switch (leftExpression) {
+		case ExpressionTypeField: {
+			// Order is part of the DSL error text.
+			static constexpr std::array kNoSub{ExpressionTypeField, ExpressionTypeValues, ExpressionTypeExpression};
+			static constexpr std::array kFull{ExpressionTypeField, ExpressionTypeValues, ExpressionTypeExpression, ExpressionTypeSubQuery,
+											  ExpressionTypeArithmetic};
+			allowed = full ? std::span<const ExpressionType>{kFull} : std::span<const ExpressionType>{kNoSub};
+			break;
+		}
+		case ExpressionTypeExpression: {
+			static constexpr std::array kNoSub{ExpressionTypeValues, ExpressionTypeField, ExpressionTypeExpression};
+			static constexpr std::array kFull{ExpressionTypeValues, ExpressionTypeSubQuery};
+			allowed = full ? std::span<const ExpressionType>{kFull} : std::span<const ExpressionType>{kNoSub};
+			break;
+		}
+		case ExpressionTypeSubQuery: {
+			static constexpr std::array kFull{ExpressionTypeExpression, ExpressionTypeValues};
+			if (!full) {
+				break;
+			}
+			allowed = kFull;
+			break;
+		}
+		case ExpressionTypeArithmetic: {
+			static constexpr std::array kFull{ExpressionTypeValues, ExpressionTypeField, ExpressionTypeArithmetic};
+			if (!full) {
+				break;
+			}
+			allowed = kFull;
+			break;
+		}
+		case ExpressionTypeValues:
+		default:
+			break;
+	}
 
-	const auto& allowedCombinations{type == ValidationType::Full ? combinationsAll : combinationsNoSubQueries};
-	auto allowedTypesToString = [](const auto& allowedTypes, auto toString) {
+	auto typesToString = [](std::span<const ExpressionType> types) {
 		std::string result;
-		for (auto it = allowedTypes.begin(); it != allowedTypes.end(); ++it) {
-			if (it != allowedTypes.begin()) {
+		for (const ExpressionType type : types) {
+			if (!result.empty()) {
 				result += "\\";
 			}
-			result += toString(*it);
+			result += ExpressionTypeToString(type);
 		}
 		return result;
 	};
-	auto itLeftExpr = allowedCombinations.find(leftExpression);
-	if (itLeftExpr == allowedCombinations.end()) {
+
+	if (allowed.empty()) {
+		// Arithmetic is spelled "expression" and is not a separate left-side option in the error text.
+		static constexpr std::array kFullLeft{ExpressionTypeField, ExpressionTypeExpression, ExpressionTypeSubQuery};
+		static constexpr std::array kNoSubLeft{ExpressionTypeField, ExpressionTypeExpression};
 		throw Error(errLogic, "Unsupported type of left expression '{}': {} is expected", ExpressionTypeToString(leftExpression),
-					allowedTypesToString(allowedCombinations, [](const auto& it) { return ExpressionTypeToString(it.first); }));
+					typesToString(full ? std::span<const ExpressionType>{kFullLeft} : std::span<const ExpressionType>{kNoSubLeft}));
 	}
-	if (itLeftExpr->second.count(rightExpression) == 0) {
+	if (std::ranges::find(allowed, rightExpression) == allowed.end()) {
 		throw Error(errLogic, "Unsupported type of right expression '{}': {} is expected", ExpressionTypeToString(rightExpression),
-					allowedTypesToString(itLeftExpr->second, [](ExpressionType type) { return ExpressionTypeToString(type); }));
+					typesToString(allowed));
 	}
 }
 

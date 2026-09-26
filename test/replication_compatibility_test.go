@@ -76,7 +76,7 @@ func TestWALSyncCompatibility(t *testing.T) {
 		fillTestItemReplicationCompatData(t, rxLeader, ns, dataCount)
 
 		log.Println("Awaiting online sync...")
-		helpers.WaitForSyncWithLeaderLegacy(t, rxLeader, rxFollower)
+		helpers.WaitForSyncWithLeader(t, rxLeader, rxFollower)
 
 		log.Println("Stopping follower...")
 		rxFollower.Close()
@@ -90,7 +90,7 @@ func TestWALSyncCompatibility(t *testing.T) {
 		defer rxFollower.Close()
 
 		log.Println("Awaiting WAL sync...")
-		helpers.WaitForSyncWithLeaderLegacy(t, rxLeader, rxFollower)
+		helpers.WaitForSyncWithLeader(t, rxLeader, rxFollower)
 
 		stats := getAsyncReplStats(t, rxLeader)
 		assert.Equal(t, stats.ForceSync.Count, int64(0))
@@ -120,7 +120,7 @@ func TestWALSyncCompatibility(t *testing.T) {
 		fillTestItemReplicationCompatData(t, rxLeader, ns, dataCount)
 
 		log.Println("Awaiting online sync...")
-		helpers.WaitForSyncWithLeaderLegacy(t, rxLeader, rxFollower)
+		helpers.WaitForSyncWithLeader(t, rxLeader, rxFollower)
 
 		log.Println("Stopping follower...")
 		isFollowerRunning = false
@@ -134,7 +134,7 @@ func TestWALSyncCompatibility(t *testing.T) {
 		defer terminateFollower()
 
 		log.Println("Awaiting WAL sync...")
-		helpers.WaitForSyncWithLeaderLegacy(t, rxLeader, rxFollower)
+		helpers.WaitForSyncWithLeader(t, rxLeader, rxFollower)
 
 		stats := getAsyncReplStats(t, rxLeader)
 		assert.Equal(t, stats.ForceSync.Count, int64(0))

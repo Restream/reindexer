@@ -448,6 +448,18 @@ func checkExplain(t *testing.T, res []reindexer.ExplainSelector, expected []expe
 	}
 }
 
+func findExplainSelector(selectors []reindexer.ExplainSelector, field string) *reindexer.ExplainSelector {
+	for i := range selectors {
+		if selectors[i].Field == field {
+			return &selectors[i]
+		}
+		if selector := findExplainSelector(selectors[i].Selectors, field); selector != nil {
+			return selector
+		}
+	}
+	return nil
+}
+
 func checkExplainConditionInsertion(t *testing.T, resConditions []reindexer.ExplainConditionInsertion, expectedConditions []expectedExplainConditionInsertion) {
 	for i := 0; i < len(expectedConditions); i++ {
 		assert.Equal(t, expectedConditions[i].InitialCondition, resConditions[i].InitialCondition)
@@ -1079,6 +1091,64 @@ func TestExplainJoin(t *testing.T) {
 			},
 		},
 	})
+
+	fillExplainNs(t, nsMain, 1500)
+	fillExplainNs(t, nsJoined, 1500)
+
+	qMergedJoin := DB.Query(nsMain).Where("data", reindexer.GE, 0)
+	qMergedJoin.InnerJoin(DB.Query(nsJoined).Where("data", reindexer.GE, 0), "inner_joined").On("id", reindexer.EQ, "id")
+	iter = DB.Query(nsMain).Explain().Where("data", reindexer.EQ, 0).Merge(qMergedJoin).MustExec(t)
+	defer iter.Close()
+	explainRes, err = iter.GetExplainResults()
+	require.NoError(t, err)
+	require.NotNil(t, explainRes)
+	require.Len(t, explainRes.Merged, 2)
+	require.NotEmpty(t, explainRes.Merged[1].Selectors)
+	assert.Greater(t, explainRes.Merged[1].PreselectUs, 0)
+	assert.GreaterOrEqual(t, explainRes.PreselectUs, explainRes.Merged[0].PreselectUs+explainRes.Merged[1].PreselectUs)
+}
+
+func TestExplainJoinWithSubqueryInJoinedQuery(t *testing.T) {
+	const (
+		nsMain   = testExplainMainNs
+		nsJoined = testExplainJoinedNs
+	)
+	fillExplainNs(t, nsMain, 5)
+	fillExplainNs(t, nsJoined, 20)
+
+	subQuery := DB.Query(nsJoined).Select("id").Where("data", reindexer.SET, []int{0, 2, 4})
+	joinedQuery := DB.Query(nsJoined).Where("id", reindexer.SET, subQuery)
+	q := DB.Query(nsMain).Explain()
+	q.InnerJoin(joinedQuery, "inner_joined").On("id", reindexer.EQ, "id")
+
+	iter := q.MustExec(t)
+	defer iter.Close()
+	explainRes, err := iter.GetExplainResults()
+	require.NoError(t, err)
+	require.NotNil(t, explainRes)
+	require.Empty(t, explainRes.Merged)
+
+	joinSelector := findExplainSelector(explainRes.Selectors, "inner_join "+nsJoined)
+	require.NotNil(t, joinSelector)
+	require.NotNil(t, joinSelector.ExplainPreselect)
+
+	joinPreselectSelector := findExplainSelector(joinSelector.ExplainPreselect.Selectors, "id")
+	require.NotNil(t, joinPreselectSelector)
+	require.Equal(t, "indexed", joinPreselectSelector.FieldType)
+	require.Equal(t, "index", joinPreselectSelector.Method)
+	require.Equal(t, 3, joinPreselectSelector.Keys)
+	require.Equal(t, 3, joinPreselectSelector.Matched)
+
+	require.Len(t, explainRes.SubQueriesExplains, 1)
+	require.Equal(t, nsJoined, explainRes.SubQueriesExplains[0].Namespace)
+	require.Equal(t, "id", explainRes.SubQueriesExplains[0].Field)
+
+	subquerySelector := findExplainSelector(explainRes.SubQueriesExplains[0].Explain.Selectors, "data")
+	require.NotNil(t, subquerySelector)
+	require.Equal(t, "indexed", subquerySelector.FieldType)
+	require.Equal(t, "index", subquerySelector.Method)
+	require.Equal(t, 3, subquerySelector.Keys)
+	require.Equal(t, 3, subquerySelector.Matched)
 }
 
 func TestStrictJoinHandlers(t *testing.T) {
@@ -1208,6 +1278,69 @@ func TestNextObjWithJoinedField(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, joinedObjects, 1)
 	require.Equal(t, joinedID, joinedObjects[0].(*TestJoinItem).ID)
+}
+
+func TestJoinWithSubqueryInJoinedQuery(t *testing.T) {
+	mainID := rand.Intn(1000000) + 2000000
+	joinedID := mainID + 1
+	joinedAmount := mainID + 2
+
+	require.NoError(t, DB.Upsert(testItemsForJoinNs, &TestItem{ID: mainID, PricesIDs: []int{joinedID}}))
+	require.NoError(t, DB.Upsert(testJoinItemsNs, &TestJoinItem{ID: joinedID, Amount: joinedAmount, Name: "joined_subquery"}))
+
+	subQuery := DB.Query(testJoinItemsNs).Select("id").WhereInt("amount", reindexer.EQ, joinedAmount)
+	joinedQuery := DB.Query(testJoinItemsNs).Where("id", reindexer.SET, subQuery)
+
+	it := DB.Query(testItemsForJoinNs).
+		WhereInt("id", reindexer.EQ, mainID).
+		InnerJoin(joinedQuery, "prices").
+		On("price_id", reindexer.SET, "id").
+		Exec(t)
+	defer it.Close()
+
+	require.True(t, it.Next())
+	joinedObjects, err := it.JoinedObjects("prices")
+	require.NoError(t, err)
+	require.Len(t, joinedObjects, 1)
+
+	joinedItem := joinedObjects[0].(*TestJoinItem)
+	require.Equal(t, joinedID, joinedItem.ID)
+	require.Equal(t, joinedAmount, joinedItem.Amount)
+	require.False(t, it.Next())
+	require.NoError(t, it.Error())
+}
+
+func TestNestedJoinWithSubqueryInJoinedQuery(t *testing.T) {
+	mainID := rand.Intn(1000000) + 3000000
+	joinedID := mainID + 1
+	nestedID := mainID + 2
+	nestedAmount := mainID + 3
+
+	require.NoError(t, DB.Upsert(testItemsForJoinNs, &TestItem{ID: mainID, PricesIDs: []int{joinedID}}))
+	require.NoError(t, DB.Upsert(testJoinItemsNs, &TestJoinItem{ID: joinedID, ParentID: nestedID, Name: "nested_joined_subquery_parent"}))
+	require.NoError(t, DB.Upsert(testJoinItemsNs, &TestJoinItem{ID: nestedID, Amount: nestedAmount, Name: "nested_joined_subquery_child"}))
+
+	nestedSubQuery := DB.Query(testJoinItemsNs).Select("id").WhereInt("amount", reindexer.EQ, nestedAmount)
+	nestedJoinedQuery := DB.Query(testJoinItemsNs).Where("id", reindexer.SET, nestedSubQuery)
+	joinedQuery := DB.Query(testJoinItemsNs).WhereInt("id", reindexer.EQ, joinedID)
+	joinedQuery.InnerJoin(nestedJoinedQuery, "nested_prices").On("parent_id", reindexer.EQ, "id")
+
+	it := DB.Query(testItemsForJoinNs).
+		WhereInt("id", reindexer.EQ, mainID).
+		InnerJoin(joinedQuery, "prices").
+		On("price_id", reindexer.SET, "id").
+		Exec(t)
+	defer it.Close()
+
+	var item TestItem
+	require.True(t, it.NextObj(&item))
+	require.Len(t, item.Prices, 1)
+	require.Equal(t, joinedID, item.Prices[0].ID)
+	require.Len(t, item.Prices[0].NestedPrices, 1)
+	require.Equal(t, nestedID, item.Prices[0].NestedPrices[0].ID)
+	require.Equal(t, nestedAmount, item.Prices[0].NestedPrices[0].Amount)
+	require.False(t, it.Next())
+	require.NoError(t, it.Error())
 }
 
 func TestJoinedObjectsClearedForEmptyJoinedField(t *testing.T) {

@@ -12,6 +12,7 @@ using reindexer::PayloadFieldType;
 using reindexer::Payload;
 using reindexer::PayloadValue;
 using reindexer::KeyValueType;
+using reindexer::Variant;
 using reindexer::VariantArray;
 
 TEST_F(ReindexerApi, GetValueByJsonPath) {

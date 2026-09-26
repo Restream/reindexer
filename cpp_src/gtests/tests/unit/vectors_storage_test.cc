@@ -119,7 +119,7 @@ protected:
 	}
 	template <IsArray isArray>
 	JsonResults requestAllData() {
-		const static auto kRequestAllQ = Query(kNsName<isArray>).Sort(kFieldNameId, false).SelectAllFields();
+		const static auto kRequestAllQ = Query(kNsName<isArray>).Sort(kFieldNameId, SortOrder::Asc).SelectAllFields();
 		return selectToJsonResults(kRequestAllQ);
 	}
 	void reloadStorage() {
@@ -386,7 +386,7 @@ void VectorStorageApi::TestFloatStorageReload() try {
 	}
 	const auto statsReloaded = rt.GetReplicationState(kNsName<isArray>);
 	EXPECT_EQ(stats.dataCount, statsReloaded.dataCount);
-	EXPECT_EQ(stats.dataHash, statsReloaded.dataHash);
+	EXPECT_EQ(stats.checksum, statsReloaded.checksum);
 	EXPECT_EQ(stats.updateUnixNano, statsReloaded.updateUnixNano);
 
 	for (auto& idx : indexes) {

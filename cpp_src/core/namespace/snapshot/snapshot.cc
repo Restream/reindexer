@@ -2,28 +2,27 @@
 #include <sstream>
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsonbuilder.h"
-#include "core/formatters/checksum_fmt.h"
 #include "core/id_type.h"
 
 namespace reindexer {
 
 static constexpr size_t kDefaultChunkSize = 500;
 
-Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion, PayloadChecksum expectedDataHash, uint64_t expectedDataCount,
+Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedChecksum, uint64_t expectedDataCount,
 				   ClusterOperationStatus clusterStatus)
 	: tm_(std::move(tm)),
-	  expectedDataHash_(expectedDataHash),
+	  expectedChecksum_(expectedChecksum),
 	  expectedDataCount_(expectedDataCount),
 	  clusterOperationStatus_(std::move(clusterStatus)),
 	  nsVersion_(nsVersion) {
 	walData_.AddItem(ItemRef(IdType::NotSet(), createTmItem(), 0, true));
 }
 
-Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, PayloadChecksum expectedDataHash,
-				   uint64_t expectedDataCount, ClusterOperationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw)
+Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedChecksum, uint64_t expectedDataCount,
+				   ClusterOperationStatus clusterStatus, LocalQueryResults&& wal, LocalQueryResults&& raw)
 	: pt_(std::move(pt)),
 	  tm_(std::move(tm)),
-	  expectedDataHash_(expectedDataHash),
+	  expectedChecksum_(expectedChecksum),
 	  expectedDataCount_(expectedDataCount),
 	  clusterOperationStatus_(std::move(clusterStatus)),
 	  lastLsn_(lastLsn),
@@ -45,7 +44,7 @@ Snapshot& Snapshot::operator=(Snapshot&& other) noexcept {
 	tm_ = std::move(other.tm_);
 	rawData_ = std::move(other.rawData_);
 	walData_ = std::move(other.walData_);
-	expectedDataHash_ = other.expectedDataHash_;
+	expectedChecksum_ = other.expectedChecksum_;
 	expectedDataCount_ = other.expectedDataCount_;
 	clusterOperationStatus_ = other.clusterOperationStatus_;
 	lastLsn_ = other.lastLsn_;
@@ -61,9 +60,9 @@ Snapshot::~Snapshot() {
 std::string Snapshot::Dump() {
 	std::stringstream ss;
 	ss << fmt::format(
-		"Snapshot:\nNs version: {}\nLast LSN: {}\nDatahash: {}\nDatacount: {}\nRaw data blocks: {}\nWAL data blocks: {}\nWAL "
+		"Snapshot:\nNs version: {}\nLast LSN: {}\nChecksum: {}\nDatacount: {}\nRaw data blocks: {}\nWAL data blocks: {}\nWAL "
 		"data:",
-		int64_t(nsVersion_), int64_t(lastLsn_), expectedDataHash_, expectedDataCount_, rawData_.Size(), walData_.Size());
+		int64_t(nsVersion_), int64_t(lastLsn_), expectedChecksum_, expectedDataCount_, rawData_.Size(), walData_.Size());
 	size_t chNum = 0;
 	size_t itemNum = 0;
 	WrSerializer ser;

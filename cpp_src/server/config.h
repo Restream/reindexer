@@ -47,10 +47,16 @@ struct [[nodiscard]] ServerConfig {
 	std::string RPCUnixThreadingMode;
 	std::string HttpThreadingMode;
 	std::string LogLevel;
+	std::string ServerLogLevel;
+	std::string CoreLogLevel;
+	std::string HttpLogLevel;
+	std::string RpcLogLevel;
+	std::string GrpcLogLevel;
 	std::string ServerLog;
 	std::string CoreLog;
 	std::string HttpLog;
 	std::string RpcLog;
+	std::string GrpcLog;
 	std::string StoragePath;
 	std::string SslCertPath;
 	std::string SslKeyPath;

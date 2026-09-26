@@ -1,12 +1,34 @@
 #include "config.h"
 
+#include <filesystem>
+
 #include "args/args.hpp"
 #include "core/storage/storagefactory.h"
 #include "reindexer_version.h"
+#include "tools/catch_and_return.h"
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
+#include <filesystem>
+
 namespace reindexer_server {
+
+static Error makeWebRootAbsolute(std::string& webRoot) noexcept {
+	try {
+		const std::filesystem::path path(webRoot);
+		if (webRoot.empty() || path.is_absolute()) {
+			return {};
+		}
+
+		std::error_code ec;
+		auto absolutePath = std::filesystem::absolute(path, ec);
+		if (ec) {
+			return Error(errParams, "Unable to make web root path '{}' absolute: {}", webRoot, ec.message());
+		}
+		webRoot = absolutePath.lexically_normal().string();
+		return {};
+	} CATCH_AND_RETURN
+}
 
 void ServerConfig::Reset() {
 	args_.clear();
@@ -22,10 +44,16 @@ void ServerConfig::Reset() {
 	RPCUnixThreadingMode = kSharedThreading;
 	HttpThreadingMode = kSharedThreading;
 	LogLevel = "info";
+	ServerLogLevel.clear();
+	CoreLogLevel.clear();
+	HttpLogLevel.clear();
+	RpcLogLevel.clear();
+	GrpcLogLevel.clear();
 	ServerLog = "stdout";
 	CoreLog = "stdout";
 	HttpLog = "stdout";
 	RpcLog = "stdout";
+	GrpcLog.clear();
 	AllowNamespaceLeak = true;
 #ifndef _WIN32
 	StoragePath = "/tmp/reindex";
@@ -67,18 +95,21 @@ reindexer::Error ServerConfig::ParseYaml(const std::string& yaml) {
 	} catch (const YAML::Exception& ex) {
 		err = Error(errParseYAML, "Error with config string. Reason: '{}'", ex.what());
 	}
-	return err;
+	return err.ok() ? makeWebRootAbsolute(WebRoot) : err;
 }
 
 Error ServerConfig::ParseFile(const std::string& filePath) {
 	Error err;
 	try {
+		if (!std::filesystem::is_regular_file(filePath)) {
+			return Error(errParams, "'{}' is not a regular file", filePath);
+		}
 		YAML::Node root = YAML::LoadFile(filePath);
 		err = fromYaml(root);
 	} catch (const YAML::Exception& ex) {
 		err = Error(errParseYAML, "Error with config file '{}'. Reason: {}", filePath, ex.what());
 	}
-	return err;
+	return err.ok() ? makeWebRootAbsolute(WebRoot) : err;
 }
 
 Error ServerConfig::ParseCmd(int argc, char* argv[]) {
@@ -170,12 +201,25 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	args::Flag clientsConnectionsStatF(metricsGroup, "", "Enable client connection statistic", {"clientsstats"});
 
 	args::Group logGroup(parser, "Logging options");
-	args::ValueFlag<std::string> logLevelF(logGroup, "", "log level (none, warning, error, info, trace)", {'l', "loglevel"}, LogLevel,
-										   args::Options::Single);
+	args::ValueFlag<std::string> logLevelF(logGroup, "",
+										   "default log level for all loggers (none, warning, error, info, trace). Use component-specific "
+										   "loglevel options to override it for a particular logger",
+										   {'l', "loglevel"}, LogLevel, args::Options::Single);
+	args::ValueFlag<std::string> serverLogLevelF(logGroup, "", "server log level (none, warning, error, info, trace)", {"server-loglevel"},
+												 ServerLogLevel, args::Options::Single);
+	args::ValueFlag<std::string> coreLogLevelF(logGroup, "", "core log level (none, warning, error, info, trace)", {"core-loglevel"},
+											   CoreLogLevel, args::Options::Single);
+	args::ValueFlag<std::string> httpLogLevelF(logGroup, "", "HTTP log level (none, warning, error, info, trace)", {"http-loglevel"},
+											   HttpLogLevel, args::Options::Single);
+	args::ValueFlag<std::string> rpcLogLevelF(logGroup, "", "RPC log level (none, warning, error, info, trace)", {"rpc-loglevel"},
+											  RpcLogLevel, args::Options::Single);
+	args::ValueFlag<std::string> grpcLogLevelF(logGroup, "", "GRPC log level (none, warning, error, info, trace)", {"grpc-loglevel"},
+											   GrpcLogLevel, args::Options::Single);
 	args::ValueFlag<std::string> serverLogF(logGroup, "", "Server log file", {"serverlog"}, ServerLog, args::Options::Single);
 	args::ValueFlag<std::string> coreLogF(logGroup, "", "Core log file", {"corelog"}, CoreLog, args::Options::Single);
 	args::ValueFlag<std::string> httpLogF(logGroup, "", "Http log file", {"httplog"}, HttpLog, args::Options::Single);
 	args::ValueFlag<std::string> rpcLogF(logGroup, "", "Rpc log file", {"rpclog"}, RpcLog, args::Options::Single);
+	args::ValueFlag<std::string> grpcLogF(logGroup, "", "GRPC log file", {"grpclog"}, GrpcLog, args::Options::Single);
 	args::Flag logAllocsF(netGroup, "", "Log operations allocs statistics", {'a', "allocs"});
 
 #ifndef _WIN32
@@ -253,6 +297,21 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	}
 	if (logLevelF) {
 		LogLevel = args::get(logLevelF);
+	}
+	if (serverLogLevelF) {
+		ServerLogLevel = args::get(serverLogLevelF);
+	}
+	if (coreLogLevelF) {
+		CoreLogLevel = args::get(coreLogLevelF);
+	}
+	if (httpLogLevelF) {
+		HttpLogLevel = args::get(httpLogLevelF);
+	}
+	if (rpcLogLevelF) {
+		RpcLogLevel = args::get(rpcLogLevelF);
+	}
+	if (grpcLogLevelF) {
+		GrpcLogLevel = args::get(grpcLogLevelF);
 	}
 	if (httpAddrF) {
 		HTTPAddr = args::get(httpAddrF);
@@ -343,6 +402,9 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	if (rpcLogF) {
 		RpcLog = args::get(rpcLogF);
 	}
+	if (grpcLogF) {
+		GrpcLog = args::get(grpcLogF);
+	}
 	if (pprofF) {
 		DebugPprof = args::get(pprofF);
 	}
@@ -377,7 +439,7 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 		BackgroundThreads = args::get(backgroundThreadsF);
 	}
 
-	return {};
+	return makeWebRootAbsolute(WebRoot);
 }
 
 void ServerConfig::SetHttpWriteTimeout(std::chrono::seconds val) noexcept {
@@ -397,10 +459,16 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		StorageEngine = root["storage"]["engine"].as<std::string>(StorageEngine);
 		StartWithErrors = root["storage"]["startwitherrors"].as<bool>(StartWithErrors);
 		LogLevel = root["logger"]["loglevel"].as<std::string>(LogLevel);
+		ServerLogLevel = root["logger"]["server_loglevel"].as<std::string>(ServerLogLevel);
+		CoreLogLevel = root["logger"]["core_loglevel"].as<std::string>(CoreLogLevel);
+		HttpLogLevel = root["logger"]["http_loglevel"].as<std::string>(HttpLogLevel);
+		RpcLogLevel = root["logger"]["rpc_loglevel"].as<std::string>(RpcLogLevel);
+		GrpcLogLevel = root["logger"]["grpc_loglevel"].as<std::string>(GrpcLogLevel);
 		ServerLog = root["logger"]["serverlog"].as<std::string>(ServerLog);
 		CoreLog = root["logger"]["corelog"].as<std::string>(CoreLog);
 		HttpLog = root["logger"]["httplog"].as<std::string>(HttpLog);
 		RpcLog = root["logger"]["rpclog"].as<std::string>(RpcLog);
+		GrpcLog = root["logger"]["grpclog"].as<std::string>(GrpcLog);
 		SslCertPath = root["net"]["ssl_cert"].as<std::string>(SslCertPath);
 		SslKeyPath = root["net"]["ssl_key"].as<std::string>(SslKeyPath);
 		HTTPAddr = root["net"]["httpaddr"].as<std::string>(HTTPAddr);

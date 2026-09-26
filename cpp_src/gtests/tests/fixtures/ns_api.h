@@ -161,6 +161,7 @@ protected:
 	}
 
 	static void CheckItemsEqual(Item& lhs, Item& rhs) {
+		using reindexer::Variant;
 		for (auto idx = 1; idx < lhs.NumFields(); idx++) {
 			auto field = lhs[idx].Name();
 			ASSERT_TRUE(lhs[field].operator Variant() == rhs[field].operator Variant());

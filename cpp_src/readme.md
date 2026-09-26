@@ -27,7 +27,13 @@ While using docker, you may pass reindexer server config options via environment
 - `RX_HTTPLOG` - path to http log file (or `none` to disable http logging). Default value is `stdout`.
 - `RX_RPCLOG` - path to rpc log file (or `none` to disable rpc logging). Default value is `stdout`.
 - `RX_SERVERLOG` - path to server log file (or `none` to disable server logging). Default value is `stdout`.
-- `RX_LOGLEVEL` - log level for core logs (may be `info`, `trace`, `warning` or `error`). Default value is `info`.
+- `RX_GRPCLOG` - path to gRPC log file (or `none` to disable gRPC logging). Default value is `none`.
+- `RX_LOGLEVEL` - default log level for all loggers (may be `none`, `error`, `warning`, `info` or `trace`). Default value is `info`.
+- `RX_CORE_LOGLEVEL` - core log level override. If it is not set, `RX_LOGLEVEL` is used.
+- `RX_SERVER_LOGLEVEL` - server log level override. If it is not set, `RX_LOGLEVEL` is used.
+- `RX_HTTP_LOGLEVEL` - HTTP log level override. If it is not set, `RX_LOGLEVEL` is used.
+- `RX_RPC_LOGLEVEL` - RPC log level override. If it is not set, `RX_LOGLEVEL` is used.
+- `RX_GRPC_LOGLEVEL` - gRPC log level override. If it is not set, `RX_LOGLEVEL` is used.
 - `RX_PPROF` - if RX_PPROF is not empty, enables pprof api. Disabled by default.
 - `RX_SECURITY` - if RX_SECURITY is not empty, enables authorization. Disabled by default.
 - `RX_PROMETHEUS` - if RX_PROMETHEUS is not empty, enables prometheus metrics. Disabled by default.
@@ -80,7 +86,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-bullseye`, `debian-trixie`, `ubuntu-jammy`, `ubuntu-noble`
+Available distros: `debian-bookworm`, `debian-trixie`, `ubuntu-noble`, `ubuntu-resolute`
 
 ### Redos
 
@@ -103,7 +109,7 @@ apt-get update
 apt-get install reindexer-server
 ```
 
-Available distros: `p10`.
+Available distros: `p11`.
 
 ## OSX brew
 

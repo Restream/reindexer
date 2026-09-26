@@ -5,6 +5,7 @@
 
 namespace reindexer {
 
+class Query;
 class ProxiedTransaction;
 
 namespace client {

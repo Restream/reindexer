@@ -208,15 +208,16 @@ void WrResultSerializer::putPayloadTypes(WrSerializer& ser, const QueryResults& 
 std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults& results) {
 	if (opts_.flags & kResultsWithPayloadTypes) {
 		assertrx(opts_.tmVersions.data());
-		const auto mergedNsCount = results.GetMergedNSCount();
-		if (int(opts_.tmVersions.size()) != mergedNsCount) [[unlikely]] {
-			logFmt(LogWarning, "tmVersionsCount != results->GetMergedNSCount: {} != {}. Client's meta data can become inconsistent.",
-				   opts_.tmVersions.size(), mergedNsCount);
-			if (!opts_.allowIncompleteTmVersions && results.Count() > 0) {
+		const auto nsCount = results.GetNamespacesCount();
+		if (opts_.tmVersions.size() != nsCount) [[unlikely]] {
+			logFmt(LogWarning, "tmVersionsCount != results->GetNamespacesCount: {} != {}. Client's meta data can become inconsistent.",
+				   opts_.tmVersions.size(), nsCount);
+			if (!opts_.allowIncompleteTmVersions) {
 				assertrx_dbg(false);
 			}
 		}
-		int cnt = 0, totalCnt = std::min(mergedNsCount, int(opts_.tmVersions.size()));
+		int cnt = 0;
+		const int totalCnt = int(std::min(nsCount, opts_.tmVersions.size()));
 		for (int i = 0; i < totalCnt; i++) {
 			const TagsMatcher& tm = results.GetTagsMatcher(i);
 			if (int32_t(tm.version() ^ tm.stateToken()) != opts_.tmVersions[i]) {
@@ -243,7 +244,7 @@ bool WrResultSerializer::PutResults(QueryResults& result, const BindingCapabilit
 	}
 
 	// Result has items from multiple namespaces, so pass nsid to each item
-	if (result.GetMergedNSCount() > 1) {
+	if (result.GetNamespacesCount() > 1) {
 		opts_.flags |= kResultsWithNsID;
 	}
 	// Result has joined items, so pass them to client within items from main NS

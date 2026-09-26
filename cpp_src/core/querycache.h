@@ -3,7 +3,7 @@
 #include <span>
 
 #include "core/lrucache.h"
-#include "core/query/query.h"
+#include "core/query/query_impl.h"
 #include "estl/h_vector.h"
 #include "tools/serilize/wrserializer.h"
 #include "vendor/murmurhash/MurmurHash3.h"
@@ -33,7 +33,7 @@ public:
 	QueryCacheKey& operator=(QueryCacheKey&& other) = default;
 	QueryCacheKey& operator=(const QueryCacheKey& other) = delete;
 	template <typename JoinItemsProcessor>
-	QueryCacheKey(const Query& q, uint8_t mode, std::span<JoinItemsProcessor> jnss) {
+	QueryCacheKey(ConstQueryImpl q, uint8_t mode, std::span<JoinItemsProcessor> jnss) {
 		WrSerializer ser;
 		q.Serialize(ser, mode, QueryFormatV2);
 		serialize(jnss, ser);

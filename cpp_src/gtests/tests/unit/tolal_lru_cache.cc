@@ -59,7 +59,7 @@ TEST(LruCache, SimpleTest) {
 		const std::string kJoinedNsName = fmt::format("joined_namespace_{}", j);
 		qs.emplace_back(QueryCacheData{
 			.q = Query(fmt::format("namespace_{}", i))
-					 .InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName)),
+					 .InnerJoin(Query(kJoinedNsName), fmt::format("joined_field_{}", j), CondEq, fmt::format("main_field_{}", j % 2)),
 			.joinItemsProcessors = {CacheJoinItemsProcessorMock{kJoinedNsName, 123}}});
 	}
 	for (int j = 0; j < kDoubleJoinNsCount; ++j, ++i) {
@@ -69,17 +69,17 @@ TEST(LruCache, SimpleTest) {
 		constexpr int64_t kUpdateTime2 = 321;
 		if (j % 3 == 0) {
 			qs.emplace_back(QueryCacheData{
-				.q =
-					Query(fmt::format("namespace_{}", i))
-						.InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName1))
-						.OrInnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName2)),
+				.q = Query(fmt::format("namespace_{}", i))
+						 .InnerJoin(Query(kJoinedNsName1), fmt::format("joined_field_{}", j), CondEq, fmt::format("main_field_{}", j % 2))
+						 .Or()
+						 .InnerJoin(Query(kJoinedNsName2), fmt::format("joined_field_{}", j), CondEq, fmt::format("main_field_{}", j % 2)),
 				.joinItemsProcessors = {CacheJoinItemsProcessorMock{kJoinedNsName1, kUpdateTime1},
 										CacheJoinItemsProcessorMock{kJoinedNsName2, kUpdateTime2}}});
 		} else {
 			qs.emplace_back(QueryCacheData{
 				.q = Query(fmt::format("namespace_{}", i))
-						 .InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName1))
-						 .InnerJoin(fmt::format("joined_field_{}", j), fmt::format("main_field_{}", j % 2), CondEq, Query(kJoinedNsName2)),
+						 .InnerJoin(Query(kJoinedNsName1), fmt::format("joined_field_{}", j), CondEq, fmt::format("main_field_{}", j % 2))
+						 .InnerJoin(Query(kJoinedNsName2), fmt::format("joined_field_{}", j), CondEq, fmt::format("main_field_{}", j % 2)),
 				.joinItemsProcessors = {CacheJoinItemsProcessorMock{kJoinedNsName1, kUpdateTime1},
 										CacheJoinItemsProcessorMock{kJoinedNsName2, kUpdateTime2}}});
 		}
@@ -91,7 +91,7 @@ TEST(LruCache, SimpleTest) {
 	for (i = 0; i < kIterCount; i++) {
 		auto idx = rand() % qs.size();
 		auto& qce = qs.at(idx);
-		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessors()};
+		QueryCacheKey ckey{Impl(qce.q), kCountCachedKeyMode, qce.ItemsProcessors()};
 		auto cached = cache.Get(ckey);
 		bool exist = qce.cached;
 
@@ -108,13 +108,13 @@ TEST(LruCache, SimpleTest) {
 	PRINTF("checking query update time change...\n");
 	auto& qce = qs.back();
 	if (!qce.cached) {
-		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessors()};
+		QueryCacheKey ckey{Impl(qce.q), kCountCachedKeyMode, qce.ItemsProcessors()};
 		auto cached = cache.Get(ckey);
 		ASSERT_FALSE(cached.valid) << "query missing in query cache";
 		cache.Put(ckey, QueryCountCacheVal{static_cast<size_t>(rand() % 10000)});
 	}
 	qce.joinItemsProcessors.back().lastUpdateTime += 100;
-	QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.ItemsProcessors()};
+	QueryCacheKey ckey{Impl(qce.q), kCountCachedKeyMode, qce.ItemsProcessors()};
 	auto cached = cache.Get(ckey);
 	ASSERT_FALSE(cached.valid) << "update time change did not affected the key";
 
@@ -122,16 +122,16 @@ TEST(LruCache, SimpleTest) {
 	QueryCacheData nestedQce{
 		.q = Query("namespace_nested")
 				 .InnerJoin(
-					 "joined_field", "main_field", CondEq,
-					 Query("joined_namespace").InnerJoin("nested_joined_field", "joined_field", CondEq, Query("nested_joined_namespace"))),
+					 Query("joined_namespace").InnerJoin(Query("nested_joined_namespace"), "nested_joined_field", CondEq, "joined_field"),
+					 "joined_field", CondEq, "main_field"),
 		.joinItemsProcessors = {CacheJoinItemsProcessorMock{
 			.rightNsName = "joined_namespace",
 			.lastUpdateTime = 123,
 			.childItemsProcessors = {CacheJoinItemsProcessorMock{.rightNsName = "nested_joined_namespace", .lastUpdateTime = 321}}}}};
-	QueryCacheKey nestedCkey{nestedQce.q, kCountCachedKeyMode, nestedQce.ItemsProcessors()};
+	QueryCacheKey nestedCkey{Impl(nestedQce.q), kCountCachedKeyMode, nestedQce.ItemsProcessors()};
 	cache.Put(nestedCkey, QueryCountCacheVal{static_cast<size_t>(rand() % 10000)});
 	nestedQce.joinItemsProcessors.front().childItemsProcessors.front().lastUpdateTime += 100;
-	nestedCkey = QueryCacheKey{nestedQce.q, kCountCachedKeyMode, nestedQce.ItemsProcessors()};
+	nestedCkey = QueryCacheKey{Impl(nestedQce.q), kCountCachedKeyMode, nestedQce.ItemsProcessors()};
 	ASSERT_FALSE(cache.Get(nestedCkey).valid) << "nested update time change did not affected the key";
 }
 
@@ -168,11 +168,11 @@ TEST(LruCache, StressTest) {
 			for (auto i = 0; i < iterCount; i++) {
 				auto idx = rand() % qs.size();
 				const auto& qce = qs.at(idx);
-				QueryCacheKey ckey{qce, kCountCachedKeyMode, CacheItemsProcessorsMockView{}};
+				QueryCacheKey ckey{Impl(qce), kCountCachedKeyMode, CacheItemsProcessorsMockView{}};
 				auto cached = cache.Get(ckey);
 
 				if (cached.valid) {
-					ASSERT_TRUE(EqQueryCacheKey()(QueryCacheKey{qs[idx], kCountCachedKeyMode, CacheItemsProcessorsMockView{}}, ckey))
+					ASSERT_TRUE(EqQueryCacheKey()(QueryCacheKey{Impl(qs[idx]), kCountCachedKeyMode, CacheItemsProcessorsMockView{}}, ckey))
 						<< "queries are not EQUAL!\n";
 				} else {
 					size_t total = static_cast<size_t>(rand() % 1000);

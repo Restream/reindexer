@@ -18,6 +18,7 @@
 
 namespace reindexer {
 
+class Query;
 struct SQLSuggestions;
 
 namespace client {

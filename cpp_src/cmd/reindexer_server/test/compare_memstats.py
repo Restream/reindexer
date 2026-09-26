@@ -90,7 +90,7 @@ parser.add_argument("--addr", type=str)
 parser.add_argument("--db", type=str)
 args = parser.parse_args()
 
-cmd = fr"reindexer_tool --dsn {args.addr}{args.db} --command 'select name, replication.data_hash, replication.data_count from #memstats order by name'"
+cmd = fr"reindexer_tool --dsn {args.addr}{args.db} --command 'select name, replication.checksum, replication.data_count from #memstats order by name'"
 memstats_actual = delegator.run(cmd).out
 
 actual_json_str = memstats_actual.split("]")[0] + "]"

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-RX_ARGS="--db $RX_DATABASE --httpaddr 0:9088 --rpcaddr 0:6534 --httpsaddr 0:9089 --rpcsaddr 0:6535  --webroot /usr/local/share/reindexer/web --corelog $RX_CORELOG --serverlog $RX_SERVERLOG --httplog $RX_HTTPLOG --rpclog $RX_RPCLOG --loglevel $RX_LOGLEVEL --grpc"
+RX_ARGS="--db $RX_DATABASE --httpaddr 0:9088 --rpcaddr 0:6534 --httpsaddr 0:9089 --rpcsaddr 0:6535  --webroot /usr/local/share/reindexer/web --corelog $RX_CORELOG --serverlog $RX_SERVERLOG --httplog $RX_HTTPLOG --rpclog $RX_RPCLOG --grpclog $RX_GRPCLOG --loglevel $RX_LOGLEVEL --grpc"
 
 mkdir -p $RX_DATABASE
 
@@ -22,6 +22,26 @@ if [ -n "$RX_RPC_QR_IDLE_TIMEOUT" ]; then
     RX_ARGS="$RX_ARGS --rpc-qr-idle-timeout $RX_RPC_QR_IDLE_TIMEOUT"
 else
     RX_ARGS="$RX_ARGS --rpc-qr-idle-timeout 0"
+fi
+
+if [ -n "$RX_CORE_LOGLEVEL" ]; then
+    RX_ARGS="$RX_ARGS --core-loglevel $RX_CORE_LOGLEVEL"
+fi
+
+if [ -n "$RX_SERVER_LOGLEVEL" ]; then
+    RX_ARGS="$RX_ARGS --server-loglevel $RX_SERVER_LOGLEVEL"
+fi
+
+if [ -n "$RX_HTTP_LOGLEVEL" ]; then
+    RX_ARGS="$RX_ARGS --http-loglevel $RX_HTTP_LOGLEVEL"
+fi
+
+if [ -n "$RX_RPC_LOGLEVEL" ]; then
+    RX_ARGS="$RX_ARGS --rpc-loglevel $RX_RPC_LOGLEVEL"
+fi
+
+if [ -n "$RX_GRPC_LOGLEVEL" ]; then
+    RX_ARGS="$RX_ARGS --grpc-loglevel $RX_GRPC_LOGLEVEL"
 fi
 
 if [ -n "$RX_DISABLE_NS_LEAK" ]; then

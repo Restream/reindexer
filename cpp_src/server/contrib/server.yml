@@ -8,7 +8,7 @@ info:
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-  version: 5.16.0
+  version: 5.17.0
 servers:
   - url: /api/v1
 tags:
@@ -28,6 +28,8 @@ tags:
     description: Schema management
   - name: transactions
     description: Transactions management
+  - name: logging
+    description: Server logging management
 paths:
   /db:
     get:
@@ -2996,6 +2998,124 @@ paths:
               schema:
                 $ref: '#/components/schemas/SqlStatusResponse'
       x-codegen-request-body-name: q
+  /logging/{component}/config:
+    get:
+      tags:
+        - logging
+      summary: Get logger configuration
+      description: |
+        This operation will return logging configuration for the selected component.
+        The response contains logger configuration in the following format:
+        `{"level":"info","path":"stdout"}`.
+      operationId: getLoggingConfig
+      parameters:
+        - name: component
+          in: path
+          description: Logger component
+          required: true
+          schema:
+            type: string
+            enum:
+              - core
+              - server
+              - http
+              - rpc
+              - grpc
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoggerConfig'
+        '400':
+          description: Invalid arguments supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '404':
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '500':
+          description: Unexpected internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+    put:
+      tags:
+        - logging
+      summary: Update logger configuration
+      description: |
+        This operation will update the logging level for the selected component.
+        The request body contains logger configuration in the following format: `{"level":"info"}`.
+        The log output target cannot be changed through the REST API. It is configured at startup through CLI options,
+        `server.yml`, or the configuration object.
+        Logging configuration is kept until server restart. After restart loggers are initialized from CLI options,
+        `server.yml`, or the configuration object.
+      operationId: putLoggingConfig
+      parameters:
+        - name: component
+          in: path
+          description: Logger component
+          required: true
+          schema:
+            type: string
+            enum:
+              - core
+              - server
+              - http
+              - rpc
+              - grpc
+      requestBody:
+        description: Logger level configuration
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoggerLevelConfig'
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '400':
+          description: Invalid arguments supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '404':
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '500':
+          description: Unexpected internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+      x-codegen-request-body-name: body
   /check:
     get:
       tags:
@@ -3616,6 +3736,40 @@ paths:
       x-codegen-request-body-name: body
 components:
   schemas:
+    LoggerConfig:
+      type: object
+      required:
+        - level
+        - path
+      properties:
+        level:
+          type: string
+          description: Logger level
+          enum:
+            - none
+            - error
+            - warning
+            - info
+            - trace
+        path:
+          type: string
+          description:
+            Logger output path. `none` and empty string disable logging, `stdout`
+            enables logging to stdout, other values enable logging to the specified file.
+    LoggerLevelConfig:
+      type: object
+      required:
+        - level
+      properties:
+        level:
+          type: string
+          description: Logger level
+          enum:
+            - none
+            - error
+            - warning
+            - info
+            - trace
     SysInfo:
       type: object
       properties:
@@ -3652,6 +3806,9 @@ components:
         rpc_log:
           type: string
           description: RPC server log path
+        grpc_log:
+          type: string
+          description: GRPC server log path
         http_log:
           type: string
           description: HTTP server log path
@@ -3666,6 +3823,21 @@ components:
           description:
             'Log level, should be one of these: trace, debug, info, warning,
             error, critical'
+        core_log_level:
+          type: string
+          description: Reindexer core log level
+        server_log_level:
+          type: string
+          description: Reindexer server log level
+        rpc_log_level:
+          type: string
+          description: RPC server log level
+        grpc_log_level:
+          type: string
+          description: GRPC server log level
+        http_log_level:
+          type: string
+          description: HTTP server log level
     ActivityStats:
       type: object
       properties:
@@ -4710,10 +4882,39 @@ components:
               properties:
                 name:
                   type: string
-                  description: Embedder name. Optional
+                  description: Embedder name. Optional. Used in RX protocol URL path; ignored for openai
                 URL:
                   type: string
-                  description: Embed service URL
+                  description: >
+                    Embed service URL. For protocol "rx": base URL of the service.
+                    For protocol "openai": full embeddings endpoint URL
+                    (e.g. http://127.0.0.1:8080/v1/embeddings)
+                protocol:
+                  type: object
+                  description: Embedder HTTP protocol options. Omit to use RX defaults
+                  required:
+                    - type
+                  properties:
+                    type:
+                      type: string
+                      enum:
+                        - rx
+                        - openai
+                      default: rx
+                      description: Protocol type
+                    model:
+                      type: string
+                      description: Model name for OpenAI-compatible requests. Required when type is openai
+                    fields_format:
+                      type: string
+                      enum:
+                        - join
+                        - stringify
+                      default: stringify
+                      description: >
+                        How upsert fields are turned into OpenAI input. OpenAI upsert embedder only.
+                        "stringify" — serialize fields as a JSON object string;
+                        "join" — concatenate field values with newline
                 cache_tag:
                   type: string
                   description: tag is used to cache results of insertion
@@ -4796,9 +4997,31 @@ components:
                 - URL
               description: Query embedding configuration
               properties:
+                name:
+                  type: string
+                  description: Embedder name. Optional. Used in RX protocol URL path; ignored for openai
                 URL:
                   type: string
-                  description: Embed service URL
+                  description: >
+                    Embed service URL. For protocol "rx": base URL of the service.
+                    For protocol "openai": full embeddings endpoint URL
+                    (e.g. http://127.0.0.1:8080/v1/embeddings)
+                protocol:
+                  type: object
+                  description: Embedder HTTP protocol options. Omit to use RX defaults
+                  required:
+                    - type
+                  properties:
+                    type:
+                      type: string
+                      enum:
+                        - rx
+                        - openai
+                      default: rx
+                      description: Protocol type
+                    model:
+                      type: string
+                      description: Model name for OpenAI-compatible requests. Required when type is openai
                 cache_tag:
                   type: string
                   description: tag is used to cache results of insertion
@@ -5129,6 +5352,15 @@ components:
           enum:
             - Memory
             - CPU
+        deleted_docs_optimization_threshold:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          default: 0.2
+          description:
+            Ratio of deleted documents to live documents that triggers cleanup
+            of stale postings in the full text index when exceeded
         enable_preselect_before_ft:
           type: boolean
           description: Enable to execute others queries before the ft query
@@ -6098,18 +6330,15 @@ components:
         total_vdocs:
           type: integer
           description:
-            'Total number of virtual documents currently stored in the fulltext
-            index'
+            'Number of live virtual documents in the fulltext index'
         removed_vdocs:
           type: integer
           description:
-            'Number of removed virtual documents that are still kept until the
-            next compaction'
-        vdocs_compactions:
+            'Number of removed virtual-document slots waiting for reuse'
+        dead_vdocs:
           type: integer
           description:
-            'How many times the fulltext virtual documents storage has been
-            compacted'
+            'Number of permanently retired virtual-document slots that cannot be reused'
     EmbedderStatus:
       type: object
       properties:
@@ -6295,6 +6524,9 @@ components:
                 $ref: '#/components/schemas/UpdatePerfStats'
               selects:
                 $ref: '#/components/schemas/SelectPerfStats'
+              cleans:
+                description: Performance statistics for index cleanup operations (e.g. fulltext stale postings scrub)
+                $ref: '#/components/schemas/CommonPerfStats'
               cache:
                 $ref: '#/components/schemas/LRUCachePerfStats'
               upsert_embedder:
@@ -6743,6 +6975,13 @@ components:
           description:
             Maximum number of background threads of sort indexes optimization. 0
             - disable sort optimizations
+        ft_cleanup_timeout_ms:
+          type: integer
+          default: 50
+          description:
+            Timeout before background fulltext postings cleanup start after last
+            update. Independent from optimization_timeout_ms /
+            optimization_sort_workers. 0 - disable cleanup
         wal_size:
           type: integer
           default: 4000000

@@ -7,6 +7,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/id_type.h"
 #include "core/index/float_vector/hnswlib/type_consts.h"
+#include "core/query/query_impl.h"
 #include "gtests/tests/gtest_cout.h"
 #include "gtests/tools.h"
 #include "tools/fsops.h"
@@ -320,7 +321,7 @@ static void checkIndexMemstat(ReindexerTestApi<reindexer::Reindexer>& rx, std::s
 
 template <FloatVector::IsArray isArray>
 void FloatVector::TestHnswIndex() try {
-	constexpr static auto kNsName = isArray ? "hnsw_array_ns"sv : "hnsw_scalar_ns";
+	constexpr static auto kNsName = isArray ? "hnsw_array_ns"sv : "hnsw_scalar_ns"sv;
 	constexpr static auto kFieldNameHnsw = "hnsw"sv;
 #if defined(RX_WITH_STDLIB_DEBUG)
 	constexpr static size_t kDimension = isArray ? 4 : 16;
@@ -637,7 +638,7 @@ void FloatVector::TestHnswIndexUpdateQuery() try {
 	std::array<float, 8> buf;
 	reindexer_tests_tools::rndFloatVector(buf);
 	const reindexer::ConstFloatVectorView setVec{buf};
-	const auto updateQuery = reindexer::Query(kNsName).Set(kFieldNameHnsw, setVec);
+	const auto updateQuery = reindexer::Query(kNsName).Set(kFieldNameHnsw, setVec).SelectAllFields();
 	SCOPED_TRACE(updateQuery.GetSQL());
 	auto res = rt.UpdateQR(updateQuery);
 	EXPECT_EQ(res.Count(), itemsCount);
@@ -752,7 +753,7 @@ TEST_F(FloatVector, DslQuery) try {
 		{Query("ns"sv).WhereKNN("bf"sv, vec.View(), reindexer::BruteForceSearchParams{}.K(8'317).Radius(1.0)).Select("vectors()"),
 		 R"json({"namespace":"ns","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":["vectors()"],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"knn","field":"bf","value":[)json" +
 			 vecStr + R"json(],"params":{"k":8317,"radius":1.0}}],"merge_queries":[],"aggregations":[]})json"},
-		{Query("ns"sv).WhereKNN("ivf"sv, vec.View(), reindexer::IvfSearchParams{}.K(5'125).NProbe(5)).Select({"ivf", "vectors()"}),
+		{Query("ns"sv).WhereKNN("ivf"sv, vec.View(), reindexer::IvfSearchParams{}.K(5'125).NProbe(5)).Select("ivf"sv, "vectors()"),
 		 R"json({"namespace":"ns","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":["ivf","vectors()"],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"knn","field":"ivf","value":[)json" +
 			 vecStr + R"json(],"params":{"k":5125,"nprobe":5}}],"merge_queries":[],"aggregations":[]})json"}};
 
@@ -785,7 +786,7 @@ TEST_F(FloatVector, SqlQuery) try {
 				  "SELECT *, vectors() FROM ns WHERE KNN(hnsw, [" + vecStr + "], k=4291, ef=100000)"},
 				 {Query("ns"sv).WhereKNN("bf"sv, vec.View(), reindexer::BruteForceSearchParams{}.K(8'184).Radius(1.2f)).Select("vectors()"),
 				  "SELECT vectors() FROM ns WHERE KNN(bf, [" + vecStr + "], k=8184, radius=1.2)"},
-				 {Query("ns"sv).WhereKNN("ivf"sv, vec.View(), reindexer::IvfSearchParams{}.K(823).NProbe(5)).Select({"hnsw", "vectors()"}),
+				 {Query("ns"sv).WhereKNN("ivf"sv, vec.View(), reindexer::IvfSearchParams{}.K(823).NProbe(5)).Select("hnsw"sv, "vectors()"),
 				  "SELECT hnsw, vectors() FROM ns WHERE KNN(ivf, [" + vecStr + "], k=823, nprobe=5)"}};
 	for (const auto& [query, expectedSql] : testData) {
 		const auto generatedSql = query.GetSQL();
@@ -896,12 +897,12 @@ void FloatVector::TestQueries() try {
 						   .CloseBracket());
 	checkOrdering(result, GetParam());
 	reindexer_tests_tools::rndFloatVector(buf);
-	result =
-		rt.Select(reindexer::Query{kNsName}.WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams).Sort("rank()", false));
+	result = rt.Select(
+		reindexer::Query{kNsName}.WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams).Sort("rank()", SortOrder::Asc));
 	reindexer_tests_tools::rndFloatVector(buf);
 	result = rt.Select(reindexer::Query{kNsName}
 						   .WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams)
-						   .Sort("rank(" + fieldName + ')', false));
+						   .Sort("rank(" + fieldName + ')', SortOrder::Asc));
 	reindexer_tests_tools::rndFloatVector(buf);
 	std::map<reindexer::IdType, reindexer::RankT> ranks;
 	result = rt.Select(reindexer::Query{kNsName}.WhereKNN(fieldName, reindexer::ConstFloatVectorView{buf}, searchParams).WithRank());
@@ -1364,7 +1365,7 @@ void FloatVector::TestSelectFilters() try {
 			vectors[id][fldIdx] = rndFVField<kDimension, isArray>();
 			const auto& itemVectors(vectors[id][fldIdx]);
 
-			auto query = reindexer::Query(kNsName).Where(kFieldNameId, CondEq, id);
+			auto query = reindexer::Query(kNsName).Where(kFieldNameId, CondEq, id).SelectAllFields();
 			if (itemVectors.size() == 1 && rand() % 3 != 0) {
 				query.Set(rand() % 2 == 0 ? fieldPath(fldIdx) : indexName(fldIdx), itemVectors[0].View());
 			} else {
@@ -1406,7 +1407,7 @@ void FloatVector::TestSelectFilters() try {
 			} break;
 			default: {
 				reindexer::QueryResults qr;
-				rt.Delete(reindexer::Query(kNsName).Where(kFieldNameId, CondEq, id), qr);
+				rt.Delete(reindexer::Query(kNsName).Where(kFieldNameId, CondEq, id).SelectAllFields(), qr);
 				checkQRAfterUpdate<isArray>(qr, id, kIndexesCount, vectors);
 			} break;
 		}
@@ -1416,6 +1417,58 @@ CATCH_AND_ASSERT
 
 TEST_F(FloatVector, TestSelectFiltersArray) { TestSelectFilters<Array>(); }
 TEST_F(FloatVector, TestSelectFiltersScalar) { TestSelectFilters<Scalar>(); }
+
+TEST_F(FloatVector, FloatVectorsInQueryResults) try {
+	using reindexer::Query;
+	constexpr auto kNsName = "fv_in_query_results_ns"sv;
+	constexpr auto kFieldVec = "vec"sv;
+	constexpr size_t kDimension = 4;
+	constexpr std::array<float, kDimension> kVec{1.f, 2.f, 3.f, 4.f};
+
+	rt.OpenNamespace(kNsName);
+	rt.DefineNamespaceDataset(
+		kNsName, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+				  IndexDeclaration{kFieldVec, "vec_bf", "float_vector",
+								   IndexOpts{}.SetFloatVector(IndexVectorBruteforce, FloatVectorIndexOpts{}.SetDimension(kDimension)), 0}});
+
+	const auto upsert = [&] { rt.UpsertJSON(kNsName, fmt::format(R"json({{"id":1,"{}":[{}]}})json", kFieldVec, fmt::join(kVec, ","))); };
+	upsert();
+
+	const auto check = [&](const reindexer::QueryResults& qr, bool withVec) {
+		ASSERT_EQ(qr.Count(), 1);
+		ASSERT_TRUE(qr.begin().Status().ok()) << qr.begin().Status().what();
+		auto item = qr.begin().GetItem();
+		gason::JsonParser parser;
+		const auto parsed = parser.Parse(item.GetJSON());
+		if (withVec) {
+			ASSERT_JSON_FIELD_ARRAY_EQ(parsed, kFieldVec, kVec);
+		} else {
+			ASSERT_JSON_FIELD_ABSENT_OR_IS_NULL(parsed, kFieldVec);
+		}
+	};
+
+	struct {
+		const char* name;
+		Query (*apply)(Query);
+		bool withVec;
+	} modes[]{
+		{.name = "default", .apply = [](Query q) { return q; }, .withVec = false},
+		{.name = "SelectAllFields", .apply = [](Query q) { return std::move(q).SelectAllFields(); }, .withVec = true},
+		{.name = "vectors()", .apply = [](Query q) { return std::move(q).Select("vectors()"); }, .withVec = true},
+	};
+
+	for (const auto& mode : modes) {
+		SCOPED_TRACE(mode.name);
+		const Query byId = Query(kNsName).Where(kFieldNameId, CondEq, 1);
+		check(rt.Select(mode.apply(Query(byId))), mode.withVec);
+		check(rt.UpdateQR(mode.apply(Query(byId).Set("non_idx", 1))), mode.withVec);
+		reindexer::QueryResults deleted;
+		rt.Delete(mode.apply(Query(byId)), deleted);
+		check(deleted, mode.withVec);
+		upsert();
+	}
+}
+CATCH_AND_ASSERT
 
 template <FloatVector::IsArray isArray>
 void FloatVector::TestUpdateIndex(reindexer::VectorMetric metric) try {
@@ -1722,12 +1775,13 @@ TEST_F(FloatVector, KnnConditionInJoinedSubquery) try {
 	const auto knnParams = reindexer::HnswSearchParams{}.K(5).Ef(10);
 
 	// KNN condition in the joined subquery must be rejected on query construction
-	try {
-		std::ignore = reindexer::Query{kNsMain}.InnerJoin(kFieldNameId, kFieldNameId, CondEq,
-														  reindexer::Query{kNsJoined}.WhereKNN(kFieldNameHnsw, vec, knnParams));
-		ADD_FAILURE() << "Expected an exception for KNN condition in joined subquery";
-	} catch (const reindexer::Error& err) {
-		EXPECT_STREQ(err.what(), kExpectedErr);
+	{
+		EXPECT_THROW(
+			{
+				std::ignore = reindexer::Query{kNsMain}.InnerJoin(reindexer::Query{kNsJoined}.WhereKNN(kFieldNameHnsw, vec, knnParams),
+																  kFieldNameId, CondEq, kFieldNameId);
+			},
+			reindexer::Error);
 	}
 
 	// ... and on SQL parsing
@@ -1766,7 +1820,7 @@ TEST_F(FloatVector, KnnConditionInJoinedSubquery) try {
 	// KNN condition in the main query combined with a join is still allowed
 	const auto qr = rt.Select(reindexer::Query{kNsMain}
 								  .WhereKNN(kFieldNameHnsw, vec, knnParams)
-								  .InnerJoin(kFieldNameId, kFieldNameId, CondEq, reindexer::Query{kNsJoined}));
+								  .InnerJoin(reindexer::Query{kNsJoined}, kFieldNameId, CondEq, kFieldNameId));
 	EXPECT_GT(qr.Count(), 0);
 }
 CATCH_AND_ASSERT

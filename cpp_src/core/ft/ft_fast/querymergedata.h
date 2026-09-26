@@ -1,4 +1,6 @@
 #pragma once
+#include <algorithm>
+#include <memory>
 #include <variant>
 #include "core/id_type.h"
 #include "estl/dynamic_bitset.h"
@@ -16,10 +18,12 @@ public:
 	struct [[nodiscard]] HoldT {};
 	struct [[nodiscard]] NoHoldT {};
 
-	SubtermResults(const IdCont& vids, std::string&& pattern, WordIdType patternId, float proc, HoldT) noexcept
-		: proc_(proc), vids_(&vids), pattern_(std::move(pattern)), patternId_(patternId) {}
-	SubtermResults(const IdCont& vids, std::string_view pattern, WordIdType patternId, float proc, NoHoldT) noexcept
-		: proc_(proc), vids_(&vids), pattern_(std::move(pattern)), patternId_(patternId) {}
+	SubtermResults(std::shared_ptr<const IdCont> vids, std::string&& pattern, WordIdType patternId, float proc, float termLenBoost,
+				   HoldT) noexcept
+		: proc_(proc), termLenBoost_(termLenBoost), vids_(std::move(vids)), pattern_(std::move(pattern)), patternId_(patternId) {}
+	SubtermResults(std::shared_ptr<const IdCont> vids, std::string_view pattern, WordIdType patternId, float proc, float termLenBoost,
+				   NoHoldT) noexcept
+		: proc_(proc), termLenBoost_(termLenBoost), vids_(std::move(vids)), pattern_(std::move(pattern)), patternId_(patternId) {}
 
 	const IdCont& Occurences() const noexcept { return *vids_; }
 	// NOLINTNEXTLINE(bugprone-exception-escape)
@@ -28,15 +32,17 @@ public:
 	}
 	WordIdType PatternID() const noexcept { return patternId_; }
 	float Proc() const noexcept { return proc_; }
-	void SetProc(float value) noexcept { proc_ = value; }
+	float TermLenBoost() const noexcept { return termLenBoost_; }
+	void UpdateScore(float proc) noexcept { proc_ = std::max(proc_, proc); }
 	bool Suppressed() const noexcept { return suppressed_; }
 	void SetSuppressed(bool value = true) noexcept { suppressed_ = value; }
 
 private:
 	float proc_ = 0.0;
+	float termLenBoost_ = 1.0f;
 	bool suppressed_ = false;
 
-	const IdCont* vids_ = nullptr;						   // indexes of documents (vdoc) containing the given word + position + field
+	std::shared_ptr<const IdCont> vids_;				   // snapshot of postings for the given word + position + field
 	std::variant<std::string, std::string_view> pattern_;  // word,translit,.....
 	WordIdType patternId_;
 };
@@ -47,22 +53,22 @@ class [[nodiscard]] TermResults {
 public:
 	TermResults() = default;
 	TermResults(TermResults&&) = default;
-	TermResults(const FtDSLEntry& t) : term_(t) {}
-	TermResults(FtDSLEntry&& t) : term_(std::move(t)) {}
+	TermResults(const FtDslTerm& t) : term_(t) {}
+	TermResults(FtDslTerm&& t) : term_(std::move(t)) {}
 
 	const OpType& Op() const noexcept { return term_.Opts().op; }
-	int PhraseNum() const noexcept { return term_.Opts().phraseNum; }
-	int Distance() const noexcept { return term_.Opts().distance; }
 	const std::u16string& Pattern() const noexcept { return term_.Pattern(); }
 	const FtDslOpts& Opts() const noexcept { return term_.Opts(); }
 
-	void AddSubterm(const IdCont& vids, std::string_view pattern, WordIdType patternId, float proc) {
-		subtermsResults_.emplace_back(vids, pattern, patternId, proc, typename ft::SubtermResults<IdCont>::NoHoldT{});
-		maxVDocs_ += vids.size();
+	void AddSubterm(std::shared_ptr<const IdCont> vids, std::string_view pattern, WordIdType patternId, float proc, float termLenBoost) {
+		subtermsResults_.emplace_back(std::move(vids), pattern, patternId, proc, termLenBoost,
+									  typename ft::SubtermResults<IdCont>::NoHoldT{});
+		maxVDocs_ += subtermsResults_.back().Occurences().size();
 	}
-	void AddSubterm(const IdCont& vids, std::string&& pattern, WordIdType patternId, float proc) {
-		subtermsResults_.emplace_back(vids, std::move(pattern), patternId, proc, typename ft::SubtermResults<IdCont>::HoldT{});
-		maxVDocs_ += vids.size();
+	void AddSubterm(std::shared_ptr<const IdCont> vids, std::string&& pattern, WordIdType patternId, float proc, float termLenBoost) {
+		subtermsResults_.emplace_back(std::move(vids), std::move(pattern), patternId, proc, termLenBoost,
+									  typename ft::SubtermResults<IdCont>::HoldT{});
+		maxVDocs_ += subtermsResults_.back().Occurences().size();
 	}
 
 	void SortSubterms() {
@@ -95,7 +101,7 @@ public:
 
 private:
 	uint32_t maxVDocs_ = 0;
-	FtDSLEntry term_;
+	FtDslTerm term_;
 
 	h_vector<SubtermResults<IdCont>, 8> subtermsResults_;
 	h_vector<uint32_t, 2> synonyms_;
@@ -105,6 +111,7 @@ template <typename IdCont>
 class [[nodiscard]] PhraseResults {
 public:
 	PhraseResults() = default;
+	PhraseResults(const FtDslPhrase& phrase) : op_{phrase.Op()}, fieldsOpts_{phrase.FieldsOpts()}, distance_{phrase.Distance()} {}
 	PhraseResults(PhraseResults&&) = default;
 	PhraseResults& operator=(PhraseResults&&) = default;
 
@@ -118,7 +125,9 @@ public:
 		}
 	}
 
-	const OpType& Op() const noexcept { return terms_[0].Op(); }
+	const OpType& Op() const noexcept { return op_; }
+	const h_vector<FtDslFieldOpts, 8>& FieldsOpts() const noexcept { return fieldsOpts_; }
+	unsigned Distance() const noexcept { return distance_; }
 
 	uint16_t CalcProc16() {
 		long long sumProc = 0;
@@ -137,6 +146,9 @@ public:
 
 private:
 	h_vector<TermResults<IdCont>, 3> terms_;
+	OpType op_ = OpOr;
+	h_vector<FtDslFieldOpts, 8> fieldsOpts_;
+	unsigned distance_ = 1;
 };
 
 template <typename IdCont>

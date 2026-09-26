@@ -84,10 +84,7 @@ public:
 	TagsMatcher& tagsMatcher() noexcept { return tagsMatcher_; }
 	std::shared_ptr<const Schema>& schema() & noexcept { return schema_; }
 
-	void SetPrecepts(std::vector<std::string>&& precepts) {
-		precepts_ = std::move(precepts);
-		cjson_ = std::string_view();
-	}
+	void SetPrecepts(std::vector<std::string>&& precepts) { precepts_ = std::move(precepts); }
 	const std::vector<std::string>& GetPrecepts() const& noexcept { return precepts_; }
 	void Unsafe(bool enable) noexcept { unsafe_ = enable; }
 	bool IsUnsafe() const noexcept { return unsafe_; }
@@ -123,7 +120,6 @@ private:
 	WrSerializer ser_;
 
 	bool unsafe_ = false;
-	std::string_view cjson_;
 	std::weak_ptr<Namespace> ns_;
 	const FieldsFilter* fieldsFilter_{nullptr};
 	// The mask will not be updated in some cases when calling SetObject

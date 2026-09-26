@@ -124,7 +124,7 @@ TEST_F(MsgPackCprotoApi, ModifyItemsTest) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr(kResultsMsgPack | kResultsWithItemID);
-	err = client_->Select(Query(default_namespace).Where(kFieldId, CondEq, Variant(int(7))), qr);
+	err = client_->Select(Query(default_namespace).Where(kFieldId, CondEq, reindexer::Variant(int(7))), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1);
 	ASSERT_EQ(qr.GetFlags() & kResultsFormatMask, kResultsMsgPack) << qr.GetFlags();

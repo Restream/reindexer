@@ -966,17 +966,19 @@ func (db *reindexerImpl) execSQLToJSON(ctx context.Context, query string) *JSONI
 
 func getQueryNamespace(query string) string {
 	// TODO: do not parse query string twice in go and cpp
-	namespace := ""
 	querySlice := strings.Fields(strings.ToLower(query))
-
-	for i := range querySlice {
-		if querySlice[i] == "from" && i+1 < len(querySlice) {
-			namespace = querySlice[i+1]
-			break
+	if len(querySlice) >= 2 {
+		switch querySlice[0] {
+		case "update", "truncate":
+			return querySlice[1]
 		}
 	}
-
-	return namespace
+	for i := range querySlice {
+		if querySlice[i] == "from" && i+1 < len(querySlice) {
+			return querySlice[i+1]
+		}
+	}
+	return ""
 }
 
 // beginTx - start update transaction

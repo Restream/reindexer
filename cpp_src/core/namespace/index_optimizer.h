@@ -14,8 +14,6 @@ class RdxContext;
 
 struct NamespaceConfigData;
 
-enum class [[nodiscard]] IndexOptimization : int8_t { Partial, Full };
-
 class [[nodiscard]] IndexOptimizer {
 public:
 	using IndexesSpan = std::span<const std::unique_ptr<Index>>;
@@ -43,7 +41,7 @@ public:
 	void AwaitIdle(const RdxContext& ctx) const;
 	int64_t UpdateSortedContextMemory() const noexcept { return updateSortedContextMemory_.load(std::memory_order_relaxed); }
 	void ScheduleOptimization(IndexOptimization requestedOptimization) noexcept;
-	void UpdateSortedIdxCount(IndexesSpan indexes);
+	void UpdateSortedIdxCount(IndexesSpan indexes, std::string_view nsName) noexcept;
 	void TryOptimize(const Context& optCtx, const index::ICancelable& cancelable) noexcept;
 	void SetConfig(std::string_view nsName, IndexesSpan indexes, const Config& newCfg);
 	OptimizationState State() const noexcept { return optimizationState_.load(std::memory_order_acquire); }
@@ -58,6 +56,7 @@ private:
 	WasCanceled updateSortedIDs(size_t threadsCount, const Context& ctx, OptimizationState optState, const index::ICancelable& cancelable);
 
 	std::atomic<OptimizationState> optimizationState_{OptimizationState::None};
+	std::atomic_bool sortedIdsCorrupted_{false};
 	std::atomic_int64_t updateSortedContextMemory_{0};
 	mutable std::atomic_uint32_t running_{0};
 	mutable mutex idleMtx_;

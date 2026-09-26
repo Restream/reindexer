@@ -149,7 +149,7 @@ func GetData(t *testing.T, rx *reindexer.Reindexer, namespace string) []any {
 
 func GetDataFromNodes(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer, namespace string) []any {
 	dataLeader := GetData(t, rxLeader, namespace)
-	WaitForSyncWithLeaderLegacy(t, rxLeader, rxFollower)
+	WaitForSyncWithLeader(t, rxLeader, rxFollower)
 	dataFollower := GetData(t, rxFollower, namespace)
 	assert.Equal(t, dataLeader, dataFollower, "Data in tables does not equal\n%s\n%s", dataLeader, dataFollower)
 	return dataLeader

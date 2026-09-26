@@ -148,6 +148,11 @@ RX_NO_INLINE static std::string buildPreselectDescription(const joins::PreSelect
 							"using preselected_rows, because joined query contains nested JOIN and joined query's "
 							"expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
 							props.qresMaxIterations, props.maxIterationsIdSetPreSelect);
+					case joins::PreSelect::ValuesOptimizationStatus::DisabledByArithmeticExpression:
+						return fmt::format(
+							"using preselected_rows, because joined query contains a WHERE arithmetic expression and its "
+							"expected max iterations count of {} is less than max_iterations_idset_preresult limit of {}",
+							props.qresMaxIterations, props.maxIterationsIdSetPreSelect);
 					case joins::PreSelect::ValuesOptimizationStatus::Enabled:
 						return fmt::format(
 							"using preselected_rows, because joined query's expected max iterations count of {} is less than "
@@ -413,8 +418,7 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				const std::string jName{addToJSON(builder, jitemsprocessors[jiter.joinIndex], it->operation)};
 				name << opName(it->operation, it == begin) << jName;
 			},
-			[&]<concepts::OneOf<FieldsComparator, EqualPositionComparator, GroupingEqualPositionComparator, FunctionsComparator> T>(
-				const T& c) {
+			[&]<concepts::OneOf<FieldsComparator, EqualPositionComparator, GroupingEqualPositionComparator> T>(const T& c) {
 				auto jsonSel = builder.Object();
 				if constexpr (concepts::OneOf<T, EqualPositionComparator, GroupingEqualPositionComparator>) {
 					jsonSel.Put("comparators"sv, c.FieldsCount());
@@ -437,6 +441,20 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				jsonSel.Put("matched"sv, c.GetMatchedCount(it->operation == OpNot));
 				jsonSel.Put("condition"sv, c.ConditionStr());
 				jsonSel.Put("type"sv, "FunctionsComparator"sv);
+				name << opName(it->operation, it == begin) << c.Name();
+			},
+			[&](const ArithmeticComparator& c) {
+				auto jsonSel = builder.Object();
+				jsonSel.Put("comparators"sv, 1);
+				jsonSel.Put("field"sv, opName(it->operation) + c.Name());
+				jsonSel.Put("cost"sv, std::round(c.Cost(iters)));
+				jsonSel.Put("method"sv, "scan"sv);
+				jsonSel.Put("matched"sv, c.GetMatchedCount(it->operation == OpNot));
+				jsonSel.Put("condition"sv, c.ConditionStr());
+				if (const auto nowNsec = c.NowNsec(); nowNsec.has_value()) {
+					jsonSel.Put("now_nsec"sv, *nowNsec);
+				}
+				jsonSel.Put("type"sv, "ArithmeticComparator"sv);
 				name << opName(it->operation, it == begin) << c.Name();
 			},
 			[&](const concepts::OneOf<

@@ -5,9 +5,10 @@
 
 namespace reindexer_tests {
 
+using reindexer::Query;
+
 TEST_F(GrpcClientApi, SelectCJSON) try {
-	reindexer::Query q(default_namespace);
-	q.InnerJoin(kIdField, kIdField, CondEq, reindexer::Query(default_namespace + "2"));
+	const auto q = Query(default_namespace).InnerJoin(Query(default_namespace + "2"), kIdField, CondEq, kIdField);
 
 	reindexer::grpc::SqlRequest request;
 	request.set_dbname(kDbName);
@@ -41,10 +42,10 @@ TEST_F(GrpcClientApi, SelectCJSON) try {
 // JSON as output format
 TEST_F(GrpcClientApi, SelectJSON) {
 	// Build query with join, distinct and simple Where condition
-	reindexer::Query q(default_namespace);
-	q.Select({kIdField.c_str(), kAgeField.c_str()});
-	q.Distinct(kAgeField);
-	q.InnerJoin(kIdField, kIdField, CondEq, reindexer::Query(default_namespace + "2"));
+	const auto q = Query(default_namespace)
+					   .Select(kIdField, kAgeField)
+					   .Distinct(kAgeField)
+					   .InnerJoin(Query(default_namespace + "2"), kIdField, CondEq, kIdField);
 
 	// Set input data for GRPC query
 	reindexer::grpc::SqlRequest request;

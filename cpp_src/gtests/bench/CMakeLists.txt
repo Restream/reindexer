@@ -28,19 +28,19 @@ add_library(${RX_BENCH_LIB} OBJECT ${TOOLS_SRCS} ${FIXT_SRCS} ${GTESTS_COMMON_TO
 target_compile_definitions(${RX_BENCH_LIB} PRIVATE RX_BENCH_DICT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/dict.txt")
 
 add_executable(${TARGET} reindexer_bench.cc)
-target_link_libraries(${TARGET} ${RX_BENCH_LIB} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
+target_link_libraries(${TARGET} ${RX_BENCH_LIB} ${REINDEXER_LIBRARIES} benchmark::benchmark)
 if(HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
     target_compile_definitions(${TARGET} PRIVATE HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
 endif()
 
 add_executable(${FT_TARGET} ft_bench.cc)
-target_link_libraries(${FT_TARGET} ${RX_BENCH_LIB} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
+target_link_libraries(${FT_TARGET} ${RX_BENCH_LIB} ${REINDEXER_LIBRARIES} benchmark::benchmark)
 if(HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
     target_compile_definitions(${FT_TARGET} PRIVATE HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
 endif()
 
 add_executable(${KNN_TARGET} knn_bench.cc)
-target_link_libraries(${KNN_TARGET} ${RX_BENCH_LIB} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
+target_link_libraries(${KNN_TARGET} ${RX_BENCH_LIB} ${REINDEXER_LIBRARIES} benchmark::benchmark)
 if(HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
     target_compile_definitions(${KNN_TARGET} PRIVATE HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR)
 endif()

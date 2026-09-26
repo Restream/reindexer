@@ -10,6 +10,8 @@
 
 namespace reindexer_tests {
 
+using reindexer::Variant;
+
 TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	std::string strValueToCheck = lastStrValue;
 	auto qr = rt.Select(Query(default_namespace).Not().Where(kFieldOne, CondEq, strValueToCheck));
@@ -55,7 +57,7 @@ TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 }
 
 TEST_F(BtreeIdsetsApi, SortByStringField) {
-	auto qr = rt.Select(Query(default_namespace).Sort(kFieldOne, true));
+	auto qr = rt.Select(Query(default_namespace).Sort(kFieldOne, SortOrder::Desc));
 	Variant prev;
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
@@ -68,7 +70,7 @@ TEST_F(BtreeIdsetsApi, SortByStringField) {
 }
 
 TEST_F(BtreeIdsetsApi, SortByIntField) {
-	auto qr = rt.Select(Query(default_namespace).Sort(kFieldTwo, false));
+	auto qr = rt.Select(Query(default_namespace).Sort(kFieldTwo, SortOrder::Asc));
 	Variant prev;
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
@@ -81,7 +83,7 @@ TEST_F(BtreeIdsetsApi, SortByIntField) {
 }
 
 TEST_F(BtreeIdsetsApi, SortBySparseIndex) {
-	for (const bool sortOrder : {true, false}) {
+	for (const auto sortOrder : {SortOrder::Desc, SortOrder::Asc}) {
 		auto qr = rt.Select(Query(default_namespace).Sort(kFieldFour, sortOrder));
 		Variant prev;
 		for (auto& it : qr) {
@@ -89,7 +91,7 @@ TEST_F(BtreeIdsetsApi, SortBySparseIndex) {
 			Variant curr = item[kFieldFour];
 			if (it != qr.begin()) {
 				if (!curr.IsNullValue() && !prev.IsNullValue()) {
-					if (sortOrder) {
+					if (sortOrder == SortOrder::Desc) {
 						EXPECT_TRUE(prev.As<int>() >= curr.As<int>());
 					} else {
 						EXPECT_TRUE(prev.As<int>() <= curr.As<int>());
@@ -102,9 +104,9 @@ TEST_F(BtreeIdsetsApi, SortBySparseIndex) {
 }
 
 TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
-	Query joinedNs{Query(joinedNsName).Where(kFieldThree, CondGt, Variant(static_cast<int>(9000))).Sort(kFieldThree, false)};
-	auto qr =
-		rt.Select(Query(default_namespace, 0, 3000).InnerJoin(kFieldId, kFieldIdFk, CondEq, std::move(joinedNs)).Sort(kFieldTwo, false));
+	Query joinedNs{Query(joinedNsName).Where(kFieldThree, CondGt, Variant(static_cast<int>(9000))).Sort(kFieldThree, SortOrder::Asc)};
+	auto qr = rt.Select(
+		Query(default_namespace).Limit(3000).InnerJoin(std::move(joinedNs), kFieldId, CondEq, kFieldIdFk).Sort(kFieldTwo, SortOrder::Asc));
 	Variant prevFieldTwo;
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);

@@ -109,12 +109,12 @@ type EmbedderInfo struct {
 
 // TextIndexStats fulltext-specific virtual documents statistics from '#memstats'
 type TextIndexStats struct {
-	// Total number of virtual documents currently stored in the fulltext index
+	// Number of live virtual documents currently stored in the fulltext index
 	TotalVdocs int64 `json:"total_vdocs"`
-	// Number of removed virtual documents that are still kept until the next compaction
+	// Number of removed virtual-document slots waiting for reuse
 	RemovedVdocs int64 `json:"removed_vdocs"`
-	// How many times the fulltext virtual documents storage has been compacted
-	VdocsCompactions int64 `json:"vdocs_compactions"`
+	// Number of permanently retired virtual-document slots that cannot be reused
+	DeadVdocs int64 `json:"dead_vdocs"`
 }
 
 // Operation counter and server id
@@ -181,8 +181,6 @@ type NamespaceMemStat struct {
 		NSVersion LsnT `json:"ns_version"`
 		// Number of storage's master <-> slave switches
 		IncarnationCounter int64 `json:"incarnation_counter"`
-		// Hashsum of all records in namespace (deprecated)
-		DataHash uint64 `json:"data_hash"`
 		// Checksum of all records in namespace
 		Checksum uint64 `json:"checksum"`
 		// Data count
@@ -412,6 +410,8 @@ type IndexPerfStat struct {
 	Commits PerfStat `json:"commits"`
 	// Performance statistics for index select operations
 	Selects PerfStat `json:"selects"`
+	// Performance statistics for index cleanup operations (e.g. fulltext stale postings scrub)
+	Cleans PerfStat `json:"cleans"`
 	// Performance statistics for LRU IdSets index cache (or fulltext cache for text indexes).
 	// Nil-value means, that index does not use cache at all
 	Cache *LRUCachePerfStat `json:"cache,omitempty"`
@@ -654,6 +654,8 @@ type DBNamespacesConfig struct {
 	OptimizationTimeout int `json:"optimization_timeout_ms"`
 	// Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
 	OptimizationSortWorkers int `json:"optimization_sort_workers"`
+	// Timeout before background fulltext postings cleanup start after last update. 0 - disable cleanup
+	FtCleanupTimeout int `json:"ft_cleanup_timeout_ms"`
 	// Maximum WAL size for this namespace (maximum count of WAL records)
 	WALSize int64 `json:"wal_size"`
 	// Minimum preselect size for optimization of inner join by insertion of filters. It is using if (MaxPreselectPart * ns.size) is less than this value
@@ -850,6 +852,7 @@ func DefaultDBNamespaceConfig(namespace string) *DBNamespacesConfig {
 		TxVecInsertionThreads:         4,
 		OptimizationTimeout:           800,
 		OptimizationSortWorkers:       4,
+		FtCleanupTimeout:              50,
 		WALSize:                       4000000,
 		MinPreselectSize:              1000,
 		MaxPreselectSize:              1000,

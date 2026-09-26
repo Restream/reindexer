@@ -1,4 +1,7 @@
 #include "cascade_replication_api.h"
+#include <algorithm>
+#include <thread>
+#include <type_traits>
 #include "core/system_ns_names.h"
 #include "vendor/gason/gason.h"
 
@@ -7,14 +10,25 @@ namespace reindexer_tests {
 using namespace reindexer;
 
 template <typename T>
+const typename CascadeReplicationApiP<T>::Defaults& CascadeReplicationApiP<T>::GetDefaults() const {
+	if constexpr (std::is_same_v<T, sq8_test::TestSyncType>) {
+		static Defaults defs{7970, 8080, fs::JoinPath(fs::GetTempDir(), "rx_test/Sq8CascadeReplicationApi")};
+		return defs;
+	} else {
+		static Defaults defs{7770, 7880, fs::JoinPath(fs::GetTempDir(), "rx_test/CascadeReplicationApi")};
+		return defs;
+	}
+}
+
+template <typename T>
 void CascadeReplicationApiP<T>::SetUp() {
-	std::ignore = fs::RmDirAll(kBaseTestsetDbPath);
+	std::ignore = fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 }
 
 template <typename T>
 void CascadeReplicationApiP<T>::TearDown()	// -V524
 {
-	std::ignore = fs::RmDirAll(kBaseTestsetDbPath);
+	std::ignore = fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 }
 
 template <typename T>
@@ -45,31 +59,58 @@ void CascadeReplicationApiP<T>::ValidateNsList(const CascadeReplicationApiP::Ser
 		std::cerr << std::endl;
 	}
 }
+
 template <typename T>
-CascadeReplicationApiP<T>::Cluster CascadeReplicationApiP<T>::CreateConfiguration(const std::vector<int>& clusterConfig, int basePort,
-																				  int baseServerId, const std::string& dbPathMaster) {
+void CascadeReplicationApiP<T>::AwaitNsAbsence(const CascadeReplicationApiP::ServerPtr& s, std::string_view nsName,
+											   std::chrono::milliseconds timeout) {
+	const auto step = std::chrono::milliseconds(50);
+	std::vector<NamespaceDef> nsDefs;
+	for (auto remain = timeout; remain.count() > 0; remain -= step) {
+		nsDefs.clear();
+		auto err = s->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary().WithClosed());
+		ASSERT_TRUE(err.ok()) << err.what();
+		const bool found =
+			std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef& def) { return def.name == nsName; }) != nsDefs.end();
+		if (!found) {
+			return;
+		}
+		std::this_thread::sleep_for(step);
+	}
+	std::string actual;
+	for (const auto& def : nsDefs) {
+		if (!actual.empty()) {
+			actual.append(", ");
+		}
+		actual.append(def.name);
+	}
+	ASSERT_TRUE(false) << "Namespace '" << nsName << "' is still present on server " << s->Id() << ". Actual: [" << actual << "]";
+}
+template <typename T>
+CascadeReplicationApiP<T>::Cluster CascadeReplicationApiP<T>::CreateConfiguration(const std::vector<int>& clusterConfig, int baseServerId,
+																				  const std::string& dbPathMaster) {
 	std::vector<CascadeReplicationApiP::FollowerConfig> config;
 	config.reserve(clusterConfig.size());
 	for (auto& c : clusterConfig) {
 		config.emplace_back(c);
 	}
-	return CreateConfiguration(std::move(config), basePort, baseServerId, dbPathMaster, {});
+	return CreateConfiguration(std::move(config), baseServerId, dbPathMaster, {});
 }
 
 template <typename T>
 CascadeReplicationApiP<T>::Cluster CascadeReplicationApiP<T>::CreateConfiguration(
-	std::vector<CascadeReplicationApiP::FollowerConfig> clusterConfig, int basePort, int baseServerId, const std::string& dbPathMaster,
-	const AsyncReplicationConfigTest::NsSet& nsList) {
+	std::vector<CascadeReplicationApiP::FollowerConfig> clusterConfig, int baseServerId, const std::string& dbPathMaster,
+	const AsyncReplicationConfigTest::NsSet& nsList, bool asServerProcess, size_t maxUpdatesSize) {
+	const auto& ports = GetDefaults();
 	if (clusterConfig.empty()) {
-		return CascadeReplicationApiP::Cluster(basePort);
+		return CascadeReplicationApiP::Cluster(baseServerId, ports);
 	}
 	std::vector<ServerControl> nodes;
 	nodes.reserve(clusterConfig.size());
 	using ReplNode = AsyncReplicationConfigTest::Node;
 	for (size_t i = 0; i < clusterConfig.size(); ++i) {
 		const int serverId = baseServerId + i;
-		nodes.emplace_back().InitServer(
-			ServerControlConfig(serverId, basePort + i, basePort + 1000 + i, dbPathMaster + std::to_string(i), "db"));
+		nodes.emplace_back().InitServer(ServerControlConfig(serverId, ports.defaultRpcPort + i, ports.defaultHttpPort + i,
+															dbPathMaster + std::to_string(i), "db", true, maxUpdatesSize, asServerProcess));
 		const bool isFollower = clusterConfig[i].leaderId >= 0;
 		AsyncReplicationConfigTest config(isFollower ? "follower" : "leader", std::vector<ReplNode>(), false, true, serverId,
 										  "node_" + std::to_string(serverId), nsList);
@@ -81,7 +122,7 @@ CascadeReplicationApiP<T>::Cluster CascadeReplicationApiP<T>::CreateConfiguratio
 			nodes[clusterConfig[i].leaderId].Get()->AddFollower(srv, std::move(clusterConfig[i].nsList));
 		}
 	}
-	return CascadeReplicationApiP<T>::Cluster(baseServerId, std::move(nodes));
+	return CascadeReplicationApiP<T>::Cluster(baseServerId, ports, std::move(nodes));
 }
 
 template <typename T>
@@ -131,13 +172,12 @@ void CascadeReplicationApiP<T>::ApplyConfig(const ServerPtr& sc, std::string_vie
 
 template <typename T>
 void CascadeReplicationApiP<T>::CheckTxCopyEventsCount(const ServerPtr& sc, int expectedCount) {
-	auto& rx = *sc->api.reindexer;
+	auto& rx = sc->api;
 	client::QueryResults qr;
-	auto err = rx.Select(Query(kPerfStatsNamespace), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rx.Select(Query(kPerfStatsNamespace), qr);
 	ASSERT_EQ(qr.Count(), 1);
 	WrSerializer ser;
-	err = qr.begin().GetJSON(ser, false);
+	auto err = qr.begin().GetJSON(ser, false);
 	ASSERT_TRUE(err.ok()) << err.what();
 	gason::JsonParser parser;
 	auto resJS = parser.Parse(ser.Slice());
@@ -145,8 +185,9 @@ void CascadeReplicationApiP<T>::CheckTxCopyEventsCount(const ServerPtr& sc, int 
 }
 
 template <typename T>
-CascadeReplicationApiP<T>::TestNamespace1::TestNamespace1(const ServerPtr& srv, std::string_view nsName) : nsName_(nsName) {
-	auto opt = StorageOpts().Enabled(true);
+CascadeReplicationApiP<T>::TestNamespace1::TestNamespace1(const ServerPtr& srv, std::string_view nsName, EnableStorage enableStorage)
+	: nsName_(nsName) {
+	auto opt = StorageOpts().Enabled(enableStorage == EnableStorage::Yes);
 	auto err = srv->api.reindexer->OpenNamespace(nsName_, opt);
 	EXPECT_TRUE(err.ok()) << err.what();
 	srv->api.DefineNamespaceDataset(nsName_, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
@@ -185,13 +226,12 @@ void CascadeReplicationApiP<T>::TestNamespace1::AddRowsTx(const ServerPtr& srv, 
 
 template <typename T>
 void CascadeReplicationApiP<T>::TestNamespace1::GetData(const ServerPtr& srv, std::vector<int>& ids) {
-	auto qr = Query(nsName_).Sort("id", false);
+	auto q = Query(nsName_).Sort("id", SortOrder::Asc);
 	BaseApi::QueryResultsType res;
-	auto err = srv->api.reindexer->Select(qr, res);
-	EXPECT_TRUE(err.ok()) << err.what();
+	srv->api.Select(q, res);
 	for (auto it : res) {
 		WrSerializer ser;
-		err = it.GetJSON(ser, false);
+		auto err = it.GetJSON(ser, false);
 		EXPECT_TRUE(err.ok()) << err.what();
 		gason::JsonParser parser;
 		auto root = parser.Parse(ser.Slice());
@@ -200,10 +240,10 @@ void CascadeReplicationApiP<T>::TestNamespace1::GetData(const ServerPtr& srv, st
 }
 
 template <typename T>
-void CascadeReplicationApiP<T>::Cluster::RestartServer(size_t id, int port, const std::string& dbPathMaster) {
+void CascadeReplicationApiP<T>::Cluster::RestartServer(size_t id, const std::string& dbPathMaster) {
 	assert(id < nodes_.size());
 	ShutdownServer(id);
-	nodes_[id].InitServer(ServerControlConfig(baseServerId_ + id, port + id, port + 1000 + id, dbPathMaster + std::to_string(id), "db"));
+	InitServer(id, dbPathMaster + std::to_string(id), "db", true);
 }
 
 template <typename T>
@@ -224,10 +264,11 @@ void CascadeReplicationApiP<T>::Cluster::ShutdownServer(size_t id) {
 }
 
 template <typename T>
-void CascadeReplicationApiP<T>::Cluster::InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort,
-													const std::string& storagePath, const std::string& dbName, bool enableStats) {
+void CascadeReplicationApiP<T>::Cluster::InitServer(size_t id, const std::string& storagePath, const std::string& dbName, bool enableStats,
+													bool asServerProcess) {
 	assert(id < nodes_.size());
-	nodes_[id].InitServer(ServerControlConfig(baseServerId_ + id, rpcPort, httpPort, storagePath, dbName, enableStats, 0));
+	nodes_[id].InitServer(ServerControlConfig(baseServerId_ + id, ports_.defaultRpcPort + id, ports_.defaultHttpPort + id, storagePath,
+											  dbName, enableStats, 0, asServerProcess));
 }
 
 template <typename T>

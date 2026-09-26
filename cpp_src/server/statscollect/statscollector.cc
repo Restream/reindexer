@@ -1,4 +1,5 @@
 #include "statscollector.h"
+#include "core/query/query.h"
 #include "core/system_ns_names.h"
 #include "dbmanager.h"
 #include "estl/lock.h"

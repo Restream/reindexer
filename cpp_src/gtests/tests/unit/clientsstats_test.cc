@@ -1,4 +1,5 @@
 #include "clientsstats_api.h"
+#include "core/query/query.h"
 #include "core/system_ns_names.h"
 #include "coroutine/waitgroup.h"
 #include "gason/gason.h"
@@ -14,6 +15,7 @@ using reindexer::client::CoroReindexer;
 using reindexer::client::CoroQueryResults;
 using reindexer::client::CoroTransaction;
 using reindexer::coroutine::wait_group;
+using reindexer::Query;
 
 // NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
 
@@ -56,14 +58,14 @@ TEST_F(ClientsStatsApi, ClientsStatsData) {
 				auto err = clientPtr->Connect(GetConnectionString(), loop, opts.CreateDBIfMissing());
 				ASSERT_TRUE(err.ok()) << err.what();
 				CoroQueryResults result;
-				err = clientPtr->Select(reindexer::Query(reindexer::kNamespacesNamespace), result);
+				err = clientPtr->Select(Query(reindexer::kNamespacesNamespace), result);
 				ASSERT_TRUE(err.ok()) << err.what();
 				nClients.emplace_back(std::move(clientPtr));
 			});
 		}
 		wg.wait();
 		CoroQueryResults result;
-		auto err = nClients[0]->Select(reindexer::Query(reindexer::kClientsStatsNamespace), result);
+		auto err = nClients[0]->Select(Query(reindexer::kClientsStatsNamespace), result);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(result.Count(), kConnectionCount);
 		finished = true;
@@ -83,10 +85,10 @@ TEST_F(ClientsStatsApi, ClientsStatsOff) {
 		auto err = reindexer.Connect(GetConnectionString(), loop, opts.CreateDBIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 		CoroQueryResults resultNs;
-		err = reindexer.Select(reindexer::Query(reindexer::kNamespacesNamespace), resultNs);
+		err = reindexer.Select(Query(reindexer::kNamespacesNamespace), resultNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		CoroQueryResults resultCs;
-		err = reindexer.Select(reindexer::Query(reindexer::kClientsStatsNamespace), resultCs);
+		err = reindexer.Select(Query(reindexer::kClientsStatsNamespace), resultCs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(resultCs.Count(), 0);
 		finished = true;
@@ -124,11 +126,11 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		auto beginTs = std::chrono::duration_cast<std::chrono::milliseconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
 		loop.sleep(std::chrono::milliseconds(2000));  // Timeout to update send/recv rate
 		CoroQueryResults resultNs;
-		err = reindexer.Select(reindexer::Query(reindexer::kNamespacesNamespace), resultNs);
+		err = reindexer.Select(Query(reindexer::kNamespacesNamespace), resultNs);
 		SetProfilingFlag(true, "profiling.activitystats", reindexer);
 
 		CoroQueryResults resultCs;
-		err = reindexer.Select(reindexer::Query(reindexer::kClientsStatsNamespace), resultCs);
+		err = reindexer.Select(Query(reindexer::kClientsStatsNamespace), resultCs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(resultCs.Count(), 1);
 		auto it = resultCs.begin();

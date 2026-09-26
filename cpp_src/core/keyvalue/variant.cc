@@ -18,7 +18,7 @@ namespace reindexer {
 
 Variant::Variant(p_string v, HoldT) : variant_{0, 0, KeyValueType::String{}} {
 	if (v.type() == p_string::tagKeyString) {
-		variant_.hold = 1;
+		variant_.ownsHeap = 1;
 		new (cast<void>()) key_string(v.getKeyString());
 	} else {
 		*cast<p_string>() = v;
@@ -120,7 +120,7 @@ Variant::operator ConstFloatVectorView() const noexcept {
 Variant::operator FloatVectorView() noexcept {
 	assertrx(!isUuid());
 	assertKeyType<KeyValueType::FloatVector>(variant_.type);
-	assertrx(variant_.hold);
+	assertrx(variant_.ownsHeap);
 	return FloatVectorView::FromUint64(variant_.value_uint64);
 }
 
@@ -136,12 +136,12 @@ Variant::operator FloatVector() && {
 		return FloatVector::CreateNotInitialized(view.Dimension());
 	}
 
-	if (!variant_.hold) {
+	if (!variant_.ownsHeap) {
 		return FloatVector{view};
 	}
 
 	FloatVector res(std::unique_ptr<float[]>(const_cast<float*>(view.Data())), view.Dimension());
-	variant_.hold = 0;
+	variant_.ownsHeap = 0;
 	return res;
 }
 
@@ -194,20 +194,20 @@ VariantArray Variant::As<VariantArray>() const {
 
 void Variant::free() noexcept {
 	assertrx(!isUuid());
-	assertrx(variant_.hold == 1);
+	assertrx(variant_.ownsHeap == 1);
 	variant_.type.EvaluateOneOf(
 		[&](concepts::OneOf<KeyValueType::String, KeyValueType::Tuple> auto) noexcept { this->cast<key_string>()->~key_string(); },
 		[&](KeyValueType::Composite) noexcept { this->cast<PayloadValue>()->~PayloadValue(); },
 		[&](KeyValueType::FloatVector) noexcept { delete[] ConstFloatVectorView(*this).Data(); },
 		[](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Undefined,
 						   KeyValueType::Double, KeyValueType::Float, KeyValueType::Uuid> auto) noexcept {});
-	variant_.hold = 0;
+	variant_.ownsHeap = 0;
 }
 
 void Variant::copy(const Variant& other) {
 	assertrx(!isUuid());
 	assertrx(!other.isUuid());
-	assertrx(variant_.hold == 1);
+	assertrx(variant_.ownsHeap == 1);
 	assertrx(variant_.type.IsSame(other.Type()));
 	variant_.type.EvaluateOneOf(
 		[&](concepts::OneOf<KeyValueType::String, KeyValueType::Tuple> auto) {
@@ -231,7 +231,7 @@ void Variant::copy(const Variant& other) {
 
 Variant& Variant::ensureHoldImpl() & {
 	variant_.type.EvaluateOneOf(
-		[&](KeyValueType::String) { *this = Variant(this->operator key_string()); }, [&](KeyValueType::Tuple) { assertrx(DoHold()); },
+		[&](KeyValueType::String) { *this = Variant(this->operator key_string()); }, [&](KeyValueType::Tuple) { assertrx(OwnsHeap()); },
 		[&](KeyValueType::Composite) { *this = Variant(this->operator const PayloadValue&()); },
 		[&](KeyValueType::FloatVector) { *this = Variant(this->operator ConstFloatVectorView(), hold); },
 		[](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Undefined,
@@ -427,8 +427,8 @@ int Variant::As<int>() const {
 		[&](KeyValueType::Bool) noexcept -> int { return variant_.value_bool; },
 		[&](KeyValueType::Int) noexcept { return variant_.value_int; },
 		[&](KeyValueType::Int64) noexcept -> int { return variant_.value_int64; },
-		[&](KeyValueType::Double) noexcept -> int { return variant_.value_double; },
-		[&](KeyValueType::Float) noexcept -> int { return variant_.value_float; },
+		[&](KeyValueType::Double) noexcept -> int { return static_cast<int>(variant_.value_double); },
+		[&](KeyValueType::Float) noexcept -> int { return static_cast<int>(variant_.value_float); },
 		[&](KeyValueType::String) { return parseAs<int>(this->operator p_string()); },
 		[&](KeyValueType::Tuple) { return convertTupleToScalar(*cast<key_string>()).As<int>(); },
 		[this](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector, KeyValueType::Composite> auto)
@@ -493,8 +493,8 @@ int64_t Variant::As<int64_t>() const {
 		[&](KeyValueType::Bool) noexcept -> int64_t { return variant_.value_bool; },
 		[&](KeyValueType::Int) noexcept -> int64_t { return variant_.value_int; },
 		[&](KeyValueType::Int64) noexcept { return variant_.value_int64; },
-		[&](KeyValueType::Double) noexcept -> int64_t { return variant_.value_double; },
-		[&](KeyValueType::Float) noexcept -> int64_t { return variant_.value_float; },
+		[&](KeyValueType::Double) noexcept -> int64_t { return static_cast<int64_t>(variant_.value_double); },
+		[&](KeyValueType::Float) noexcept -> int64_t { return static_cast<int64_t>(variant_.value_float); },
 		[&](KeyValueType::String) { return parseAs<int64_t>(this->operator p_string()); },
 		[&](KeyValueType::Tuple) { return convertTupleToScalar(*cast<key_string>()).As<int64_t>(); },
 		[this](concepts::OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::FloatVector, KeyValueType::Composite> auto)
@@ -1140,16 +1140,17 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 						variant_.value_double > std::numeric_limits<int>::max()) {
 						return false;
 					} else {
-						variant_.value_int = variant_.value_double;
+						variant_.value_int = static_cast<int>(variant_.value_double);
 						return true;
 					}
 				},
 				[&](KeyValueType::Float) noexcept {
+					// float(INT_MAX) rounds to 2^31, which does not fit in int.
 					if (variant_.value_float < std::numeric_limits<int>::min() ||
-						variant_.value_float > float(std::numeric_limits<int>::max())) {
+						variant_.value_float >= float(std::numeric_limits<int>::max())) {
 						return false;
 					} else {
-						variant_.value_int = variant_.value_float;
+						variant_.value_int = static_cast<int>(variant_.value_float);
 						return true;
 					}
 				},
@@ -1217,11 +1218,11 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 				},
 				[](KeyValueType::Int64) noexcept { return true; },
 				[&](KeyValueType::Double) noexcept {
-					variant_.value_int64 = variant_.value_double;
+					variant_.value_int64 = static_cast<int64_t>(variant_.value_double);
 					return true;
 				},
 				[&](KeyValueType::Float) noexcept {
-					variant_.value_int64 = variant_.value_float;
+					variant_.value_int64 = static_cast<int64_t>(variant_.value_float);
 					return true;
 				},
 				[&](KeyValueType::String) noexcept {
@@ -1374,7 +1375,7 @@ bool Variant::tryConvert(KeyValueType type, const PayloadType* payloadType, cons
 
 void Variant::convertToComposite(const PayloadType& payloadType, const FieldsSet& fields) {
 	assertrx(!isUuid());
-	assertrx(variant_.type.Is<KeyValueType::Tuple>() && variant_.hold == 1);
+	assertrx(variant_.type.Is<KeyValueType::Tuple>() && variant_.ownsHeap == 1);
 	const key_string* val = cast<key_string>();
 	*this = convertTupleToComposite(std::string_view(val->data(), val->size()), payloadType, fields);
 }
@@ -1481,7 +1482,7 @@ VariantArray Variant::getCompositeValues() const {
 Variant::operator key_string() const {
 	assertrx(!isUuid());
 	assertKeyType<KeyValueType::String>(variant_.type);
-	if (variant_.hold == 1) {
+	if (variant_.ownsHeap == 1) {
 		return *cast<key_string>();
 	}
 	return cast<p_string>()->getKeyString();
@@ -1490,18 +1491,18 @@ Variant::operator key_string() const {
 Variant::operator p_string() const noexcept {
 	assertrx(!isUuid());
 	assertKeyType<KeyValueType::String>(variant_.type);
-	return (variant_.hold == 1) ? p_string(*cast<key_string>()) : *cast<p_string>();
+	return (variant_.ownsHeap == 1) ? p_string(*cast<key_string>()) : *cast<p_string>();
 }
 
 Variant::operator std::string_view() const noexcept {
 	assertrx(!isUuid());
 	assertKeyType<KeyValueType::String>(variant_.type);
-	return (variant_.hold == 1) ? std::string_view(*cast<key_string>()) : *cast<p_string>();
+	return (variant_.ownsHeap == 1) ? std::string_view(*cast<key_string>()) : *cast<p_string>();
 }
 Variant::operator const PayloadValue&() const noexcept {
 	assertrx(!isUuid());
 	assertKeyType<KeyValueType::Composite>(variant_.type);
-	assertrx(variant_.hold == 1);
+	assertrx(variant_.ownsHeap == 1);
 	return *cast<PayloadValue>();
 }
 

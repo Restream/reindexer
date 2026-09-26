@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <bit>
 #include <type_traits>
 
 #include "core/cjson/baseencoder.h"
@@ -107,7 +108,7 @@ Variant PayloadIface<T>::get(int field, int idx, HoldT h) const {
 }
 
 template <typename T>
-void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher& tagsMatcher, VariantArray& kvs,
+void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, const TagsMatcher& tagsMatcher, VariantArray& kvs,
 									KeyValueType expectedType) const {
 	VariantArray krefs;
 	Get(0, krefs);
@@ -119,7 +120,7 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher& tags
 			return;
 		}
 		if (t_.Field(fieldIdx).IsArray()) {
-			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, CanAddField_False);
+			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath);
 			if (tagsPath.back().IsTagIndexNotAll()) {
 				kvs.Clear();
 				kvs.emplace_back(Get(fieldIdx, tagsPath.back().GetTagIndex().AsNumber()));
@@ -129,7 +130,7 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher& tags
 		}
 		return Get(fieldIdx, kvs);
 	}
-	GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath, CanAddField_False), kvs, expectedType);
+	GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath), kvs, expectedType);
 }
 
 template <typename T>
@@ -553,12 +554,10 @@ size_t PayloadIface<T>::GetHash(const FieldsSet& fields) const {
 
 // Get complete hash
 template <typename T>
-PayloadChecksum PayloadIface<T>::GetChecksum(
+uint64_t PayloadIface<T>::GetChecksum(
 	const std::function<uint64_t(unsigned int, ConstFloatVectorView, unsigned)>& getVectorHashF) const noexcept {
-	PayloadChecksum ret;
+	uint64_t ret = 0;
 	for (int field = 0, fields = t_.NumFields(); field < fields; ++field) {
-		ret.hashV1 <<= 1;
-
 		const auto& f = t_.Field(field);
 		auto fv = Field(field);
 		if (f.Type().IsSame(KeyValueType::FloatVector{})) {
@@ -567,7 +566,7 @@ PayloadChecksum PayloadIface<T>::GetChecksum(
 				ret ^= arr.len;
 				uint8_t* p = v_->Ptr() + arr.offset;
 				for (int i = 0; i < arr.len; i++, p += f.ElemSizeof()) {
-					ret = ret.Rotl(13);
+					ret = std::rotl(ret, 13);
 					ret ^= getVectorHashF(unsigned(field), ConstFloatVectorView{PayloadFieldValue(f, p).Get()}, i);
 				}
 			} else {
@@ -578,13 +577,13 @@ PayloadChecksum PayloadIface<T>::GetChecksum(
 			ret ^= arr.len;
 			uint8_t* p = v_->Ptr() + arr.offset;
 			for (int i = 0; i < arr.len; i++, p += f.ElemSizeof()) {
-				ret.hashV2 = std::rotl(ret.hashV2, 13);
+				ret = std::rotl(ret, 13);
 				ret ^= PayloadFieldValue(f, p).Hash();
 			}
 		} else {
 			ret ^= fv.Hash();
 		}
-		ret.hashV2 *= kHashMagic;
+		ret *= kHashMagic;
 	}
 	return ret;
 }

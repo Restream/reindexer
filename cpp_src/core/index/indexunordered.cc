@@ -575,7 +575,6 @@ WasCanceled IndexUnordered<T>::UpdateSortedIds(const index::IUpdateSortedContext
 template <typename T>
 void IndexUnordered<T>::SetSortedIdxCount(unsigned sortedIdxCount) {
 	if (this->sortedIdxCount_ != sortedIdxCount) {
-		this->sortedIdxCount_ = sortedIdxCount;
 		int64_t plainDelta = 0;
 		const auto flushGuard =
 			MakeScopeGuard([this, &plainDelta] { idsetPlainSizeBytes_.fetch_add(plainDelta, std::memory_order_relaxed); });
@@ -600,6 +599,7 @@ void IndexUnordered<T>::SetSortedIdxCount(unsigned sortedIdxCount) {
 			}
 			plainDelta += int64_t(newTotalCapacity * sizeof(IdType)) - int64_t(oldTotalCapacity * sizeof(IdType));
 		}
+		this->sortedIdxCount_ = sortedIdxCount;
 	}
 }
 
@@ -843,6 +843,8 @@ template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, GreeneSplitter, 
 template class IndexUnordered<GeometryMap<Index::KeyEntry, GreeneSplitter, 16, 4>>;
 template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, RStarSplitter, 32, 4>>;
 template class IndexUnordered<GeometryMap<Index::KeyEntry, RStarSplitter, 32, 4>>;
+
+static_assert(!PayloadValue::kHasCompressedPtrStorage || sizeof(std::pair<PayloadValue, Index::KeyEntryPK>) == 12);
 
 static_assert(has_fused_find_or_insert<unordered_number_map<int, Index::KeyEntry>>);
 static_assert(has_fused_find_or_insert<unordered_str_map<Index::KeyEntry>>);

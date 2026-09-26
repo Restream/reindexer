@@ -350,14 +350,13 @@ TEST_F(ClusterOperationProxyApi, StressTest) {
 		WrSerializer ser;
 		for (auto& ns : namespaces) {
 			SCOPED_TRACE(ns.name);
-			auto rx = cluster.GetNode(followerId)->api.reindexer;
+			auto rx = cluster.GetNode(followerId)->api;
 			client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-			auto err = rx->Select(Query(ns.name), qr);
-			ASSERT_TRUE(err.ok()) << err.what();
+			rx.Select(Query(ns.name), qr);
 			ASSERT_EQ(qr.Count(), ns.dataCount);
 			for (auto& it : qr) {
 				ser.Reset();
-				err = it.GetJSON(ser, false);
+				auto err = it.GetJSON(ser, false);
 				ASSERT_TRUE(err.ok()) << err.what();
 				gason::JsonParser parser;
 				auto root = parser.Parse(ser.Slice());
@@ -587,8 +586,7 @@ static void SelectHelper(int node, const std::string& nsName, ClusterOperationAp
 						 IdType id = IdType::NotSet()) {
 	Query q(nsName);
 	BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-	Error err = cluster.GetNode(node)->api.reindexer->Select(q, qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	cluster.GetNode(node)->api.Select(q, qr);
 	ASSERT_TRUE(qr.Count() == 1);
 	auto itsel = qr.begin().GetItem();
 	ASSERT_TRUE(itsel.GetJSON() == itemJson) << itsel.GetJSON();
@@ -599,9 +597,7 @@ static void SelectHelper(int node, const std::string& nsName, ClusterOperationAp
 
 static void Select0Helper(int node, const std::string& nsName, ClusterOperationApi::Cluster& cluster) {
 	Query q(nsName);
-	BaseApi::QueryResultsType qr;
-	Error err = cluster.GetNode(node)->api.reindexer->Select(q, qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+	BaseApi::QueryResultsType qr = cluster.GetNode(node)->api.Select(q);
 	ASSERT_EQ(qr.Count(), 0);
 }
 
@@ -724,13 +720,12 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterOperationApi::Cluster& cl
 	{
 		// update item
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-		Error err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
-		ASSERT_TRUE(err.ok()) << err.what();
+		cluster.GetNode(followerId)->api.Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
 		ASSERT_FALSE(itsel.GetLSN().isEmpty());
 		std::string itemJson = itemData(pk, "string_update" + std::to_string(pk), "");
-		err = itsel.FromJSON(itemJson);
+		auto err = itsel.FromJSON(itemJson);
 		ASSERT_TRUE(err.ok()) << err.what();
 		client::QueryResults qrUpdate;
 		err = cluster.GetNode(followerId)->api.reindexer->Update(kNsName, itsel, qrUpdate);
@@ -748,13 +743,12 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterOperationApi::Cluster& cl
 	{
 		// delete item
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-		Error err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
-		ASSERT_TRUE(err.ok()) << err.what();
+		cluster.GetNode(followerId)->api.Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
 		ASSERT_FALSE(itsel.GetLSN().isEmpty());
 		client::QueryResults qrDelete;
-		err = cluster.GetNode(followerId)->api.reindexer->Delete(kNsName, itsel, qrDelete);
+		auto err = cluster.GetNode(followerId)->api.reindexer->Delete(kNsName, itsel, qrDelete);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qrDelete.Count() == 1);
 		auto itemQR = qrDelete.begin().GetItem();
@@ -860,8 +854,7 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterOperationApi::Cluster& cl
 	{
 		// update item
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-		Error err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
-		ASSERT_TRUE(err.ok()) << err.what();
+		cluster.GetNode(followerId)->api.Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
 		const auto initialLSN = itsel.GetLSN();
@@ -908,8 +901,7 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterOperationApi::Cluster& cl
 	{
 		// delete item
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-		Error err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
-		ASSERT_TRUE(err.ok()) << err.what();
+		cluster.GetNode(followerId)->api.Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
 		const auto initialLSN = itsel.GetLSN();
@@ -974,8 +966,7 @@ static void CheckSQL(ClusterOperationApi::Cluster& cluster, int followerId, int 
 	(void)leaderId;
 	// select all (one) items from namespace
 	{
-		BaseApi::QueryResultsType qresSelectTmp;
-		err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName), qresSelectTmp);
+		BaseApi::QueryResultsType qresSelectTmp = cluster.GetNode(followerId)->api.Select(Query(kNsName));
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qresSelectTmp.Count() == 1) << "select count = " << qresSelectTmp.Count();
 	}
@@ -990,8 +981,7 @@ static void CheckSQL(ClusterOperationApi::Cluster& cluster, int followerId, int 
 	ASSERT_TRUE(err.ok()) << err.what();
 	{
 		// check the correctness of the update
-		BaseApi::QueryResultsType qresSelect;
-		err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName), qresSelect);
+		BaseApi::QueryResultsType qresSelect = cluster.GetNode(followerId)->api.Select(Query(kNsName));
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qresSelect.Count() == 1) << "select count = " << qresSelect.Count();
 
@@ -1070,9 +1060,7 @@ TEST_F(ClusterOperationProxyApi, DeleteSelect) {
 		}
 		{
 			// check correctness of the data
-			BaseApi::QueryResultsType qr;
-			auto err = cluster.GetNode(leaderId)->api.reindexer->Select(Query(kNsName), qr);
-			ASSERT_TRUE(err.ok()) << err.what();
+			BaseApi::QueryResultsType qr = cluster.GetNode(leaderId)->api.Select(Query(kNsName));
 			ASSERT_EQ(qr.Count(), 10);
 		}
 
@@ -1083,19 +1071,16 @@ TEST_F(ClusterOperationProxyApi, DeleteSelect) {
 		for (int k = 0; k < 10; k++) {
 			// delete rows
 			{
-				BaseApi::QueryResultsType delResult;
-				Error err = followerNode->api.reindexer->Select(selQ, delResult);
+				BaseApi::QueryResultsType delResult = followerNode->api.Select(selQ);
 				ASSERT_EQ(delResult.Count(), 5) << "incorect count for delete";
 				for (auto& it : delResult) {
 					auto item = it.GetItem();
-					err = followerNode->api.reindexer->Delete(kNsName, item);
-					ASSERT_TRUE(err.ok()) << err.what();
+					followerNode->api.Delete(kNsName, item);
 				}
 			}
 			// check delete correctness
 			{
-				BaseApi::QueryResultsType selResult;
-				Error err = followerNode->api.reindexer->Select(selQ, selResult);
+				BaseApi::QueryResultsType selResult = followerNode->api.Select(selQ);
 				ASSERT_TRUE(selResult.Count() == 0) << "incorrect count =" << selResult.Count();
 			}
 			{
@@ -1126,7 +1111,7 @@ TEST_F(ClusterOperationProxyApi, ClusterStatsErrorHandling) {
 		for (size_t nodeId = 0; nodeId < kClusterSize; ++nodeId) {
 			for (auto& q : queries) {
 				BaseApi::QueryResultsType qr;
-				Error err = cluster.GetNode(nodeId)->api.reindexer->Select(q, qr);
+				Error err = cluster.GetNode(nodeId)->api.SelectErr(q, qr);
 				ASSERT_EQ(err.code(), errParams) << q.GetSQL();
 				ASSERT_STREQ(err.what(),
 							 "Query to #replicationstats has to contain one of the following conditions: type='async' or type='cluster'")

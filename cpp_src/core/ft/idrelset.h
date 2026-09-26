@@ -1,14 +1,25 @@
 #pragma once
 
-#include <limits.h>
 #include <algorithm>
+#include <cstdint>
+#include <limits>
+#include <tuple>
 #include "estl/h_vector.h"
 #include "sort/pdqsort.hpp"
 #include "tools/assertrx.h"
 
 namespace reindexer {
 
-typedef uint32_t VDocIdType;
+using VDocVersion = uint32_t;
+inline constexpr VDocVersion kEmptyVDocVersion = 0;
+inline constexpr VDocVersion kMaxVDocVersion = std::numeric_limits<VDocVersion>::max();
+inline constexpr uint32_t kEmptyVDocId = 0;	 // sentinel vdocs_[0]; stale postings also resolve to this
+
+struct [[nodiscard]] VDocPosting {
+	uint32_t vdocId = kEmptyVDocId;
+	VDocVersion version = kEmptyVDocVersion;
+};
+
 static constexpr int kMaxFtCompositeFields = 63;
 
 class [[nodiscard]] PosType {
@@ -31,7 +42,7 @@ private:
 	uint64_t fpos_ = 0;
 };
 
-using PositionsVector = h_vector<PosType, 3>;
+using PositionsVector = h_vector<PosType, 2>;
 
 class [[nodiscard]] PosTypeSimple {
 public:
@@ -57,26 +68,23 @@ struct [[nodiscard]] PosTypeDebug : public PosType {
 	std::string info;
 };
 
-// the position of the word in the document (the index of the word in the field (pos), the field in which the word field was
-// encountered (field)
+// CPU / build-time posting: always materialized positions (no lazy packed state).
 class [[nodiscard]] IdRelType {
 public:
-	explicit IdRelType(VDocIdType id = 0) noexcept : id_(id) {}
-	IdRelType(IdRelType&&) noexcept = default;
-	IdRelType(const IdRelType&) = default;
+	explicit IdRelType(uint32_t vdocId = kEmptyVDocId, VDocVersion version = kEmptyVDocVersion) noexcept
+		: vdocId_(vdocId), version_(version) {}
 
-	IdRelType& operator=(IdRelType&&) noexcept = default;
-	IdRelType& operator=(const IdRelType&) = default;
+	uint32_t VdocId() const noexcept { return vdocId_; }
+	VDocVersion VdocVersion() const noexcept { return version_; }
 
-	VDocIdType Id() const noexcept { return id_; }
+	// Encode into PackedIdRelVec blob (from materialized Pos()).
+	// storeArrayIdx: when false, arrayIdx is implied 0 and not stored.
+	size_t pack(uint8_t* buf, uint32_t previousVdocId, unsigned fieldBits, bool storeArrayIdx) const;
 
-	// PackedIdRelVec callbacks
-	size_t pack(uint8_t* buf, VDocIdType previousId, uint32_t previousField) const;
-	size_t unpack(const uint8_t* buf, uint32_t len, VDocIdType previousId, uint32_t previousField);
-	size_t packWithoutArrayIdxs(uint8_t* buf, VDocIdType previousId, uint32_t previousField) const;
-	size_t unpackWithoutArrayIdxs(const uint8_t* buf, uint32_t len, VDocIdType previousId, uint32_t previousField);
-
-	size_t maxpackedsize() const { return 2 * (sizeof(VDocIdType) + 1) + (pos_.size() * (sizeof(uint32_t) + 1)); }
+	size_t maxpackedsize() const noexcept {
+		// control + id + version + optional arrayIdx + count + payloadLen(+4) + hits
+		return 1 + 4 + 4 + 1 + 5 + 4 + pos_.size() * (1 + 4 + 1 + 4);
+	}
 
 	void reserve(int s) { pos_.reserve(s); }
 	bool empty() const noexcept { return pos_.empty(); }
@@ -102,6 +110,13 @@ public:
 #endif
 	}
 
+	bool IsSimple() const noexcept { return pos_.size() == 1; }
+
+	PosType PeekSimplePos() const noexcept {
+		assertrx_dbg(IsSimple());
+		return pos_[0];
+	}
+
 	size_t size() const noexcept { return pos_.size(); }
 
 	void SimpleCommit() noexcept {
@@ -114,59 +129,234 @@ public:
 
 	size_t HeapSize() const noexcept { return pos_.heap_size(); }
 
+	bool ArrayDataFound() const noexcept {
+		for (const auto& p : pos_) {
+			if (p.arrayIdx() > 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+private:
+	PositionsVector pos_;
+	uint32_t vdocId_ = kEmptyVDocId;
+	VDocVersion version_ = kEmptyVDocVersion;
+};
+
+// Memory-optimized posting view used by PackedIdRelVec::iterator (lazy position unpack).
+class [[nodiscard]] IdRelTypePacked {
+public:
+	explicit IdRelTypePacked(uint32_t vdocId = kEmptyVDocId, VDocVersion version = kEmptyVDocVersion) noexcept
+		: vdocId_(vdocId), version_(version) {}
+	IdRelTypePacked(const IdRelTypePacked& other) = default;
+	IdRelTypePacked(IdRelTypePacked&& other) noexcept
+		: pos_(std::move(other.pos_)),
+		  vdocId_(other.vdocId_),
+		  version_(other.version_),
+		  packedPos_(other.packedPos_),
+		  packedPosLen_(other.packedPosLen_),
+		  packedFieldBits_(other.packedFieldBits_),
+		  packedStoreArrayIdx_(other.packedStoreArrayIdx_),
+		  packedSimple_(other.packedSimple_),
+		  positionsReady_(other.positionsReady_) {
+		other.vdocId_ = kEmptyVDocId;
+		other.version_ = kEmptyVDocVersion;
+		other.packedPos_ = nullptr;
+		other.packedPosLen_ = 0;
+		other.packedFieldBits_ = 0;
+		other.packedStoreArrayIdx_ = false;
+		other.packedSimple_ = false;
+		other.positionsReady_ = true;
+	}
+
+	IdRelTypePacked& operator=(const IdRelTypePacked& other) = default;
+	IdRelTypePacked& operator=(IdRelTypePacked&& other) noexcept {
+		if (this != &other) {
+			pos_ = std::move(other.pos_);
+			vdocId_ = other.vdocId_;
+			version_ = other.version_;
+			packedPos_ = other.packedPos_;
+			packedPosLen_ = other.packedPosLen_;
+			packedFieldBits_ = other.packedFieldBits_;
+			packedStoreArrayIdx_ = other.packedStoreArrayIdx_;
+			packedSimple_ = other.packedSimple_;
+			positionsReady_ = other.positionsReady_;
+			other.vdocId_ = kEmptyVDocId;
+			other.version_ = kEmptyVDocVersion;
+			other.packedPos_ = nullptr;
+			other.packedPosLen_ = 0;
+			other.packedFieldBits_ = 0;
+			other.packedStoreArrayIdx_ = false;
+			other.packedSimple_ = false;
+			other.positionsReady_ = true;
+		}
+		return *this;
+	}
+
+	uint32_t VdocId() const noexcept { return vdocId_; }
+	VDocVersion VdocVersion() const noexcept { return version_; }
+
+	// Decodes vdocId/version and measures full record size without materializing positions.
+	size_t unpackIdentity(const uint8_t* buf, uint32_t len, uint32_t previousVdocId, unsigned fieldBits, bool storeArrayIdx);
+
+	void reserve(int s) {
+		ensurePositionsUnpacked();
+		pos_.reserve(s);
+	}
+	bool empty() {
+		if (!positionsReady_) {
+			return packedPosLen_ == 0;
+		}
+		return pos_.empty();
+	}
+
+	void Add(unsigned pos, unsigned field, unsigned arrayIdx) {
+		assertrx_throw(field <= kMaxFtCompositeFields);
+		ensurePositionsUnpacked();
+		pos_.emplace_back(pos, field, arrayIdx);
+	}
+
+	void Add(PosType p) {
+		ensurePositionsUnpacked();
+		pos_.emplace_back(p);
+	}
+
+	void SortAndUnique() {
+		ensurePositionsUnpacked();
+		boost::sort::pdqsort_branchless(pos_.begin(), pos_.end());
+		auto last = std::unique(pos_.begin(), pos_.end());
+		pos_.resize(last - pos_.begin());
+	}
+
+	void Clear() noexcept {
+		packedPos_ = nullptr;
+		packedPosLen_ = 0;
+		positionsReady_ = true;
+#ifdef REINDEXER_FT_EXTRA_DEBUG
+		pos_.clear<false>();
+#else
+		pos_.clear();
+#endif
+	}
+
+	bool IsSimple() const noexcept {
+		if (!positionsReady_) {
+			return packedSimple_ && packedPos_;
+		}
+		return pos_.size() == 1;
+	}
+
+	// Decode the single simple hit without materializing PositionsVector when still packed.
+	PosType PeekSimplePos() const;
+
+	size_t size() {
+		if (!positionsReady_ && packedSimple_) {
+			return 1;
+		}
+		ensurePositionsUnpacked();
+		return pos_.size();
+	}
+
+	void SimpleCommit() {
+		ensurePositionsUnpacked();
+		boost::sort::pdqsort_branchless(pos_.begin(), pos_.end(),
+										[](const PosType& lhs, const PosType& rhs) noexcept { return lhs.pos() < rhs.pos(); });
+	}
+
+	PositionsVector& Pos() {
+		ensurePositionsUnpacked();
+		return pos_;
+	}
+
+	PositionsVector TakePos() {
+		ensurePositionsUnpacked();
+		PositionsVector res = std::move(pos_);
+		positionsReady_ = false;
+		packedPos_ = nullptr;
+		packedPosLen_ = 0;
+		packedSimple_ = false;
+		return res;
+	}
+
+	size_t HeapSize() {
+		if (!positionsReady_) {
+			// Packed view points into PackedIdRelVec blob; heap cost is counted on the vector.
+			return 0;
+		}
+		return pos_.heap_size();
+	}
+
 	bool ArrayDataFound() {
 		for (const auto& p : Pos()) {
 			if (p.arrayIdx() > 0) {
 				return true;
 			}
 		}
-
 		return false;
 	}
 
 private:
+	void ensurePositionsUnpacked();
+	void unpackPositionsFromPacked();
+
 	PositionsVector pos_;
-	VDocIdType id_ = 0;	 // index of the document in which the word occurs
+	uint32_t vdocId_ = kEmptyVDocId;
+	VDocVersion version_ = kEmptyVDocVersion;
+
+	const uint8_t* packedPos_ = nullptr;
+	uint32_t packedPosLen_ = 0;
+	uint8_t packedFieldBits_ = 0;
+	bool packedStoreArrayIdx_ = false;
+	bool packedSimple_ = false;
+	bool positionsReady_ = true;
 };
 
 class [[nodiscard]] IdRelSet : public std::vector<IdRelType> {
 public:
-	void Add(VDocIdType id, unsigned pos, unsigned field, unsigned arrayIdx) {
-		if (id > max_id_) {
-			max_id_ = id;
-		}
-		if (id < min_id_) {
-			min_id_ = id;
-		}
-
-		auto& last = (empty() || back().Id() != id) ? emplace_back(id) : back();
+	void Add(uint32_t vdocId, VDocVersion version, unsigned pos, unsigned field, unsigned arrayIdx) {
+		auto& last = (empty() || back().VdocId() != vdocId || back().VdocVersion() != version) ? emplace_back(vdocId, version) : back();
 		last.Add(pos, field, arrayIdx);
 	}
-	void SimpleCommit() noexcept {
+	void SimpleCommit() {
 		for (auto& val : *this) {
 			val.SimpleCommit();
 		}
 	}
-
-	VDocIdType max_id_ = 0;
-	VDocIdType min_id_ = INT_MAX;
 };
 
 class [[nodiscard]] PackedIdRelVec {
 public:
-	typedef IdRelType value_type;
+	typedef IdRelTypePacked value_type;
 	typedef unsigned size_type;
-	typedef IdRelType* pointer;
-	typedef IdRelType& reference;
-	typedef const IdRelType* const_pointer;
-	typedef const IdRelType& const_reference;
+	typedef IdRelTypePacked* pointer;
+	typedef IdRelTypePacked& reference;
+	typedef const IdRelTypePacked* const_pointer;
+	typedef const IdRelTypePacked& const_reference;
 
 	using store_container = std::vector<uint8_t>;
 
+	static unsigned NumBitsForFields(size_t numFields) noexcept {
+		if (numFields <= 1) {
+			return 0;
+		}
+		unsigned bits = 0;
+		for (size_t v = numFields - 1; v; v >>= 1) {
+			++bits;
+		}
+		return bits;
+	}
+
+	PackedIdRelVec() = default;
+	explicit PackedIdRelVec(unsigned fieldBits) noexcept : fieldBits_(fieldBits) {}
+
+	unsigned FieldBits() const noexcept { return fieldBits_; }
+	void SetFieldBits(unsigned fieldBits) noexcept { fieldBits_ = fieldBits; }
+
 	struct [[nodiscard]] state {
 		size_type size = 0;
-		VDocIdType lastId = 0;
-		unsigned lastField = 0;
+		uint32_t lastVdocId = kEmptyVDocId;
+		VDocVersion lastVersion = kEmptyVDocVersion;
 	};
 
 	class [[nodiscard]] iterator {
@@ -190,16 +380,12 @@ public:
 	private:
 		reference unpack() {
 			if (!curItemSize_ && it_ != pv_->data_.end()) {
-				size_t curPos = it_ - pv_->data_.begin();
-				if (curPos < arrayFoundPos_) {
-					curItemSize_ = curItem_.unpackWithoutArrayIdxs(&*it_, pv_->data_.end() - it_, st_.lastId, st_.lastField);
-				} else {
-					curItemSize_ = curItem_.unpack(&*it_, pv_->data_.end() - it_, st_.lastId, st_.lastField);
-				}
-
-				st_.lastId = curItem_.Id();
-				assertrx_dbg(curItem_.Pos().size() > 0);
-				st_.lastField = curItem_.Pos()[0].field();
+				const size_t curPos = size_t(it_ - pv_->data_.begin());
+				const bool storeArrayIdx = (curPos >= arrayFoundPos_);
+				curItemSize_ =
+					curItem_.unpackIdentity(&*it_, uint32_t(pv_->data_.end() - it_), st_.lastVdocId, pv_->fieldBits_, storeArrayIdx);
+				st_.lastVdocId = curItem_.VdocId();
+				st_.lastVersion = curItem_.VdocVersion();
 			}
 			return curItem_;
 		}
@@ -218,7 +404,6 @@ public:
 	void erase_back(state st, size_t dataSize) {
 		data_.resize(dataSize);
 		st_ = st;
-		// no array data any more
 		if (arrayFoundPos_ > dataSize) {
 			arrayFoundPos_ = std::numeric_limits<size_t>::max();
 		}
@@ -240,21 +425,15 @@ public:
 				data_.resize(p + sz);
 			}
 
-			if (p < arrayFoundPos_) {
-				if (it->ArrayDataFound()) {
-					arrayFoundPos_ = p;
-				}
+			if (p < arrayFoundPos_ && it->ArrayDataFound()) {
+				arrayFoundPos_ = p;
 			}
+			const bool storeArrayIdx = (p >= arrayFoundPos_);
+			p += it->pack(&*(data_.begin() + p), st_.lastVdocId, fieldBits_, storeArrayIdx);
 
-			if (p >= arrayFoundPos_) {
-				p += it->pack(&*(data_.begin() + p), st_.lastId, st_.lastField);
-			} else {
-				p += it->packWithoutArrayIdxs(&*(data_.begin() + p), st_.lastId, st_.lastField);
-			}
-
-			st_.lastId = it->Id();
+			st_.lastVdocId = it->VdocId();
+			st_.lastVersion = it->VdocVersion();
 			assertrx_dbg(it->Pos().size() > 0);
-			st_.lastField = it->Pos()[0].field();
 			assertrx(p <= data_.size());
 		}
 		data_.resize(p);
@@ -266,6 +445,7 @@ public:
 	void clear() noexcept {
 		data_.clear();
 		st_ = state();
+		arrayFoundPos_ = std::numeric_limits<size_t>::max();
 	}
 	bool empty() const noexcept { return st_.size == 0; }
 
@@ -274,9 +454,23 @@ public:
 		dataSize = data_.size();
 	}
 
+	const uint8_t* data() const noexcept { return data_.data(); }
+	size_t data_size() const noexcept { return data_.size(); }
+	size_t array_found_pos() const noexcept { return arrayFoundPos_; }
+
+	// Adopt packed bytes [0, byteEnd) and packing state after that unchanged prefix.
+	void InitFromUnchangedPrefix(const PackedIdRelVec& src, size_t byteEnd, state stAfterPrefix) {
+		assertrx_dbg(byteEnd <= src.data_.size());
+		assertrx_dbg(stAfterPrefix.size <= src.st_.size);
+		data_.assign(src.data_.begin(), src.data_.begin() + ptrdiff_t(byteEnd));
+		st_ = stAfterPrefix;
+		arrayFoundPos_ = (src.arrayFoundPos_ < byteEnd) ? src.arrayFoundPos_ : std::numeric_limits<size_t>::max();
+	}
+
 private:
 	store_container data_;
 	state st_;
+	unsigned fieldBits_ = 0;
 	size_t arrayFoundPos_ = std::numeric_limits<size_t>::max();
 };
 
@@ -284,8 +478,8 @@ class [[nodiscard]] IdRelVec : public std::vector<IdRelType> {
 public:
 	size_t heap_size() const noexcept {
 		size_t res = capacity() * sizeof(IdRelType);
-		for (const auto& id : *this) {
-			res += id.HeapSize();
+		for (const auto& vdocOccurence : *this) {
+			res += vdocOccurence.HeapSize();
 		}
 		return res;
 	}

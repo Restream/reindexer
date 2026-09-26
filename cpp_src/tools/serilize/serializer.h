@@ -30,8 +30,8 @@ public:
 		const KeyValueType type = GetKeyValueType();
 		if (type.Is<KeyValueType::Tuple>()) {
 			VariantArray compositeValues;
-			uint64_t count = GetVarUInt();
-			compositeValues.reserve(count);
+			const uint64_t count = GetVarUIntCount();
+			compositeValues.reserve(static_cast<size_t>(count));
 			for (size_t i = 0; i < count; ++i) {
 				compositeValues.emplace_back(GetVariant());
 			}
@@ -154,6 +154,15 @@ public:
 		pos_ += l;
 		return parse_uint64(l, buf_ + pos_ - l);
 	}
+	// Count of items that each take at least one byte. Rejects a count that cannot fit in the unread tail before reserve().
+	RX_ALWAYS_INLINE uint64_t GetVarUIntCount() {
+		const uint64_t count = GetVarUInt();
+		const uint64_t unread = len_ - pos_;
+		if (count > unread) [[unlikely]] {
+			throwValuesCountError(count, unread);
+		}
+		return count;
+	}
 	RX_ALWAYS_INLINE ctag GetCTag() { return ctag::Deserialize(*this); }
 	RX_ALWAYS_INLINE carraytag GetCArrayTag() { return carraytag::Deserialize(*this); }
 	RX_ALWAYS_INLINE std::string_view GetVString() {
@@ -182,6 +191,7 @@ private:
 	[[noreturn]] void throwUnderflowError(uint64_t pos, uint64_t need, uint64_t len);
 	[[noreturn]] void throwScanIntError(std::string_view type);
 	[[noreturn]] void throwUnknownTypeError(std::string_view type);
+	[[noreturn]] void throwValuesCountError(uint64_t count, uint64_t unread);
 	Variant getPVStringVariant();
 	const v_string_hdr* getPVStringPtr();
 

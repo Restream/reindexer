@@ -141,8 +141,8 @@ public:
 		return createIntegralError(clientErrors, isLocalCall);
 	}
 
-	Error ExecSelect(const Query& query, QueryResults& result, const sharding::ConnectionsVector& connections, const RdxContext& ctx,
-					 std::function<Error(const Query&, LocalQueryResults&, const RdxContext&)>&& localAction);
+	Error ExecSelect(ConstQueryImpl query, QueryResults& result, const sharding::ConnectionsVector& connections, const RdxContext& ctx,
+					 std::function<Error(ConstQueryImpl, LocalQueryResults&, const RdxContext&)>&& localAction);
 
 private:
 	Error createIntegralError(std::vector<std::pair<Error, int>>& errors, size_t clientCount);

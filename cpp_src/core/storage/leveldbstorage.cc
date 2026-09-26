@@ -5,6 +5,8 @@
 #include <leveldb/comparator.h>
 #include <leveldb/db.h>
 #include <leveldb/slice.h>
+#include <cerrno>
+#include <cstring>
 #include "leveldblogger.h"
 #include "tools/assertrx.h"
 #include "tools/fsops.h"
@@ -15,7 +17,6 @@ namespace datastorage {
 using namespace std::string_view_literals;
 
 constexpr auto kStorageNotInitialized = "Storage is not initialized"sv;
-constexpr auto kLostDirName = "lost"sv;
 
 static void toWriteOptions(const StorageOpts& opts, leveldb::WriteOptions& wopts) noexcept { wopts.sync = opts.IsSync(); }
 
@@ -49,7 +50,6 @@ Error LevelDbStorage::Open(const std::string& path, const StorageOpts& opts) {
 }
 
 void LevelDbStorage::Destroy(const std::string& path) {
-	std::ignore = fs::RmDirAll(fs::JoinPath(path, std::string(kLostDirName)));
 	leveldb::Options options;
 	options.create_if_missing = true;
 	db_.reset();
@@ -57,9 +57,9 @@ void LevelDbStorage::Destroy(const std::string& path) {
 	if (!status.ok()) {
 		fprintf(stderr, "reindexer error: unable to remove LevelDB's storage: %s, %s. Trying to remove files using backup mechanism...\n",
 				path.c_str(), status.ToString().c_str());
-		if (fs::RmDirAll(path) != 0) {
-			fprintf(stderr, "reindexer error: unable to remove LevelDB's storage: %s, %s\n", path.c_str(), strerror(errno));
-		}
+	}
+	if (fs::RmDirAll(path) != 0 && errno != ENOENT) {
+		fprintf(stderr, "reindexer error: unable to remove LevelDB's storage: %s, %s\n", path.c_str(), strerror(errno));
 	}
 }
 

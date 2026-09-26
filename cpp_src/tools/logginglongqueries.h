@@ -8,6 +8,7 @@
 namespace reindexer {
 
 class Query;
+
 class LocalTransaction;
 class Explain;
 

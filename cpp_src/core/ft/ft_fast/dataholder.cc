@@ -24,12 +24,13 @@ namespace {
 inline bool IsFtWordIndexable(std::string_view word) noexcept { return !word.empty() && word.size() <= kMaxFtWordLen; }
 constexpr size_t kMinTypoWordLen = 3;
 
-template <typename T>
-void waitForTasksOnException(std::vector<std::future<T>>& tasks) noexcept {
+template <typename Cont>
+void waitForTasksOnException(Cont& tasks) noexcept {
 	for (auto& task : tasks) {
 		if (task.valid()) {
 			try {
-				if constexpr (std::is_void_v<T>) {
+				using Fut = std::remove_reference_t<decltype(task)>;
+				if constexpr (std::is_void_v<decltype(std::declval<Fut>().get())>) {
 					task.get();
 				} else {
 					std::ignore = task.get();
@@ -74,6 +75,7 @@ void InsertSuffixKeys(SuffixTree& tree, std::vector<SuffixKey>& suffixes, const 
 template <typename IdCont>
 DataHolder<IdCont>::DataHolder(FTConfig* c) {
 	cfg_ = c;
+	fieldBits_ = PackedIdRelVec::NumBitsForFields(c->fieldsCfg.size());
 	if (cfg_->splitterType == FTConfig::Splitter::Fast) {
 		splitter_ = make_intrusive<FastTextSplitter>(cfg_->splitOptions);
 	} else if (cfg_->splitterType == FTConfig::Splitter::MMSegCN) {
@@ -131,7 +133,9 @@ size_t IDataHolder::GetMemStat() {
 template <typename IdCont>
 size_t DataHolder<IdCont>::GetMemStat() {
 	size_t res = IDataHolder::GetMemStat();
-	res += wordOccurences_.capacity() * sizeof(IdCont) + wordOccurencesHeapSize_;
+	res += wordOccurences_.capacity() * sizeof(typename decltype(wordOccurences_)::value_type) + wordOccurences_.size() * sizeof(IdCont) +
+		   wordOccurencesHeapSize_.load(std::memory_order_relaxed);
+	res += sizeof(occurencePtrLocks_);
 	return res;
 }
 
@@ -149,7 +153,9 @@ void DataHolder<IdCont>::Clear() {
 	wordIds_.clear();
 	wordsProcessed_ = 0;
 	wordOccurences_.clear();
-	wordOccurencesHeapSize_ = 0;
+	wordOccurencesHeapSize_.store(0, std::memory_order_relaxed);
+	optimizeNextWordOrdinal_ = 0;
+	optimizeResumePending_ = false;
 	needRebuild_ = true;
 }
 
@@ -389,7 +395,8 @@ static std::vector<std::pair<size_t, size_t>> makeBuildTasksByTextSize(const VDo
 	return tasks;
 }
 
-void NewWordsOccurences::appendOccurence(VDocIdType docId, unsigned pos, unsigned field, unsigned arrayIdx, words_map_t::iterator wordIt) {
+void NewWordsOccurences::appendOccurence(uint32_t vdocId, VDocVersion version, unsigned pos, unsigned field, unsigned arrayIdx,
+										 words_map_t::iterator wordIt) {
 	const uint32_t newIdx = occurrences_.size();
 	if (wordIt->second.first == kInvalidLink) {
 		wordIt->second = {newIdx, newIdx};
@@ -397,19 +404,19 @@ void NewWordsOccurences::appendOccurence(VDocIdType docId, unsigned pos, unsigne
 		occurrences_[wordIt->second.second].link = newIdx;
 		wordIt->second.second = newIdx;
 	}
-	occurrences_.emplace_back(Occurence{docId, kInvalidLink, PosType(pos, field, arrayIdx)});
+	occurrences_.emplace_back(Occurence{vdocId, version, kInvalidLink, PosType(pos, field, arrayIdx)});
 }
 
-void NewWordsOccurences::AddPrehashed(std::string_view word, size_t whash, VDocIdType docId, unsigned pos, unsigned field,
-									  unsigned arrayIdx) {
+void NewWordsOccurences::AddPrehashed(std::string_view word, size_t whash, uint32_t vdocId, VDocVersion version, unsigned pos,
+									  unsigned field, unsigned arrayIdx) {
 	auto [wordIt, emplaced] = words_.try_emplace_prehashed(whash, word, WordIndices{kInvalidLink, kInvalidLink});
-	appendOccurence(docId, pos, field, arrayIdx, wordIt);
+	appendOccurence(vdocId, version, pos, field, arrayIdx, wordIt);
 	(void)emplaced;
 }
 
-void NewWordsOccurences::Add(std::string word, VDocIdType docId, unsigned pos, unsigned field, unsigned arrayIdx) {
+void NewWordsOccurences::Add(std::string word, uint32_t vdocId, VDocVersion version, unsigned pos, unsigned field, unsigned arrayIdx) {
 	auto [wordIt, emplaced] = words_.try_emplace(std::move(word), WordIndices{kInvalidLink, kInvalidLink});
-	appendOccurence(docId, pos, field, arrayIdx, wordIt);
+	appendOccurence(vdocId, version, pos, field, arrayIdx, wordIt);
 	(void)emplaced;
 }
 
@@ -417,13 +424,11 @@ template <typename IdCont>
 size_t DataHolder<IdCont>::appendOccurenceChain(const std::vector<Occurence>& occurrences, uint32_t firstIdx, IdRelSet& chain,
 												IdCont& dst) {
 	chain.resize(0);
-	chain.min_id_ = INT_MAX;
-	chain.max_id_ = 0;
 
 	uint32_t idx = firstIdx;
 	while (idx != NewWordsOccurences::kInvalidLink) {
 		const auto& occ = occurrences[idx];
-		chain.Add(occ.docId, occ.pos.pos(), occ.pos.field(), occ.pos.arrayIdx());
+		chain.Add(occ.vdocId, occ.version, occ.pos.pos(), occ.pos.field(), occ.pos.arrayIdx());
 		idx = occ.link;
 	}
 	const size_t heapBefore = dst.heap_size();
@@ -436,8 +441,9 @@ size_t DataHolder<IdCont>::appendOccurenceChain(const std::vector<Occurence>& oc
 }
 
 template <typename IdCont>
-NewWordsOccurencesPtr DataHolder<IdCont>::buildWordsMap(VDocsTexts::iterator textsBegin, std::vector<uint32_t>::const_iterator idsBegin,
-														std::vector<h_vector<float, 3>>::iterator wordsCountsBegin, size_t numDocs,
+NewWordsOccurencesPtr DataHolder<IdCont>::buildWordsMap(VDocsTexts::iterator textsBegin,
+														std::vector<VDocPosting>::const_iterator vdocsBegin,
+														std::vector<VDocWordCounts>::iterator wordsCountsBegin, size_t numDocs,
 														size_t numFields, std::atomic<size_t>* tooLongWordsSkipped) {
 	auto nwo = std::make_shared<NewWordsOccurences>();
 	std::vector<std::string_view> virtualWords;
@@ -447,13 +453,14 @@ NewWordsOccurencesPtr DataHolder<IdCont>::buildWordsMap(VDocsTexts::iterator tex
 	size_t tooLongWordsSkippedLocal = 0;
 
 	auto textsIt = textsBegin;
-	auto idsIt = idsBegin;
+	auto vdocsIt = vdocsBegin;
 	auto wordsCountsIt = wordsCountsBegin;
-	for (size_t i = 0; i < numDocs; ++i, ++textsIt, ++idsIt, ++wordsCountsIt) {
-		const size_t vdocId = *idsIt;
+	for (size_t i = 0; i < numDocs; ++i, ++textsIt, ++vdocsIt, ++wordsCountsIt) {
+		const uint32_t vdocId = vdocsIt->vdocId;
+		const VDocVersion version = vdocsIt->version;
 		auto& vdocsText = *textsIt;
 		wordsCountsIt->resize(0);
-		wordsCountsIt->resize(numFields, 0.0);
+		wordsCountsIt->resize(numFields, 0);
 
 		for (size_t idx = 0, arrayIdx = 0, sz = vdocsText.size(); idx < sz; ++idx, ++arrayIdx) {
 			task->SetText(vdocsText[idx].first);
@@ -485,7 +492,7 @@ NewWordsOccurencesPtr DataHolder<IdCont>::buildWordsMap(VDocsTexts::iterator tex
 					}
 				}
 
-				nwo->AddPrehashed(occurence.word, whash, vdocId, occurence.pos, field, arrayIdx);
+				nwo->AddPrehashed(occurence.word, whash, vdocId, version, occurence.pos, field, arrayIdx);
 
 				if (cfg_->enableNumbersSearch && is_number(occurence.word)) {
 					std::ignore = NumToText::convert(occurence.word, virtualWords);
@@ -494,7 +501,7 @@ NewWordsOccurencesPtr DataHolder<IdCont>::buildWordsMap(VDocsTexts::iterator tex
 							++tooLongWordsSkippedLocal;
 							continue;
 						}
-						nwo->Add(std::string(numberWord), vdocId, occurence.pos, field, arrayIdx);
+						nwo->Add(std::string(numberWord), vdocId, version, occurence.pos, field, arrayIdx);
 						assertrx_dbg(wordsCountsIt->size() > field);
 						++(*wordsCountsIt)[field];
 					}
@@ -510,18 +517,18 @@ NewWordsOccurencesPtr DataHolder<IdCont>::buildWordsMap(VDocsTexts::iterator tex
 }
 
 template <typename IdCont>
-NewWordsOccurencesPtr DataHolder<IdCont>::buildWordsMap(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numFields,
-														std::vector<h_vector<float, 3>>& vdocsWordsCountsByFields,
+NewWordsOccurencesPtr DataHolder<IdCont>::buildWordsMap(VDocsTexts& vdocsTexts, const std::vector<VDocPosting>& vdocs, size_t numFields,
+														std::vector<VDocWordCounts>& vdocsWordsCountsByFields,
 														std::atomic<size_t>* tooLongWordsSkipped) {
 	vdocsWordsCountsByFields.resize(vdocsTexts.size());
-	return buildWordsMap(vdocsTexts.begin(), vdocsIds.begin(), vdocsWordsCountsByFields.begin(), vdocsTexts.size(), numFields,
+	return buildWordsMap(vdocsTexts.begin(), vdocs.begin(), vdocsWordsCountsByFields.begin(), vdocsTexts.size(), numFields,
 						 tooLongWordsSkipped);
 }
 
 template <typename IdCont>
-std::vector<NewWordsOccurencesPtr> DataHolder<IdCont>::buildWordsMapParallel(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds,
+std::vector<NewWordsOccurencesPtr> DataHolder<IdCont>::buildWordsMapParallel(VDocsTexts& vdocsTexts, const std::vector<VDocPosting>& vdocs,
 																			 size_t numFields,
-																			 std::vector<h_vector<float, 3>>& vdocsWordsCountsByFields,
+																			 std::vector<VDocWordCounts>& vdocsWordsCountsByFields,
 																			 std::atomic<size_t>* tooLongWordsSkipped) {
 	vdocsWordsCountsByFields.resize(vdocsTexts.size());
 
@@ -532,8 +539,8 @@ std::vector<NewWordsOccurencesPtr> DataHolder<IdCont>::buildWordsMapParallel(VDo
 	auto tasksWaiter = MakeScopeGuard([&tasks] { waitForTasksOnException(tasks); });
 	for (const auto& [from, to] : taskBorders) {
 		tasks.emplace_back(
-			threadPool_.submit_task([this, &vdocsTexts, &vdocsIds, from, to, numFields, &vdocsWordsCountsByFields, tooLongWordsSkipped] {
-				return buildWordsMap(vdocsTexts.begin() + from, vdocsIds.begin() + from, vdocsWordsCountsByFields.begin() + from, to - from,
+			threadPool_.submit_task([this, &vdocsTexts, &vdocs, from, to, numFields, &vdocsWordsCountsByFields, tooLongWordsSkipped] {
+				return buildWordsMap(vdocsTexts.begin() + from, vdocs.begin() + from, vdocsWordsCountsByFields.begin() + from, to - from,
 									 numFields, tooLongWordsSkipped);
 			}));
 	}
@@ -572,9 +579,10 @@ void DataHolder<IdCont>::updateOccurences(const NewWordsOccurencesPtr& nwo, std:
 			wordsMapStringsHeapSize_ += it->first.capacity() * sizeof(std::string::value_type);
 			const auto wordId = words_.Add(utf8_to_utf16(it->first), wordOrdinal);
 			wordIds_.emplace_back(wordId);
-			wordOccurences_.emplace_back();
+			wordOccurences_.emplace_back(makeEmptyOccurences());
 		}
-		wordOccurencesHeapSize_ += appendOccurenceChain(nwo->Occurences(), indices.first, chain, wordOccurences_[wordOrdinal]);
+		wordOccurencesHeapSize_.fetch_add(appendOccurenceChain(nwo->Occurences(), indices.first, chain, *wordOccurences_[wordOrdinal]),
+										  std::memory_order_relaxed);
 	}
 }
 
@@ -614,7 +622,7 @@ void DataHolder<IdCont>::updateOccurencesParallel(const std::vector<NewWordsOccu
 				wordsMapStringsHeapSize_ += it->first.capacity() * sizeof(std::string::value_type);
 				const auto wordId = words_.Add(utf8_to_utf16(it->first), wordOrdinal);
 				wordIds_.emplace_back(wordId);
-				wordOccurences_.emplace_back();
+				wordOccurences_.emplace_back(makeEmptyOccurences());
 			}
 			jobs.push_back(OccurenceJob{wordOrdinal, indices.first, nwo.get()});
 		}
@@ -641,7 +649,7 @@ void DataHolder<IdCont>::updateOccurencesParallel(const std::vector<NewWordsOccu
 			IdRelSet chain;
 			size_t heapAdded = 0;
 			for (const auto& job : shards[shard]) {
-				heapAdded += appendOccurenceChain(job.nwo->Occurences(), job.firstIdx, chain, wordOccurences_[job.wordOrdinal]);
+				heapAdded += appendOccurenceChain(job.nwo->Occurences(), job.firstIdx, chain, *wordOccurences_[job.wordOrdinal]);
 			}
 			return heapAdded;
 		}));
@@ -649,7 +657,7 @@ void DataHolder<IdCont>::updateOccurencesParallel(const std::vector<NewWordsOccu
 
 	for (auto& task : appendTasks) {
 		try {
-			wordOccurencesHeapSize_ += task.get();
+			wordOccurencesHeapSize_.fetch_add(task.get(), std::memory_order_relaxed);
 		} catch (...) {
 			exwr.SetException(std::current_exception());
 		}
@@ -662,17 +670,17 @@ template <typename IdCont>
 template <bool Multithreaded>
 void DataHolder<IdCont>::shrinkWordOccurences() {
 	if (wordOccurences_.empty()) {
-		wordOccurencesHeapSize_ = 0;
+		wordOccurencesHeapSize_.store(0, std::memory_order_relaxed);
 		return;
 	}
 
 	if constexpr (!Multithreaded) {
 		size_t heap = 0;
 		for (auto& occ : wordOccurences_) {
-			occ.shrink_to_fit();
-			heap += occ.heap_size();
+			occ->shrink_to_fit();
+			heap += occ->heap_size();
 		}
-		wordOccurencesHeapSize_ = heap;
+		wordOccurencesHeapSize_.store(heap, std::memory_order_relaxed);
 		wordOccurences_.shrink_to_fit();
 		return;
 	}
@@ -690,8 +698,8 @@ void DataHolder<IdCont>::shrinkWordOccurences() {
 		tasks.emplace_back(threadPool_.submit_task([this, from, to] {
 			size_t heap = 0;
 			for (size_t i = from; i < to; ++i) {
-				wordOccurences_[i].shrink_to_fit();
-				heap += wordOccurences_[i].heap_size();
+				wordOccurences_[i]->shrink_to_fit();
+				heap += wordOccurences_[i]->heap_size();
 			}
 			return heap;
 		}));
@@ -708,12 +716,244 @@ void DataHolder<IdCont>::shrinkWordOccurences() {
 	tasksWaiter.Disable();
 	exwr.RethrowException();
 
-	wordOccurencesHeapSize_ = heap;
+	wordOccurencesHeapSize_.store(heap, std::memory_order_relaxed);
 }
 
 template <typename IdCont>
-void DataHolder<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<uint32_t>& vdocsIds, size_t numDocsTotal, size_t numFields,
-								 std::vector<h_vector<float, 3>>& vdocsWordsCountsByFields, bool multithreaded) {
+DeletedScanStat DataHolder<IdCont>::OptimizeDeleted(const std::function<bool(uint32_t, VDocVersion)>& isDeleted,
+													const index::ICancelable& cancelable) {
+	// Cancel roughly every few hundred microseconds of scrub work on hot namespaces.
+	constexpr size_t kCancelCheckPostings = 512;
+	constexpr size_t kTargetChunkBytes = 100 * 1024;
+	constexpr size_t kParallelTasks = 4;
+
+	struct [[nodiscard]] RangeResult {
+		DeletedScanStat stat;
+		size_t resumeOrdinal = 0;  // valid only when stat.canceled
+	};
+
+	DeletedScanStat stat;
+	optimizeResumePending_ = true;
+
+	const auto listBytes = [](const std::shared_ptr<IdCont>& sp) noexcept -> size_t {
+		if (!sp) {
+			return 0;
+		}
+		if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
+			return sp->data_size();
+		} else {
+			return sp->heap_size();
+		}
+	};
+
+	const auto scrubWord = [this, &isDeleted, &cancelable](size_t wordOrdinal, size_t& checked, DeletedScanStat& localStat) -> bool {
+		const auto oldSp = loadOccurences(wordOrdinal);
+		if (!oldSp) {
+			return false;
+		}
+
+		++localStat.listsScanned;
+
+		const auto checkPostingsCancel = [&checked, &cancelable, &localStat]() -> bool {
+			if ((++checked % kCancelCheckPostings) == 0 && cancelable.IsCanceled()) {
+				localStat.canceled = WasCanceled_True;
+				return true;
+			}
+			return false;
+		};
+
+		if (cancelable.IsCanceled()) {
+			localStat.canceled = WasCanceled_True;
+			return true;
+		}
+
+		IdCont rebuilt;
+		bool needPublish = false;
+
+		if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
+			const uint8_t* const data = oldSp->data();
+			const size_t dataSize = oldSp->data_size();
+			const unsigned fieldBits = oldSp->FieldBits();
+			const size_t arrayFoundPos = oldSp->array_found_pos();
+
+			size_t firstDeletedByte = dataSize;
+			PackedIdRelVec::state prefixSt;
+			bool hasDeleted = false;
+			{
+				PackedIdRelVec::state st;
+				IdRelTypePacked cur;
+				size_t pos = 0;
+				while (pos < dataSize) {
+					if (checkPostingsCancel()) {
+						return true;
+					}
+					const PackedIdRelVec::state stateBefore = st;
+					const bool storeArrayIdx = (pos >= arrayFoundPos);
+					const size_t itemSize =
+						cur.unpackIdentity(data + pos, uint32_t(dataSize - pos), st.lastVdocId, fieldBits, storeArrayIdx);
+					if (isDeleted(cur.VdocId(), cur.VdocVersion())) {
+						hasDeleted = true;
+						firstDeletedByte = pos;
+						prefixSt = stateBefore;
+						break;
+					}
+					st.lastVdocId = cur.VdocId();
+					st.lastVersion = cur.VdocVersion();
+					++st.size;
+					pos += itemSize;
+				}
+			}
+
+			if (hasDeleted) {
+				rebuilt.SetFieldBits(fieldBits);
+				rebuilt.InitFromUnchangedPrefix(*oldSp, firstDeletedByte, prefixSt);
+
+				PackedIdRelVec::state st = prefixSt;
+				IdRelTypePacked cur;
+				size_t pos = firstDeletedByte;
+				while (pos < dataSize) {
+					if (checkPostingsCancel()) {
+						return true;
+					}
+					const bool storeArrayIdx = (pos >= arrayFoundPos);
+					const size_t itemSize =
+						cur.unpackIdentity(data + pos, uint32_t(dataSize - pos), st.lastVdocId, fieldBits, storeArrayIdx);
+					if (isDeleted(cur.VdocId(), cur.VdocVersion())) {
+						++localStat.deletedPostings;
+					} else {
+						IdRelType live(cur.VdocId(), cur.VdocVersion());
+						for (const auto& p : cur.Pos()) {
+							live.Add(p);
+						}
+						rebuilt.insert_back(&live, &live + 1);
+					}
+					st.lastVdocId = cur.VdocId();
+					st.lastVersion = cur.VdocVersion();
+					pos += itemSize;
+				}
+				needPublish = true;
+			}
+		} else {
+			const size_t listSize = oldSp->size();
+			size_t firstDeleted = listSize;
+			for (size_t i = 0; i < listSize; ++i) {
+				if (checkPostingsCancel()) {
+					return true;
+				}
+				const auto& occ = (*oldSp)[i];
+				if (isDeleted(occ.VdocId(), occ.VdocVersion())) {
+					firstDeleted = i;
+					break;
+				}
+			}
+
+			if (firstDeleted != listSize) {
+				rebuilt.reserve(listSize - 1);
+				rebuilt.insert(rebuilt.end(), oldSp->begin(), oldSp->begin() + ptrdiff_t(firstDeleted));
+				for (size_t i = firstDeleted; i < listSize; ++i) {
+					if (checkPostingsCancel()) {
+						return true;
+					}
+					const auto& occ = (*oldSp)[i];
+					if (isDeleted(occ.VdocId(), occ.VdocVersion())) {
+						++localStat.deletedPostings;
+					} else {
+						rebuilt.push_back(occ);
+					}
+				}
+				needPublish = true;
+			}
+		}
+
+		if (needPublish) {
+			const size_t oldHeapSize = oldSp->heap_size();
+			const size_t newHeapSize = rebuilt.heap_size();
+			storeOccurences(wordOrdinal, std::make_shared<IdCont>(std::move(rebuilt)));
+			adjustOccurencesHeapSize(oldHeapSize, newHeapSize);
+		}
+		return false;
+	};
+
+	const auto scrubRange = [&scrubWord](size_t from, size_t to) -> RangeResult {
+		RangeResult result;
+		size_t checked = 0;
+		for (size_t wordOrdinal = from; wordOrdinal < to; ++wordOrdinal) {
+			if (scrubWord(wordOrdinal, checked, result.stat)) {
+				result.stat.canceled = WasCanceled_True;
+				result.resumeOrdinal = wordOrdinal;
+				return result;
+			}
+		}
+		return result;
+	};
+
+	size_t cursor = optimizeNextWordOrdinal_;
+	const size_t wordsCount = wordOccurences_.size();
+	while (cursor < wordsCount) {
+		if (cancelable.IsCanceled()) {
+			stat.canceled = WasCanceled_True;
+			optimizeNextWordOrdinal_ = cursor;
+			return stat;
+		}
+
+		h_vector<std::pair<size_t, size_t>, kParallelTasks> ranges;
+		size_t rangePos = cursor;
+		for (size_t task = 0; task < kParallelTasks && rangePos < wordsCount; ++task) {
+			const size_t rangeFrom = rangePos;
+			size_t bytes = 0;
+			do {
+				bytes += listBytes(loadOccurences(rangePos));
+				++rangePos;
+			} while (rangePos < wordsCount && bytes < kTargetChunkBytes);
+			ranges.emplace_back(rangeFrom, rangePos);
+		}
+		if (ranges.empty()) {
+			break;
+		}
+
+		ExceptionPtrWrapper exwr;
+		h_vector<std::future<RangeResult>, kParallelTasks> tasks;
+		auto tasksWaiter = MakeScopeGuard([&tasks] { waitForTasksOnException(tasks); });
+		for (const auto& [from, to] : ranges) {
+			tasks.emplace_back(threadPool_.submit_task([&scrubRange, from, to] { return scrubRange(from, to); }));
+		}
+
+		WasCanceled canceled = WasCanceled_False;
+		size_t resumeOrdinal = ranges.back().second;
+		for (size_t i = 0; i < tasks.size(); ++i) {
+			try {
+				const RangeResult local = tasks[i].get();
+				stat.listsScanned += local.stat.listsScanned;
+				stat.deletedPostings += local.stat.deletedPostings;
+				if (local.stat.canceled) {
+					canceled = WasCanceled_True;
+					resumeOrdinal = std::min(resumeOrdinal, local.resumeOrdinal);
+				}
+			} catch (...) {
+				exwr.SetException(std::current_exception());
+			}
+		}
+		tasksWaiter.Disable();
+		exwr.RethrowException();
+
+		if (canceled) {
+			stat.canceled = WasCanceled_True;
+			optimizeNextWordOrdinal_ = resumeOrdinal;
+			return stat;
+		}
+
+		cursor = ranges.back().second;
+		optimizeNextWordOrdinal_ = cursor;
+	}
+
+	optimizeNextWordOrdinal_ = 0;
+	optimizeResumePending_ = false;
+	return stat;
+}
+
+template <typename IdCont>
+void DataHolder<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<VDocPosting>& vdocs, size_t numDocsTotal, size_t numFields,
+								 std::vector<VDocWordCounts>& vdocsWordsCountsByFields, bool multithreaded) {
 	using namespace std::chrono;
 
 	const auto tm0 = system_clock_w::now();
@@ -724,7 +964,7 @@ void DataHolder<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<uint3
 	const bool firstBuild = (wordsProcessed_ == 0);
 
 	if (!multithreaded) {
-		auto nwo = buildWordsMap(vdocsTexts, vdocsIds, numFields, vdocsWordsCountsByFields, &tooLongWordsSkipped);
+		auto nwo = buildWordsMap(vdocsTexts, vdocs, numFields, vdocsWordsCountsByFields, &tooLongWordsSkipped);
 		tm1 = system_clock_w::now();
 		if (updatedWordOrdinalsPtr) {
 			updatedWordOrdinals.reserve(nwo->Words().size());
@@ -743,7 +983,7 @@ void DataHolder<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<uint3
 		}
 		tm5 = system_clock_w::now();
 	} else {
-		auto nwos = buildWordsMapParallel(vdocsTexts, vdocsIds, numFields, vdocsWordsCountsByFields, &tooLongWordsSkipped);
+		auto nwos = buildWordsMapParallel(vdocsTexts, vdocs, numFields, vdocsWordsCountsByFields, &tooLongWordsSkipped);
 		tm1 = system_clock_w::now();
 		updateOccurencesParallel(nwos, updatedWordOrdinalsPtr);
 		tm2 = system_clock_w::now();
@@ -788,7 +1028,8 @@ void DataHolder<IdCont>::logPotentialStopWords(std::vector<size_t>& updatedWordO
 	const auto end = std::unique(updatedWordOrdinals.begin(), updatedWordOrdinals.end());
 	for (auto it = updatedWordOrdinals.begin(); it != end; ++it) {
 		const size_t wordOrdinal = *it;
-		const size_t docsCount = wordOccurences_[wordOrdinal].size();
+		const auto sp = loadOccurences(wordOrdinal);
+		const size_t docsCount = sp ? sp->size() : 0;
 		if (docsCount > 1000 && docsCount * 5 >= numDocsTotal) {
 			out << utf16_to_utf8(words_.GetWord(wordIds_[wordOrdinal])) << "(" << docsCount << ") ";
 		}

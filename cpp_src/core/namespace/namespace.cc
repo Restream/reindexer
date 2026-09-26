@@ -280,10 +280,9 @@ void Namespace::doRename(const Namespace::Ptr& dst, std::string_view newName, co
 		logFmt(LogInfo, "[rename] Rename namespace '{}' to '{}'", srcNs.name_, newNameObj);
 		srcNs.name_ = newNameObj;
 	}
-	srcNs.payloadType_.SetName(srcNs.name_);
-	srcNs.tagsMatcher_.UpdatePayloadType(srcNs.payloadType_, srcNs.indexes_.SparseIndexes(), NeedChangeTmVersion::No);
+	srcNs.indexRegistry_.RenamePayloadType(srcNs.name_);
 	logFmt(LogInfo, "[tm:{}]:{}: Rename done. TagsMatcher: {{ state_token: {:#08x}, version: {} }}", srcNs.name_, srcNs.wal_.GetServer(),
-		   srcNs.tagsMatcher_.stateToken(), srcNs.tagsMatcher_.version());
+		   srcNs.tagsMatcher().stateToken(), srcNs.tagsMatcher().version());
 
 	if (requiresStorageMove) {
 		logFmt(LogInfo, "[rename] Storage was moved from '{}' to '{}'", srcDbpath, dbpath);

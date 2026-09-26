@@ -38,7 +38,7 @@ public:
 	bool GetLastStatus() const noexcept;
 
 protected:
-	EmbedderBase(std::string_view name, std::string_view format, std::string_view fieldName, EmbedderConfig&& config,
+	EmbedderBase(std::string_view name, std::string_view fieldName, std::string serverPath, EmbedderConfig&& config,
 				 PoolConfig&& poolConfig, const std::shared_ptr<EmbeddersCache>& cache);
 
 	void calculate(const RdxContext& ctx, const embedding::Adapter& srcAdapter, system_clock_w::time_point tmStart, bool enablePerfStat,
@@ -90,8 +90,8 @@ protected:
 
 class [[nodiscard]] UpsertEmbedder final : public EmbedderBase {
 public:
-	UpsertEmbedder(std::string_view name, std::string_view fieldName, EmbedderConfig&& config, PoolConfig&& poolConfig,
-				   const std::shared_ptr<EmbeddersCache>& cache, bool enablePerfStat);
+	UpsertEmbedder(std::string_view name, std::string_view fieldName, std::string serverPath, EmbedderConfig&& config,
+				   PoolConfig&& poolConfig, const std::shared_ptr<EmbeddersCache>& cache, bool enablePerfStat);
 	~UpsertEmbedder() noexcept override = default;
 
 	UpsertEmbedder() = delete;
@@ -120,8 +120,8 @@ private:
 
 class [[nodiscard]] QueryEmbedder final : public EmbedderBase {
 public:
-	QueryEmbedder(std::string_view name, std::string_view fieldName, EmbedderConfig&& config, PoolConfig&& poolConfig,
-				  const std::shared_ptr<EmbeddersCache>& cache, bool enablePerfStat);
+	QueryEmbedder(std::string_view name, std::string_view fieldName, std::string serverPath, EmbedderConfig&& config,
+				  PoolConfig&& poolConfig, const std::shared_ptr<EmbeddersCache>& cache, bool enablePerfStat);
 	~QueryEmbedder() noexcept override = default;
 
 	QueryEmbedder() = delete;

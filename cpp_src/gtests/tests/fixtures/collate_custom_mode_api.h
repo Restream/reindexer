@@ -32,8 +32,7 @@ protected:
 	}
 
 	void SortByName(QueryResults& qr) {
-		Query query{default_namespace};
-		query.Sort(kFieldName, false);
+		const auto query = Query(default_namespace).Sort(kFieldName, SortOrder::Asc);
 		rt.Select(query, qr);
 	}
 

@@ -18,7 +18,7 @@ RUN cd /src && \
 
 FROM debian:stable-slim
 
-ARG RX_VERSION=v5.16.0
+ARG RX_VERSION=v5.17.0
 
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh
@@ -33,7 +33,13 @@ ENV RX_CORELOG=stdout
 ENV RX_HTTPLOG=stdout
 ENV RX_RPCLOG=stdout
 ENV RX_SERVERLOG=stdout
+ENV RX_GRPCLOG=none
 ENV RX_LOGLEVEL=info
+ENV RX_CORE_LOGLEVEL=
+ENV RX_SERVER_LOGLEVEL=
+ENV RX_HTTP_LOGLEVEL=
+ENV RX_RPC_LOGLEVEL=
+ENV RX_GRPC_LOGLEVEL=
 # Number of thread to build IVF's centroids
 ENV RX_IVF_OMP_THREADS=8
 ENV OPENBLAS_NUM_THREADS=8

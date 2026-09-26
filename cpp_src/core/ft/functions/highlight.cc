@@ -8,7 +8,7 @@
 
 namespace reindexer {
 
-bool Highlight::Process(ItemRef& res, PayloadType& pl_type, const FtFuncStruct& func, std::vector<key_string>& stringsHolder) {
+bool Highlight::Process(ItemRef& res, const PayloadType& pl_type, const FtFuncStruct& func, std::vector<key_string>& stringsHolder) {
 	if (func.funcArgs.size() < 2) {
 		throw Error(errParams, "Invalid highlight params need minimum 2 - have {}", func.funcArgs.size());
 	}

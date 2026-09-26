@@ -284,7 +284,7 @@ void write_InvertedLists(const InvertedLists* ils, const std::atomic_int32_t& ca
             WRITEVECTOR(sizes);
         }
         if (cancel.load(std::memory_order_relaxed)) {
-            FAISS_THROW_MSG("Inverted lists saving was canceled");
+            FAISS_THROW_MSG(kSavingCanceledMsg);
         }
         // make a single contiguous data buffer (useful for mmapping)
         if (skipCodesDump) {
@@ -297,7 +297,7 @@ void write_InvertedLists(const InvertedLists* ils, const std::atomic_int32_t& ca
                     }
                 }
                 if (cancel.load(std::memory_order_relaxed)) {
-                    FAISS_THROW_MSG("Inverted lists saving was canceled");
+                    FAISS_THROW_MSG(kSavingCanceledMsg);
                 }
             }
         } else {
@@ -311,7 +311,7 @@ void write_InvertedLists(const InvertedLists* ils, const std::atomic_int32_t& ca
                     }
 
                     if (cancel.load(std::memory_order_relaxed)) {
-                        FAISS_THROW_MSG("Inverted lists saving was canceled");
+                        FAISS_THROW_MSG(kSavingCanceledMsg);
                     }
                 }
             }
@@ -691,7 +691,7 @@ void write_index(const Index* idx, IOWriter* f, const std::atomic_int32_t& cance
         const bool skipMapData = skipCodesDump;
         write_ivf_header(ivfl_2, f, cancel, skipMapData);
         if (cancel.load(std::memory_order_relaxed)) {
-            FAISS_THROW_MSG("IVF index saving was canceled");
+            FAISS_THROW_MSG(kSavingCanceledMsg);
         }
         write_InvertedLists(ivfl_2->invlists, cancel, skipCodesDump, f);
     } else if (

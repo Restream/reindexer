@@ -9,6 +9,7 @@ namespace reindexer_tests {
 using reindexer::fast_hash_map;
 using reindexer::WrSerializer;
 using reindexer::DSN;
+using reindexer::Variant;
 
 struct [[nodiscard]] InitShardingConfig {
 	using ShardingConfig = reindexer::cluster::ShardingConfig;
@@ -35,6 +36,7 @@ struct [[nodiscard]] InitShardingConfig {
 	bool createAdditionalIndexes = true;
 	bool needFillDefaultNs = true;
 	std::vector<Namespace> additionalNss;
+	std::vector<std::string> clusterNamespaces;
 	std::chrono::seconds awaitTimeout = std::chrono::seconds(30);
 	fast_hash_map<int, std::string>* insertedItemsById = nullptr;
 	int nodeIdInThread = -1;  // Allows to run one of the nodes in thread, instead fo process

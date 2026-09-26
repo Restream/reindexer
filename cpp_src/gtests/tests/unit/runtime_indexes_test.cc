@@ -1,6 +1,9 @@
+#include "core/keyvalue/variant.h"
 #include "runtime_indexes_api.h"
 
 namespace reindexer_tests {
+
+using reindexer::Variant;
 
 TEST_F(RuntimeIndexesApi, RuntimeIndexesAddTest) {
 	FillNamespaces(0, 100);

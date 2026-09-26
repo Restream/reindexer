@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include "core/query/query.h"
 #include "query_aggregate_strict_mode_test.h"
 #include "rpcclient_api.h"
 #include "rpcserver_fake.h"
@@ -16,6 +17,8 @@
 #include "net/ev/ev.h"
 
 namespace reindexer_tests {
+
+using reindexer::Query;
 
 // NOLINTBEGIN(rx-perf-lambda-to-std-function-allocation)
 
@@ -118,7 +121,7 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 				loop.spawn([&] {
 					coroutine::wait_group_guard wgg(wg);
 					reindexer::client::CoroQueryResults qr;
-					err = rx.Select(reindexer::Query(kNamespaceName), qr);
+					err = rx.Select(Query(kNamespaceName), qr);
 					EXPECT_EQ(err.code(), errTimeout);
 				});
 			}
@@ -300,7 +303,7 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 			for (size_t j = 0; j < kMultiplier * cnt; ++j) {
 				if (j % kMultiplier == 0) {
 					reindexer::client::CoroQueryResults qr;
-					auto err = rx.Select(reindexer::Query(nsName), qr);
+					auto err = rx.Select(Query(nsName), qr);
 					ASSERT_TRUE(err.ok()) << err.what();
 					for (auto& it : qr) {
 						ASSERT_TRUE(it.Status().ok()) << it.Status().what();
@@ -328,7 +331,7 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 		wg.wait();
 
 		reindexer::client::CoroQueryResults qr;
-		err = rx.Select(reindexer::Query(nsName), qr);
+		err = rx.Select(Query(nsName), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.Count(), 10 * kCnt);
 		for (auto& it : qr) {
@@ -345,7 +348,7 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 template <typename RxT>
 void ReconnectTest(RxT& rx, RPCClientTestApi& api, size_t dataCount, const std::string& nsName) {
 	typename RxT::QueryResultsT qr;
-	auto err = rx.Select(reindexer::Query(nsName), qr);
+	auto err = rx.Select(Query(nsName), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), dataCount);
 
@@ -353,14 +356,14 @@ void ReconnectTest(RxT& rx, RPCClientTestApi& api, size_t dataCount, const std::
 	ASSERT_TRUE(err.ok()) << err.what();
 	api.StartServer();
 	qr = typename RxT::QueryResultsT();
-	err = rx.Select(reindexer::Query(nsName), qr);
+	err = rx.Select(Query(nsName), qr);
 	if (err.ok()) {
 		ASSERT_EQ(qr.Count(), dataCount);
 	} else {
 		ASSERT_EQ(err.code(), errNetwork) << err.what();
 	}
 	qr = typename RxT::QueryResultsT();
-	err = rx.Select(reindexer::Query(nsName), qr);
+	err = rx.Select(Query(nsName), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), dataCount);
 
@@ -760,7 +763,7 @@ TEST_F(RPCClientTestApi, FetchingWithJoin) {
 		upsertFn(kRightNsName, true);
 
 		client::CoroQueryResults qr;
-		err = rx.Select(Query(kLeftNsName).Join(InnerJoin, Query(kRightNsName)).On("id", CondEq, "id").Sort("id", false), qr);
+		err = rx.Select(Query(kLeftNsName).Join(InnerJoin, Query(kRightNsName)).On("id", CondEq, "id").Sort("id", SortOrder::Asc), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.Count(), kNsSize);
 		WrSerializer ser;
@@ -1043,7 +1046,7 @@ TEST_F(RPCClientTestApi, SubQuery) {
 		const auto kHalfSize = kNsSize / 2;
 		{
 			client::CoroQueryResults qr;
-			err = rx.Select(Query(kLeftNsName).Where("id", CondSet, Query(kRightNsName).Select({"id"}).Where("id", CondLt, kHalfSize)), qr);
+			err = rx.Select(Query(kLeftNsName).Where("id", CondSet, Query(kRightNsName).Select("id").Where("id", CondLt, kHalfSize)), qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(qr.Count(), kHalfSize);
 		}
@@ -1243,9 +1246,8 @@ TEST_F(RPCClientTestApi, QuerySelectFunctions) {
 
 		{
 			client::CoroQueryResults qr;
-			auto query = Query(kNsName).Where("ft", CondEq, "word~");
-			query.AddFunction(R"(ft=highlight(<,>))");
-			query.AddFunction(R"(ft=highlight(!!,!))");
+			const auto query =
+				Query(kNsName).Where("ft", CondEq, "word~").AddFunction(R"(ft=highlight(<,>))").AddFunction(R"(ft=highlight(!!,!))");
 			err = rx.Select(query, qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(qr.Count(), content.size());
@@ -1265,6 +1267,73 @@ TEST_F(RPCClientTestApi, QuerySelectFunctions) {
 				++i;
 			}
 		}
+
+		rx.Stop();
+	}));
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, QuerySelectArithmetic) {
+	StartDefaultRealServer();
+	reindexer::net::ev::dynamic_loop loop;
+
+	loop.spawn(exceptionWrapper([&loop, this] {
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::CoroReindexer rx;
+		auto err = rx.Connect(dsn, loop, reindexer::client::ConnectOpts().CreateDBIfMissing());
+		ASSERT_TRUE(err.ok()) << err.what();
+		constexpr std::string_view kNsName = "TestQuerySelectArithmetic";
+		constexpr std::string_view kJoinedNsName = "TestQuerySelectArithmeticJoined";
+		CreateNamespace(rx, kNsName);
+		CreateNamespace(rx, kJoinedNsName);
+		constexpr int kNsSize = 5;
+		FillData(rx, kNsName, 0, kNsSize);
+		FillData(rx, kJoinedNsName, 0, kNsSize);
+
+		using reindexer::expressions::ArithmeticExpression;
+		auto count = [&](const Query& q) {
+			client::CoroQueryResults qr;
+			const auto selectErr = rx.Select(q, qr);
+			EXPECT_TRUE(selectErr.ok()) << selectErr.what() << '\n' << q.GetSQL();
+			return selectErr.ok() ? qr.Count() : 0;
+		};
+
+		// Each operand kind is sent as ExpressionTypeArithmetic and applied on the server after Deserialize.
+		EXPECT_EQ(count(Query(kNsName).Where(ArithmeticExpression("id*2"), CondEq, reindexer::VariantArray{reindexer::Variant{4}})), 1);
+		EXPECT_EQ(count(Query(kNsName).Where("id", CondLt, ArithmeticExpression("id*2"))), 4);
+		EXPECT_EQ(count(Query(kNsName).Where(ArithmeticExpression("id*2"), CondEq, "id")), 1);
+		EXPECT_EQ(count(Query(kNsName).Where(ArithmeticExpression("id*2"), CondEq, ArithmeticExpression("id+2"))), 1);
+		EXPECT_EQ(count(Query(kNsName).Where(ArithmeticExpression("now()-id"), CondLt, reindexer::VariantArray{reindexer::Variant{0}})), 0);
+		EXPECT_EQ(count(Query(kNsName).Where("id", CondSet,
+											 Query(kNsName).Select("id").Where(ArithmeticExpression("id*2"), CondGe,
+																			   reindexer::VariantArray{reindexer::Variant{6}}))),
+				  2);
+		EXPECT_EQ(count(Query(kNsName).InnerJoin(
+					  Query(kJoinedNsName).Where(ArithmeticExpression("id*2"), CondEq, reindexer::VariantArray{reindexer::Variant{4}}),
+					  "id", CondEq, "id")),
+				  1);
+
+		{
+			client::CoroQueryResults qr;
+			err = rx.Delete(Query(kNsName).Where(ArithmeticExpression("id*2"), CondEq, reindexer::VariantArray{reindexer::Variant{8}}), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			EXPECT_EQ(qr.Count(), 1);
+		}
+		{
+			auto tx = rx.NewTransaction(kNsName);
+			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+			// The transaction step takes its own now() snapshot on the server
+			err = tx.Modify(Query(kNsName)
+								.Where(ArithmeticExpression("now()-id"), CondGt, reindexer::VariantArray{reindexer::Variant{0}})
+								.Where("id", CondEq, 0)
+								.Delete());
+			ASSERT_TRUE(err.ok()) << err.what();
+			client::CoroQueryResults qr;
+			err = rx.CommitTransaction(tx, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+		}
+		EXPECT_EQ(count(Query(kNsName)), kNsSize - 2);
 
 		rx.Stop();
 	}));
@@ -1319,20 +1388,20 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 
 		client::CoroQueryResults qr;
 		{
-			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(std::string(R"([{"field": 1240}])"))), qr);
+			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(R"([{"field": 1240}])")), qr);
 			ASSERT_FALSE(err.ok());
 			EXPECT_STREQ(err.what(), "Error modifying field value: 'Unsupported JSON format. Unnamed field detected'");
 		}
 
 		{
-			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(std::string(R"({{"field": 1240}})"))), qr);
+			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(R"({{"field": 1240}})")), qr);
 			ASSERT_FALSE(err.ok());
 			EXPECT_STREQ(err.what(), "Error modifying field value: 'JSONDecoder: Error parsing json: unquoted key, pos 15'");
 		}
 
 		{
 			// R"(UPDATE TestQuerySetObjectUpdate SET nested = {"field": 1240} where id >= 0)"
-			auto query = Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(std::string(R"({"field": 1240})")));
+			auto query = Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(R"({"field": 1240})"));
 			err = rx.Update(query, qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(qr.Count(), kNsSize);

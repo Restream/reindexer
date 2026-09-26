@@ -104,7 +104,7 @@ void TableCalculator::calculate(std::vector<std::string>&& jsonData) {
 					double widthPercentage = (double(columnData.maxWidthCh) / outputWidth_) * 100;
 					if (widthPercentage > 70.0) {
 						if (header_.size() == 2) {
-							columnData.widthCh = outputWidth_ * 0.7f;
+							columnData.widthCh = static_cast<int>(outputWidth_ * 0.7f);
 						} else if (header_.size() == 3) {
 							columnData.widthCh = outputWidth_ / 2;
 						} else {

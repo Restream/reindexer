@@ -1,5 +1,8 @@
 # ASM files
 */asm/*.S
+# Bison-generated expression parser
+*/expression_yy.cc
+*/expression_yy.hh
 # Vendored
 *yaml.cc
 # Generated stemmer files
@@ -11,3 +14,5 @@
 */libbacktrace/*
 # Faiss
 */faiss/*
+# Prometheus C++ client (vendored)
+*/prometheus/*

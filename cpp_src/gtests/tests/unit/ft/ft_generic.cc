@@ -273,6 +273,28 @@ TEST_P(FTGenericApi, KbLayoutCorrectionHeuristic) {
 	CheckResults("мони*", {{"!монитор! один", ""}, {"!монитор! два", ""}, {"!монитор! три", ""}, {"!vjybnjh!", ""}}, false);
 }
 
+TEST_P(FTGenericApi, KbLayoutShiftedSymbols) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableTranslit = false;
+	Init(cfg);
+
+	Add("хата"sv);
+	Add("ъезд"sv);
+	Add("ждать"sv);
+	Add("блок"sv);
+	Add("юла"sv);
+	Add("фисювуа"sv);
+	Add("фис"sv);
+
+	CheckResults("{fnf", {{"!хата!", ""}}, false);
+	CheckResults("}tpl", {{"!ъезд!", ""}}, false);
+	CheckResults(":lfnm", {{"!ждать!", ""}}, false);
+	CheckResults("<kjr", {{"!блок!", ""}}, false);
+	CheckResults(">kf", {{"!юла!", ""}}, false);
+	CheckResults("=abc.def", {}, false);
+	CheckResults("\"=abc\"", {}, false);
+}
+
 TEST_P(FTGenericApi, KbLayoutCorrectionHeuristicPrefixManyWords) {
 	auto cfg = GetDefaultConfig();
 	cfg.enableTranslit = false;
@@ -304,6 +326,112 @@ TEST_P(FTGenericApi, KbLayoutCorrectionHeuristicPrefixManyWords) {
 				  {"!монитор8!", ""},
 				  {"!монитор9!", ""}},
 				 false);
+}
+
+TEST_P(FTGenericApi, WrongKbLayoutPatternIgnoresHeuristic) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableTranslit = false;
+	cfg.enableNumbersSearch = false;
+	Init(cfg);
+
+	for (int i = 0; i < 10; ++i) {
+		Add(std::to_string(i) + "vjyb");
+	}
+	Add("монибтор"sv);
+	Add("префиксмонибтор"sv);
+
+	// Heuristic disables kbLayout correction for "*vjyb", but the complete alternative sequence is always corrected with the leading
+	// wildcard applied to the whole pattern.
+	const auto qr = SimpleSelect("*vjyb,njh", false);
+	EXPECT_EQ(qr.Count(), 12);
+	bool correctedWrongKbLayoutPatternFound = false;
+	bool correctedWrongKbLayoutPatternWithPrefixFound = false;
+	for (auto it : qr) {
+		correctedWrongKbLayoutPatternFound = correctedWrongKbLayoutPatternFound || it.GetItem(false)["ft1"].As<std::string>() == "монибтор";
+		correctedWrongKbLayoutPatternWithPrefixFound =
+			correctedWrongKbLayoutPatternWithPrefixFound || it.GetItem(false)["ft1"].As<std::string>() == "префиксмонибтор";
+	}
+	EXPECT_TRUE(correctedWrongKbLayoutPatternFound);
+	EXPECT_TRUE(correctedWrongKbLayoutPatternWithPrefixFound);
+}
+
+TEST_P(FTGenericApi, WrongKbLayoutPatternWildcards) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableTranslit = false;
+	cfg.stemmers.clear();
+	Init(cfg);
+
+	Add("монибтор"sv);
+	Add("префиксмонибтор"sv);
+	Add("монибторсуффикс"sv);
+	Add("префиксмонибторсуффикс"sv);
+	Add("монитор"sv);
+	Add("префиксмонитор"sv);
+	Add("мониторсуффикс"sv);
+	Add("префиксмониторсуффикс"sv);
+
+	CheckResults("vjyb,njh", {{"!монибтор!", ""}, {"!монитор!", ""}}, false);
+	CheckResults("*vjyb,njh", {{"!монибтор!", ""}, {"!префиксмонибтор!", ""}, {"!монитор!", ""}, {"!префиксмонитор!", ""}}, false);
+	CheckResults("vjyb,njh*", {{"!монибтор!", ""}, {"!монибторсуффикс!", ""}, {"!монитор!", ""}, {"!мониторсуффикс!", ""}}, false);
+	CheckResults("*vjyb,njh*",
+				 {{"!монибтор!", ""},
+				  {"!префиксмонибтор!", ""},
+				  {"!монибторсуффикс!", ""},
+				  {"!префиксмонибторсуффикс!", ""},
+				  {"!монитор!", ""},
+				  {"!префиксмонитор!", ""},
+				  {"!мониторсуффикс!", ""},
+				  {"!префиксмониторсуффикс!", ""}},
+				 false);
+}
+
+TEST_P(FTGenericApi, WrongKbLayoutPatternLeadingWildcardBeforeSpecialSymbol) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableTranslit = false;
+	cfg.stemmers.clear();
+	Init(cfg);
+
+	Add("хлебопечка"sv);
+	Add("префиксхлебопечка"sv);
+	Add("хлебопечкасуффикс"sv);
+
+	CheckResults("*[kt,jgtxrf", {{"!хлебопечка!", ""}, {"!префиксхлебопечка!", ""}}, false);
+}
+
+TEST_P(FTGenericApi, WrongKbLayoutPatternWithoutRegularTerm) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableTranslit = false;
+	cfg.stemmers.clear();
+	Init(cfg);
+
+	Add(";.,"sv);
+	Add("жюб"sv);
+	Add("ЖЮБ"sv);
+
+	CheckResults(";.,", {{"!жюб!", ""}, {"!ЖЮБ!", ""}}, false);
+}
+
+TEST_P(FTGenericApi, WrongKbLayoutPatternTypos) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableTranslit = false;
+	cfg.stemmers.clear();
+	Init(cfg);
+
+	Add("блужоф"sv);
+	Add("блужок"sv);
+	Add("блужо"sv);
+
+	const auto qr = SimpleSelect(",ke;ja~", false);
+	EXPECT_EQ(qr.Count(), 3);
+}
+
+TEST_P(FTGenericApi, WrongKbLayoutPatternDisabled) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableTranslit = false;
+	cfg.kbLayoutMode = reindexer::FTConfig::KbLayoutMode::Disable;
+	Init(cfg);
+	Add("монибтор"sv);
+	CheckResults("vjyb,njh", {}, false);
 }
 
 TEST_P(FTGenericApi, KbLayoutCorrectionHeuristicPrefixManyDocs) {
@@ -436,10 +564,7 @@ TEST_P(FTGenericApi, DebugInfo) {
 	};
 
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft3", CondEq, "маша");
-		q.AddFunction("ft3 = debug_rank()");
-		q.Select({"ft1"});
+		const auto q = reindexer::Query("nm1").Where("ft3", CondEq, "маша").AddFunction("ft3 = debug_rank()").Select("ft1");
 		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 1);
 		auto it = res.begin();
@@ -456,10 +581,7 @@ TEST_P(FTGenericApi, DebugInfo) {
 	}
 
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft3", CondEq, "коля сеня");
-		q.AddFunction("ft3 = debug_rank()");
-		q.Select({"ft1"});
+		const auto q = reindexer::Query("nm1").Where("ft3", CondEq, "коля сеня").AddFunction("ft3 = debug_rank()").Select("ft1");
 		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 1);
 		auto it = res.begin();
@@ -476,12 +598,12 @@ TEST_P(FTGenericApi, DebugInfo) {
 	}
 
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft3", CondEq, "'начало простая фраза конец' 'простая фраза'");
-		q.AddFunction("ft3 = debug_rank()");
-		q.Select({"ft1"});
-		q.Sort("id", false);
-		q.WithRank();
+		const auto q = reindexer::Query("nm1")
+						   .Where("ft3", CondEq, "'начало простая фраза конец' 'простая фраза'")
+						   .AddFunction("ft3 = debug_rank()")
+						   .Select("ft1")
+						   .Sort("id", SortOrder::Asc)
+						   .WithRank();
 		// clang-format off
         std::vector<std::string> dataCompare={
 R"###({"ft1":"слово
@@ -516,11 +638,11 @@ R"##({"ft1":"слово
 	}
 
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft3", CondEq, "'простыми фразами'");
-		q.AddFunction("ft3 = debug_rank()");
-		q.Select({"ft1"});
-		q.Sort("id", false);
+		const auto q = reindexer::Query("nm1")
+						   .Where("ft3", CondEq, "'простыми фразами'")
+						   .AddFunction("ft3 = debug_rank()")
+						   .Select("ft1")
+						   .Sort("id", SortOrder::Asc);
 		// clang-format off
         std::vector<std::string> dataCompare={
 R"###({"ft1":"слово
@@ -551,10 +673,7 @@ R"###({"ft1":"слово начало
 	}
 
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft3", CondEq, "жил~ пил");
-		q.Select({"ft1"});
-		q.AddFunction("ft3 = debug_rank()");
+		const auto q = reindexer::Query("nm1").Where("ft3", CondEq, "жил~ пил").Select("ft1").AddFunction("ft3 = debug_rank()");
 		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 1);
 		auto it = res.begin();
@@ -1009,7 +1128,7 @@ TEST_P(FTGenericApi, NumberToWordsSelect) {
 	auto row8 = Add("70 1 7 77 377 70 7"sv);
 
 	auto select = [this](int id, const std::string& ftQuery, const std::string& result) {
-		auto q{reindexer::Query("nm1").Where("ft3", CondEq, std::string(ftQuery)).And().Where("id", CondEq, id).WithRank()};
+		auto q{reindexer::Query("nm1").Where("ft3", CondEq, ftQuery).And().Where("id", CondEq, id).WithRank()};
 		q.AddFunction("ft3 = highlight(!,!)");
 		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 1);
@@ -1085,7 +1204,7 @@ TEST_P(FTGenericApi, NumberToWordsArraysSelect) {
 	}
 
 	// Check selections
-	auto selectAndCheck = [this, &kNsName](std::string_view ftQuery, int expectedId) {
+	auto selectAndCheck = [this, kNsName](std::string_view ftQuery, int expectedId) {
 		SCOPED_TRACE(ftQuery);
 		auto q = reindexer::Query(kNsName).Where("ft", CondEq, ftQuery);
 		auto res = rt.Select(q);
@@ -1173,19 +1292,10 @@ TEST_P(FTGenericApi, DeleteTest) {
 	// TODO: add validation
 }
 
-TEST_P(FTGenericApi, FullRebuildWhenHalfVdocsRemoved) {
-	// commitFulltextImpl must Clear()+rebuild+cleanRemovedVdocs when removedVdocs_*2 > totalVdocs.
-	// Without that path empty vdocs stay in the array forever and incremental build never compacts them.
+TEST_P(FTGenericApi, VdocSlotReuse) {
 	Init(GetDefaultConfig());
-	rt.EnablePerfStats(*rt.reindexer);
 
-	auto cfg = GetDefaultConfig();
-	cfg.enableNumbersSearch = false;
-	auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	auto selectByWord = [this](std::string_view word) { return rt.Select(reindexer::Query("nm1").Where("ft1", CondEq, word)); };
-	auto ftIndexingStructSize = [this]() -> size_t {
+	auto ftStat = [this](std::string_view indexName, const char* field) -> size_t {
 		auto qr = rt.Select(reindexer::Query("#memstats").Where("name", CondEq, "nm1"));
 		EXPECT_EQ(qr.Count(), 1);
 		if (qr.Count() != 1) {
@@ -1193,139 +1303,69 @@ TEST_P(FTGenericApi, FullRebuildWhenHalfVdocsRemoved) {
 		}
 		const auto memstats = YAML::Load(std::string{qr.begin().GetItem(false).GetJSON()});
 		for (const auto& index : memstats["indexes"]) {
-			if (index["name"].as<std::string>() == "ft1") {
-				return index["indexing_struct_size"].as<size_t>(0);
+			if (index["name"].as<std::string>() == indexName) {
+				return index["text_index_stats"][field].as<size_t>(0);
 			}
 		}
-		ADD_FAILURE() << "ft1 index not found in #memstats";
-		return 0;
-	};
-	auto ftVdocsStat = [this](const char* stat) -> size_t {
-		auto qr = rt.Select(reindexer::Query("#memstats").Where("name", CondEq, "nm1"));
-		EXPECT_EQ(qr.Count(), 1);
-		if (qr.Count() != 1) {
-			return 0;
-		}
-		const auto memstats = YAML::Load(std::string{qr.begin().GetItem(false).GetJSON()});
-		for (const auto& index : memstats["indexes"]) {
-			if (index["name"].as<std::string>() == "ft1") {
-				return index["text_index_stats"][stat].as<size_t>(0);
-			}
-		}
-		ADD_FAILURE() << "ft1 index not found in #memstats";
+		ADD_FAILURE() << indexName << " index not found in #memstats";
 		return 0;
 	};
 
-	constexpr int kTotalDocs = 40;
-	constexpr int kDeleteCount = 21;  // strictly more than half of 40
-	ASSERT_GT(kDeleteCount * 2, kTotalDocs);
-
-	std::vector<std::pair<int, std::string>> docs;
-	docs.reserve(kTotalDocs);
-	for (int i = 0; i < kTotalDocs; ++i) {
-		const std::string word = fmt::format("rebuildword{}", i);
-		const auto [_, id] = Add(word);
-		docs.emplace_back(id, word);
+	constexpr int kDocs = 20;
+	constexpr int kReplace = 7;
+	std::vector<int> ids;
+	std::vector<std::string> words;
+	ids.reserve(kDocs);
+	words.reserve(kDocs);
+	for (int i = 0; i < kDocs; ++i) {
+		words.push_back(fmt::format("vdocreuseword{}", i));
+		ids.push_back(Add(words.back()).second);
 	}
 
-	// Initial fulltext build
-	ASSERT_EQ(selectByWord(docs.front().second).Count(), 1);
-	const size_t indexingSizeAfterBuild = ftIndexingStructSize();
-	ASSERT_GT(indexingSizeAfterBuild, 0);
-	const size_t vdocsCompactionsAfterBuild = ftVdocsStat("vdocs_compactions");
+	ASSERT_EQ(SimpleSelect(words.front(), false).Count(), 1);
+	EXPECT_EQ(ftStat("ft1", "total_vdocs"), kDocs);
+	EXPECT_EQ(ftStat("ft1", "removed_vdocs"), 0);
+	EXPECT_EQ(ftStat("ft1", "dead_vdocs"), 0);
 
-	for (int i = 0; i < kDeleteCount; ++i) {
-		Delete(docs[i].first);
-	}
-	const size_t indexingSizeBeforeRebuild = ftIndexingStructSize();
-	const size_t totalVdocsBeforeRebuild = ftVdocsStat("total_vdocs");
-	EXPECT_EQ(ftVdocsStat("removed_vdocs"), kDeleteCount);
-
-	// Triggers commitFulltextImpl: Clear holder, cleanRemovedVdocs, full rebuild of remaining docs
-	ASSERT_EQ(selectByWord(docs[kDeleteCount].second).Count(), 1);
-
-	for (int i = 0; i < kDeleteCount; ++i) {
-		EXPECT_EQ(selectByWord(docs[i].second).Count(), 0) << docs[i].second;
-	}
-	for (int i = kDeleteCount; i < kTotalDocs; ++i) {
-		ASSERT_EQ(selectByWord(docs[i].second).Count(), 1) << docs[i].second;
+	// In-place upsert of unique texts retires old vdoc slots and must take them back from the free list.
+	std::vector<std::string> reusedWords;
+	reusedWords.reserve(kReplace);
+	for (int i = 0; i < kReplace; ++i) {
+		reusedWords.push_back(fmt::format("vdocreusenew{}", i));
+		auto item = rt.NewItem("nm1");
+		item["id"] = ids[i];
+		item["ft1"] = reusedWords.back();
+		rt.Upsert("nm1", item);
 	}
 
-	const size_t indexingSizeAfterRebuild = ftIndexingStructSize();
-	EXPECT_LT(indexingSizeAfterRebuild, indexingSizeBeforeRebuild)
-		<< "Expected FT indexing struct to shrink after compacting removed vdocs (before=" << indexingSizeBeforeRebuild
-		<< ", after=" << indexingSizeAfterRebuild << ")";
-	EXPECT_EQ(ftVdocsStat("total_vdocs"), totalVdocsBeforeRebuild - kDeleteCount);
-	EXPECT_EQ(ftVdocsStat("removed_vdocs"), 0);
-	EXPECT_EQ(ftVdocsStat("vdocs_compactions"), vdocsCompactionsAfterBuild + 1);
+	EXPECT_EQ(ftStat("ft1", "total_vdocs"), kDocs);
+	EXPECT_EQ(ftStat("ft1", "removed_vdocs"), 0) << "expected replaced vdoc slots to be reused immediately";
+	EXPECT_EQ(ftStat("ft1", "dead_vdocs"), 0);
+	EXPECT_EQ(SimpleSelect(words.front(), false).Count(), 0);
+	EXPECT_EQ(SimpleSelect(reusedWords.front(), false).Count(), 1);
+	EXPECT_EQ(SimpleSelect(words[kReplace], false).Count(), 1);
 
-	// Incremental updates after forced rebuild must keep working
-	const std::string reusedDeletedWord = docs.front().second;
-	Add(reusedDeletedWord);
-	ASSERT_EQ(selectByWord(reusedDeletedWord).Count(), 1);
-	ASSERT_EQ(selectByWord(docs.back().second).Count(), 1);
-
-	const std::string brandNew = "rebuildword_after_compact";
-	Add(brandNew);
-	ASSERT_EQ(selectByWord(brandNew).Count(), 1);
-}
-
-TEST_P(FTGenericApi, NoFullRebuildWhenExactlyHalfVdocsRemoved) {
-	// Threshold is strict: removedVdocs_*2 > totalVdocs. Exactly half must not force Clear()+cleanRemovedVdocs.
-	Init(GetDefaultConfig());
-	rt.EnablePerfStats(*rt.reindexer);
-
-	auto cfg = GetDefaultConfig();
-	cfg.enableNumbersSearch = false;
-	auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	auto selectByWord = [this](std::string_view word) { return rt.Select(reindexer::Query("nm1").Where("ft1", CondEq, word)); };
-	auto ftVdocsStat = [this](const char* stat) -> size_t {
-		auto qr = rt.Select(reindexer::Query("#memstats").Where("name", CondEq, "nm1"));
-		EXPECT_EQ(qr.Count(), 1);
-		if (qr.Count() != 1) {
-			return 0;
-		}
-		const auto memstats = YAML::Load(std::string{qr.begin().GetItem(false).GetJSON()});
-		for (const auto& index : memstats["indexes"]) {
-			if (index["name"].as<std::string>() == "ft1") {
-				return index["text_index_stats"][stat].as<size_t>(0);
-			}
-		}
-		ADD_FAILURE() << "ft1 index not found in #memstats";
-		return 0;
-	};
-
-	constexpr int kTotalDocs = 20;
-	constexpr int kDeleteCount = 10;  // exactly half: 10*2 == 20, threshold not reached
-	ASSERT_EQ(kDeleteCount * 2, kTotalDocs);
-
-	std::vector<std::pair<int, std::string>> docs;
-	docs.reserve(kTotalDocs);
-	for (int i = 0; i < kTotalDocs; ++i) {
-		const std::string word = fmt::format("halfword{}", i);
-		const auto [_, id] = Add(word);
-		docs.emplace_back(id, word);
+	// Delete retires slots onto the free list; removed_vdocs must become non-zero before reuse.
+	constexpr int kDelete = 5;
+	for (int i = 0; i < kDelete; ++i) {
+		Delete(ids[kReplace + i]);
 	}
+	EXPECT_EQ(ftStat("ft1", "total_vdocs"), kDocs - kDelete);
+	EXPECT_EQ(ftStat("ft1", "removed_vdocs"), kDelete);
+	EXPECT_EQ(ftStat("ft1", "dead_vdocs"), 0);
+	EXPECT_EQ(SimpleSelect(words[kReplace], false).Count(), 0);
 
-	ASSERT_EQ(selectByWord(docs.front().second).Count(), 1);
-	const size_t vdocsCompactionsAfterBuild = ftVdocsStat("vdocs_compactions");
-
-	for (int i = 0; i < kDeleteCount; ++i) {
-		Delete(docs[i].first);
+	// Insert must consume the free list instead of growing allocated vdocs.
+	std::vector<std::string> insertedWords;
+	insertedWords.reserve(kDelete);
+	for (int i = 0; i < kDelete; ++i) {
+		insertedWords.push_back(fmt::format("vdocreuseins{}", i));
+		Add(insertedWords.back());
 	}
-	ASSERT_EQ(selectByWord(docs[kDeleteCount].second).Count(), 1);
-
-	for (int i = 0; i < kDeleteCount; ++i) {
-		EXPECT_EQ(selectByWord(docs[i].second).Count(), 0) << docs[i].second;
-	}
-	for (int i = kDeleteCount; i < kTotalDocs; ++i) {
-		ASSERT_EQ(selectByWord(docs[i].second).Count(), 1) << docs[i].second;
-	}
-
-	EXPECT_EQ(ftVdocsStat("removed_vdocs"), kDeleteCount);
-	EXPECT_EQ(ftVdocsStat("vdocs_compactions"), vdocsCompactionsAfterBuild);
+	EXPECT_EQ(ftStat("ft1", "total_vdocs"), kDocs);
+	EXPECT_EQ(ftStat("ft1", "removed_vdocs"), 0) << "expected deleted vdoc slots to be reused on insert";
+	EXPECT_EQ(ftStat("ft1", "dead_vdocs"), 0);
+	EXPECT_EQ(SimpleSelect(insertedWords.front(), false).Count(), 1);
 }
 
 TEST_P(FTGenericApi, SummationOfRanksInSeveralFields) {
@@ -2111,7 +2151,7 @@ TEST_P(FTGenericApi, RankedConditionForbiddenInJoinedSubquery) {
 	Add("word1 word2"sv);
 
 	QueryResults qr;
-	const auto err = rt.reindexer->Select(Query(kMainNs).InnerJoin("id", "id", CondEq, Query(kMainNs).Where("ft3", CondEq, "word2")), qr);
+	const auto err = rt.reindexer->Select(Query(kMainNs).InnerJoin(Query(kMainNs).Where("ft3", CondEq, "word2"), "id", CondEq, "id"), qr);
 	EXPECT_FALSE(err.ok());
 	EXPECT_EQ(err.whatStr(), "Ranked search (fulltext, KNN, hybrid) cannot be in joined subquery");
 }
@@ -2136,7 +2176,7 @@ TEST_P(FTGenericApi, JoinsWithFtPreselect) {
 	CreateAndFillSimpleNs(kJoinedNs, 0, 10, &joinedNsItems);
 
 	const Query q =
-		Query(kMainNs).Where("ft3", CondEq, "word2").InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 1));
+		Query(kMainNs).Where("ft3", CondEq, "word2").InnerJoin(Query(kJoinedNs).Where("id", CondLt, firstId + 1), "id", CondEq, "id");
 	const auto expectedJoinedJSON = fmt::format(R"json("joined_{}":[{}])json", kJoinedNs, joinedNsItems[firstId]);
 	for (unsigned i = 0; i < kQueryRepetitions; ++i) {
 		auto qr = rt.Select(q);
@@ -2173,7 +2213,7 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 		const Query q = Query(kMainNs)
 							.Where("ft3", CondEq, "word2")
 							.OpenBracket()
-							.InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 1))
+							.InnerJoin(Query(kJoinedNs).Where("id", CondLt, firstId + 1), "id", CondEq, "id")
 							.Or()
 							.Where("id", CondEq, lastId - 1)
 							.CloseBracket()
@@ -2195,7 +2235,7 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 							.Where("ft3", CondEq, "word2")
 							.CloseBracket()
 							.OpenBracket()
-							.InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 1))
+							.InnerJoin(Query(kJoinedNs).Where("id", CondLt, firstId + 1), "id", CondEq, "id")
 							.Or()
 							.Where("id", CondEq, lastId - 1)
 							.CloseBracket()
@@ -2253,13 +2293,13 @@ TEST_P(FTGenericApi, TotalCountWithFtPreselect) {
 									.expectedTotalCount = 1},
 								   {.query = Query(kMainNs)
 												 .Where("ft3", CondEq, "word2")
-												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 2).Limit(0)),
+												 .InnerJoin(Query(kJoinedNs).Where("id", CondLt, firstId + 2).Limit(0), "id", CondEq, "id"),
 									.limit = 0,
 									.expectedTotalCount = 1},
 								   {.query = Query(kMainNs)
 												 .Where("ft3", CondEq, "word2 word3")
 												 .OpenBracket()
-												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 2).Limit(0))
+												 .InnerJoin(Query(kJoinedNs).Where("id", CondLt, firstId + 2).Limit(0), "id", CondEq, "id")
 												 .Or()
 												 .Where("id", CondSet, {Variant{lastId - 1}, Variant{lastId - 2}})
 												 .CloseBracket(),
@@ -2267,7 +2307,7 @@ TEST_P(FTGenericApi, TotalCountWithFtPreselect) {
 									.expectedTotalCount = 3},
 								   {.query = Query(kMainNs)
 												 .Where("ft3", CondEq, "word2 word3")
-												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, lastId).Limit(0))
+												 .InnerJoin(Query(kJoinedNs).Where("id", CondLt, lastId).Limit(0), "id", CondEq, "id")
 												 .Where("id", CondSet, {Variant{lastId - 1}, Variant{lastId - 2}}),
 									.limit = 1,
 									.expectedTotalCount = 2},
@@ -2276,7 +2316,7 @@ TEST_P(FTGenericApi, TotalCountWithFtPreselect) {
 												 .Where("ft3", CondEq, "word2")
 												 .CloseBracket()
 												 .OpenBracket()
-												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 2))
+												 .InnerJoin(Query(kJoinedNs).Where("id", CondLt, firstId + 2), "id", CondEq, "id")
 												 .Or()
 												 .Where("id", CondEq, lastId - 1)
 												 .CloseBracket(),
@@ -2622,7 +2662,7 @@ TEST_F(FTGenericApi, DistinctFtOrderByTreeIdxTest) {
 										IndexDeclaration{kFtIdxName, "text", "string", IndexOpts(), 0},
 										IndexDeclaration{kTreeIdxName, "tree", "int", IndexOpts{}, 0}});
 
-	const bool desc = (rand() % 2);
+	const reindexer::Desc desc(rand() % 2);
 	using namespace std::string_view_literals;
 	const std::vector<std::string_view> jsons = {R"({"id":0,"ft":"f0","tree_idx":0})"sv, R"({"id":1,"ft":"f0","tree_idx":1})"sv,
 												 R"({"id":2,"ft":"f2","tree_idx":2})"sv, R"({"id":3,"ft":"f3","tree_idx":4})"sv,
@@ -2650,7 +2690,7 @@ TEST_F(FTGenericApi, DistinctFtOrderByTreeIdxTest) {
 
 	rt.AwaitIndexOptimization(kNsName);
 
-	const auto q = Query(kNsName).Distinct(kFtIdxName).Sort(kTreeIdxName, desc);
+	const auto q = Query(kNsName).Distinct(kFtIdxName).Sort(kTreeIdxName, desc ? SortOrder::Desc : SortOrder::Asc);
 	SCOPED_TRACE(q.GetSQL());
 	auto qr = rt.Select(q);
 	auto& aggs = qr.GetAggregationResults();

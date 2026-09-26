@@ -28,6 +28,7 @@ void Connection<Mutex>::restart(socket&& s) {
 	sock_ = std::move(s);
 	wrBuf_.clear();
 	rdBuf_.clear();
+	shrinkRdBufIfNeeded();
 	curEvents_ = 0;
 	closeConn_ = false;
 	if (stats_) {
@@ -88,6 +89,8 @@ void Connection<Mutex>::closeConn() {
 		stats_->stop();
 	}
 	onClose();
+	rdBuf_.clear();
+	shrinkRdBufIfNeeded();
 	closeConn_ = false;
 }
 

@@ -9,7 +9,6 @@
 #include "client/rpcformat.h"
 #include "cluster/config.h"
 #include "core/definitions/namespacedef.h"
-#include "core/query/query.h"
 #include "core/shardedmeta.h"
 #include "coroutine/mutex.h"
 #include "estl/expected.h"
@@ -18,6 +17,8 @@
 
 namespace reindexer {
 
+class Query;
+class ConstQueryImpl;
 struct ReplicationStateV2;
 struct ClusterOperationStatus;
 class SnapshotChunk;
@@ -128,9 +129,7 @@ public:
 	Error Delete(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx);
 	Error Update(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx);
 	Error ExecSQL(std::string_view query, CoroQueryResults& result, const InternalRdxContext& ctx);
-	Error Select(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
-		return selectImpl(query, result, config_.NetTimeout, ctx);
-	}
+	Error Select(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx);
 	// This method must be noexcept for public API
 	template <typename... Args>
 	Item NewItem(std::string_view nsName, Args&&... args) noexcept {
@@ -178,7 +177,7 @@ public:
 								 const InternalRdxContext& ctx) noexcept;
 
 protected:
-	Error selectImpl(const Query& query, CoroQueryResults& result, milliseconds netTimeout, const InternalRdxContext& ctx);
+	Error selectImpl(ConstQueryImpl query, CoroQueryResults& result, milliseconds netTimeout, const InternalRdxContext& ctx);
 	Error modifyItemCJSON(std::string_view nsName, Item& item, CoroQueryResults* results, int mode, milliseconds netTimeout,
 						  const InternalRdxContext& ctx);
 	Error modifyItemFormat(std::string_view nsName, Item& item, RPCDataFormat format, int mode, milliseconds netTimeout,

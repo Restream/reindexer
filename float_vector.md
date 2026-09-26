@@ -107,7 +107,7 @@ if err != nil {
 
 Reindexer is able to perform automatic remote HTTP API calls to receive embedding for documents' fields or strings in KNN queries conditions. Currently, reindexer's core simply sends fields/conditions content to external user's service and expects to receive embedding results.
 
-Embedding service has to implement this [openapi spec](embedders_api.yaml).
+By default (`protocol.type: "rx"`) the embedding service has to implement this [openapi spec](embedders_api.yaml). With `protocol.type: "openai"` Reindexer talks to an OpenAI-compatible embeddings endpoint (for example llama.cpp) instead.
 
 > Notice: current embedding callback API is in beta and may be changed in the next releases
 
@@ -119,6 +119,11 @@ To configure automatic embedding you should set `config` field in the target vec
     "upsert_embedder": {
       "name": <Embedder name>
       "URL": <URL service>,
+      "protocol": {
+        "type": <"rx"|"openai">,
+        "model": <OpenAI model name>,
+        "fields_format": <"join"|"stringify">
+      },
       "cache_tag": <name, used to access the cache>,
       "fields": [ "idx1", "idx2" ]
       "embedding_strategy": <"always"|"empty_only"|"strict">
@@ -132,6 +137,10 @@ To configure automatic embedding you should set `config` field in the target vec
     "query_embedder": {
       "name": <Embedder name>
       "URL": <URL service>,
+      "protocol": {
+        "type": <"rx"|"openai">,
+        "model": <OpenAI model name>
+      },
       "cache_tag": <name, used to access the cache>,
       "pool": {
         "connections": 10,
@@ -143,8 +152,19 @@ To configure automatic embedding you should set `config` field in the target vec
   }
 }
 ```
-- `name` - Embedder name. Optional. If not set, default generation logic is used, in lower case: <NS_NAME>_<INDEX_NAME>
-- `URL` - Embed service URL. The address of the service where embedding requests will be sent. Required
+- `name` - Embedder name. Optional. If not set, default generation logic is used, in lower case: <NS_NAME>_<INDEX_NAME>. Used in the RX protocol URL path; ignored for `openai`
+- `URL` - Embed service URL. Required
+  + for `protocol.type: "rx"` (default): base URL of the service; path `/api/v1/embedder/{name}/produce?format=...` is appended
+  + for `protocol.type: "openai"`: full embeddings endpoint URL (e.g. `http://127.0.0.1:8080/v1/embeddings`). If path is omitted, `/v1/embeddings` is used
+- `protocol` - Embedder HTTP protocol options. Optional object; omit to use RX defaults
+  + `type` - Protocol type. Required when the `protocol` object is present
+    - `rx` - Reindexer produce API (see [openapi spec](embedders_api.yaml)). Only `type` is used for this protocol
+    - `openai` - OpenAI-compatible embeddings API (`POST` with `{"model","input"}` → `data[].embedding`). Suitable for tools like llama.cpp out of the box. One document produces one vector (no multi-chunk response), so a scalar `float_vector` (`is_array: false`) is enough; native RX-style chunking into a vector array is not available with this protocol.
+      Only unauthenticated HTTP endpoints are currently supported; HTTPS and authorization headers are not available for this protocol
+  + `model` - Model name for OpenAI-compatible requests. Required when `type` is `openai`
+  + `fields_format` - How upsert `fields` are turned into OpenAI `input`. Optional, only for `type: "openai"` (upsert embedder). Default `stringify`
+    - `stringify` - serialize the document fields as a JSON object string
+    - `join` - concatenate field values in config order with newline; array values within a field joined with space
 - `cache_tag` - Name, used to access the cache. Optional, if not specified, caching is not used
 - `fields` - List of index fields to calculate embedding for. Required. Sparse or composite fields are not supported. Don't use fields with precept (may produce incorrect results)
 - `embedding_strategy` - Embedding insertion strategy. Optional
@@ -170,7 +190,7 @@ It is also optionally possible to configure a connection `pool`:
     - `threshold_timeout_ms` - Idle timeout that resets the consecutive failure counter (milliseconds). Optional, default 15000. Value `0` disables idle reset
     - `cooldown_ms` - Time to block cache-miss requests after the breaker opens (milliseconds). Optional, default 7500. Value `0` disables the circuit breaker
 
-Upsert embedder used in Insert/Update/Upsert operations, send format is json: /api/v1/embedder/*NAME*/produce?format=json.
+For the default `rx` protocol, upsert embedder used in Insert/Update/Upsert operations, send format is json: /api/v1/embedder/*NAME*/produce?format=json.
 Query embedder starts with `WhereKNN`, sending a string as the search value (?format=text).
 The embedding process: sends JSON values for all fields involved in the embedding to the specified URL.
 For one requested vector:
@@ -204,6 +224,15 @@ As a response, the produce should always return an array of arrays of objects to
   ],
   ...
 ]
+```
+
+For the `openai` protocol, a query or a single upsert document is sent as one string in `input`:
+```json
+{"model":"text-embedding-model","input":"text or serialized document fields"}
+```
+The response must contain exactly one embedding with index `0`:
+```json
+{"data":[{"index":0,"embedding":[1.1,0.7,...]}]}
 ```
 
 - Go
@@ -446,6 +475,11 @@ db.Query("test_ns").SelectAllFields()
 Result:
 ```json
 {"id": 0, "vec_bf": [0.0, 1.1, ...], "vec_hnsw": [1.2, 3.5, ...], "vec_ivf": [5.1, 4.7, ...]}
+```
+- `UPDATE`/`DELETE` queries in SQL always return vectors. In DSL/Query-builder, `DELETE` queries return only the number of deleted documents, and `UPDATE` queries by default will not return vectors from the affected documents. Just like with `SELECT`, vectors can be requested explicitly:
+```go
+db.Query("test_ns").Set("field", 42).Select("*", "vectors()")
+db.Query("test_ns").Set("field", 42).SelectAllFields()
 ```
 
 ## KNN search

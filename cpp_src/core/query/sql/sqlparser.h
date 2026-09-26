@@ -3,7 +3,9 @@
 #include <unordered_set>
 #include <vector>
 #include "core/function/function.h"
+#include "core/keyvalue/variant.h"
 #include "core/query/knn_search_params.h"
+#include "core/query/query_impl.h"
 #include "estl/tokenizer.h"
 #include "sqltokentype.h"
 
@@ -11,9 +13,6 @@
 /// The base namespace
 namespace reindexer {
 
-class Query;
-class JoinedQuery;
-struct SortingEntries;
 class UpdateEntry;
 using EqualPosition_t = h_vector<std::string, 2>;
 
@@ -32,8 +31,11 @@ public:
 	/// @return parsed query
 	static Query Parse(std::string_view sql);
 
+	SQLParser& operator=(const SQLParser&) = delete;
+	SQLParser& operator=(SQLParser&&) = delete;
+
 protected:
-	explicit SQLParser(Query& q) noexcept : query_(q) {}
+	explicit SQLParser(QueryImpl q) noexcept : query_(q) {}
 	/// Sql parser context
 	struct [[nodiscard]] SqlParsingCtx {
 		struct [[nodiscard]] SuggestionData {
@@ -93,14 +95,15 @@ protected:
 	template <Nested>
 	void parseWhere(Tokenizer& parser, TokenizerRange whereLocation);
 	template <typename T>
-	void parseWhereCondition(Tokenizer&, T&& firstArg, OpType);
+	void parseWhereCondition(Tokenizer&, T&& firstArg, OpType, bool firstArgQuoted = false);
+	void parseWhereConditionLeftValue(Tokenizer&, Variant left, OpType);
 
 	/// Parse order by
 	template <typename Sortable>
 	void parseOrderBy(Tokenizer& parser, Sortable&);
 
 	/// Parse join entries
-	void parseJoin(JoinType type, Tokenizer& tok);
+	void parseJoin(OpType, JoinType, Tokenizer&);
 
 	/// Parse join entries
 	void parseJoinEntries(Tokenizer& parser, const std::string& mainNs, JoinedQuery& jquery);
@@ -109,8 +112,8 @@ protected:
 	void parseEqualPositions(Tokenizer& parser);
 
 	Point parseGeomFromText(Tokenizer& parser) const;
-	void parseDWithin(Tokenizer& parser, OpType nextOp);
-	void parseKnn(Tokenizer& parser, OpType nextOp);
+	void parseDWithin(OpType nextOp, Tokenizer& parser);
+	void parseKnn(OpType nextOp, Tokenizer& parser);
 	KnnSearchParams parseKnnParams(Tokenizer&);
 	template <typename T>
 	void parseSingleKnnParam(Tokenizer&, std::optional<T>& param, std::string_view paramName);
@@ -136,7 +139,7 @@ protected:
 	static CondType getCondType(const Token& cond, TokenizerRange tokenPosition);
 
 	SqlParsingCtx ctx_;
-	Query& query_;
+	QueryImpl query_;
 };
 
 }  // namespace reindexer

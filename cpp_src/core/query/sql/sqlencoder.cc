@@ -16,7 +16,8 @@ constexpr static std::string_view kJoinNames[] = {"LEFT JOIN ", "INNER JOIN ", "
 
 template <NeedQuote needQuote>
 static void indexToSql(std::string_view index, reindexer::WrSerializer& ser) {
-	if (needQuote == NeedQuote::No || index.find('+') == std::string::npos) {
+	const bool needsQuotes = index.find('+') != std::string_view::npos || index.find(' ') != std::string_view::npos;
+	if (needQuote == NeedQuote::No || !needsQuotes) {
 		ser << index;
 	} else {
 		ser << '"' << index << '"';
@@ -61,42 +62,43 @@ namespace reindexer {
 template <typename Formatter>
 void SQLEncoder<Formatter>::DumpSingleJoinQuery(size_t idx, bool stripArgs) const {
 	WrSerializer& ser = formatter_.Serializer();
-	if (idx >= query_.GetJoinQueries().size()) [[unlikely]] {
+	if (idx >= query_.JoinQueries().size()) [[unlikely]] {
 		throw Error(errParams, "Error during parsing query join entries: idx({}) >= query_.GetJoinQueries().size()({})", idx,
-					query_.GetJoinQueries().size());
+					query_.JoinQueries().size());
 	}
 
-	const auto& jq = query_.GetJoinQueries()[idx];
-	ser << kJoinNames[jq.joinType];
-	if (jq.Entries().Empty() && jq.GetJoinQueries().empty() && !jq.HasLimit() && jq.GetSortingEntries().empty()) {
-		ser << jq.NsName() << ' ';
+	const auto jq = JoinedImpl(query_.JoinQueries()[idx]);
+	ConstQueryImpl jqImpl = Impl(*jq);
+	ser << kJoinNames[jq.GetJoinType()];
+	if (jqImpl.Entries().Empty() && jqImpl.JoinQueries().empty() && !jqImpl.HasLimit() && jqImpl.GetSortingEntries().empty()) {
+		ser << jqImpl.NsName() << ' ';
 	} else {
 		{
 			const auto parenthesisGuard = formatter_.OpenParenthesis();
-			SQLEncoder(jq, formatter_).DumpSQL(stripArgs);
+			SQLEncoder(jqImpl, formatter_).DumpSQL(stripArgs);
 		}
 		formatter_.Next();
 	}
 	ser << "ON ";
 	{
-		const auto onGuard = formatter_.ConditionallyOpenParenthesis(jq.joinEntries_.size() != 1);
+		const auto onGuard = formatter_.ConditionallyOpenParenthesis(jq.JoinEntries().size() != 1);
 		bool needEncloseOR = false;
-		for (size_t i = 1; i < jq.joinEntries_.size(); ++i) {
-			if (jq.joinEntries_[i].Operation() != OpOr) {
+		for (size_t i = 1; i < jq.JoinEntries().size(); ++i) {
+			if (jq.JoinEntries()[i].Operation() != OpOr) {
 				needEncloseOR = true;
 				break;
 			}
 		}
 		auto conditionsFormatter = formatter_.StartConditions(needEncloseOR);
-		for (size_t i = 0; i < jq.joinEntries_.size(); ++i) {
-			const auto& e = jq.joinEntries_[i];
-			const bool isNextOr = i + 1 < jq.joinEntries_.size() && jq.joinEntries_[i + 1].Operation() == OpOr;
+		for (size_t i = 0; i < jq.JoinEntries().size(); ++i) {
+			const auto& e = jq.JoinEntries()[i];
+			const bool isNextOr = i + 1 < jq.JoinEntries().size() && jq.JoinEntries()[i + 1].Operation() == OpOr;
 			conditionsFormatter.AddCondition(e.Operation(), isNextOr);
 			if (e.ReverseNamespacesOrder()) {
-				ser << jq.NsName() << '.' << e.RightFieldName() << ' ' << joins::InvertJoinCondition(e.Condition()) << ' '
+				ser << jqImpl.NsName() << '.' << e.RightFieldName() << ' ' << joins::InvertJoinCondition(e.Condition()) << ' '
 					<< query_.NsName() << '.' << e.LeftFieldName();
 			} else {
-				ser << query_.NsName() << '.' << e.LeftFieldName() << ' ' << e.Condition() << ' ' << jq.NsName() << '.'
+				ser << query_.NsName() << '.' << e.LeftFieldName() << ' ' << e.Condition() << ' ' << jqImpl.NsName() << '.'
 					<< e.RightFieldName();
 			}
 		}
@@ -105,8 +107,8 @@ void SQLEncoder<Formatter>::DumpSingleJoinQuery(size_t idx, bool stripArgs) cons
 
 template <typename Formatter>
 void SQLEncoder<Formatter>::dumpJoined(bool stripArgs) const {
-	for (size_t i = 0; i < query_.GetJoinQueries().size(); ++i) {
-		if (query_.GetJoinQueries()[i].joinType == JoinType::LeftJoin) {
+	for (size_t i = 0; i < query_.JoinQueries().size(); ++i) {
+		if (JoinedImpl(query_.JoinQueries()[i]).GetJoinType() == JoinType::LeftJoin) {
 			formatter_.Next();
 			DumpSingleJoinQuery(i, stripArgs);
 		}
@@ -116,11 +118,11 @@ void SQLEncoder<Formatter>::dumpJoined(bool stripArgs) const {
 template <typename Formatter>
 void SQLEncoder<Formatter>::dumpMerged(bool stripArgs) const {
 	WrSerializer& ser = formatter_.Serializer();
-	for (auto& me : query_.GetMergeQueries()) {
+	for (const auto& me : query_.MergeQueries()) {
 		formatter_.Next();
-		ser << kJoinNames[me.joinType];
+		ser << kJoinNames[JoinedImpl(me).GetJoinType()];
 		const auto parenthesisGuard = formatter_.OpenParenthesis();
-		SQLEncoder(me, formatter_).DumpSQL(stripArgs);
+		SQLEncoder(Impl(me), formatter_).DumpSQL(stripArgs);
 	}
 }
 
@@ -214,7 +216,7 @@ void SQLEncoder<Formatter>::DumpSQL(bool stripArgs) const {
 					ser << "RANK()";
 					needComma = true;
 				}
-				for (const auto& a : query_.aggregations_) {
+				for (const auto& a : query_.Aggregations()) {
 					if (needComma) {
 						formatter_.Comma();
 					} else {
@@ -244,7 +246,8 @@ void SQLEncoder<Formatter>::DumpSQL(bool stripArgs) const {
 						}
 					}
 				}
-				if (query_.aggregations_.empty() || (query_.aggregations_.size() == 1 && query_.aggregations_[0].Type() == AggDistinct)) {
+				if (query_.Aggregations().empty() ||
+					(query_.Aggregations().size() == 1 && query_.Aggregations()[0].Type() == AggDistinct)) {
 					if (query_.SelectFilters().Empty()) {
 						if (query_.Limit() != 0 || !query_.HasCalcTotal()) {
 							if (needComma) {
@@ -371,6 +374,30 @@ void SQLEncoder<Formatter>::DumpSQL(bool stripArgs) const {
 	}
 }
 
+template <FunctionAsString functionAsString = FunctionAsString::No>
+static void dumpSqlValues(WrSerializer& ser, auto& formatter, const VariantArray& values, bool stripArgs) {
+	if (stripArgs) {
+		ser << '?';
+		return;
+	}
+	const auto parenthesisGuard = formatter.ConditionallyOpenParenthesis(values.size() != 1);
+	for (auto& v : values) {
+		if (&v != &values[0]) {
+			formatter.Comma();
+		}
+		if (functionAsString == FunctionAsString::Yes) {
+			ser << v.As<std::string>();
+		} else {
+			v.Type().EvaluateOneOf(
+				overloaded{[&](KeyValueType::String) { stringToSql(v.As<p_string>(), ser); },
+						   [&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
+						   [&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+											   KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+											   KeyValueType::Undefined, KeyValueType::FloatVector> auto) { ser << v.As<std::string>(); }});
+		}
+	}
+}
+
 template <NeedQuote needQuote, FunctionAsString functionAsString = FunctionAsString::No>
 static void dumpCondWithValues(WrSerializer& ser, auto& formatter, std::string_view fieldName, CondType cond, const VariantArray& values,
 							   bool stripArgs) {
@@ -412,29 +439,35 @@ static void dumpCondWithValues(WrSerializer& ser, auto& formatter, std::string_v
 		case CondLike:
 			indexToSql<needQuote>(fieldName, ser);
 			ser << ' ' << cond << ' ';
-			if (stripArgs) {
-				ser << '?';
-			} else {
-				const auto parenthesisGuard = formatter.ConditionallyOpenParenthesis(values.size() != 1);
-				for (auto& v : values) {
-					if (&v != &values[0]) {
-						formatter.Comma();
-					}
-					if (functionAsString == FunctionAsString::Yes) {
-						ser << v.As<std::string>();
-					} else {
-						v.Type().EvaluateOneOf(overloaded{
-							[&](KeyValueType::String) { stringToSql(v.As<p_string>(), ser); },
-							[&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
-							[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
-												KeyValueType::Float, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
-												KeyValueType::Undefined, KeyValueType::FloatVector> auto) { ser << v.As<std::string>(); }});
-					}
-				}
-			}
+			dumpSqlValues<functionAsString>(ser, formatter, values, stripArgs);
 			break;
 		case CondKnn:
 			throw Error(errParams, "Unexpected KNN-condition");
+	}
+}
+
+static void dumpArithmeticEntry(WrSerializer& ser, auto& formatter, const QueryArithmeticEntry& entry, bool stripArgs) {
+	using LeftKind = QueryArithmeticEntry::LeftKind;
+	using RightKind = QueryArithmeticEntry::RightKind;
+	switch (entry.GetLeftKind()) {
+		case LeftKind::Field:
+			indexToSql<NeedQuote::Yes>(entry.LeftField().FieldName(), ser);
+			break;
+		case LeftKind::Arithmetic:
+			ser << entry.LeftExpr().Dump();
+			break;
+	}
+	ser << ' ' << entry.Condition() << ' ';
+	switch (entry.GetRightKind()) {
+		case RightKind::Values:
+			dumpSqlValues(ser, formatter, entry.Values(), stripArgs);
+			break;
+		case RightKind::Field:
+			indexToSql<NeedQuote::Yes>(entry.RightField().FieldName(), ser);
+			break;
+		case RightKind::Arithmetic:
+			ser << entry.RightExpr().Dump();
+			break;
 	}
 }
 
@@ -455,11 +488,12 @@ void SQLEncoder<Formatter>::dumpWhereEntries(QueryEntries::const_iterator from, 
 		++next;
 		const OpType op = it->operation;
 		const bool isNextOr =
-			(next != to &&
-			 (next->operation == OpType::OpOr ||
-			  next->Visit(
-				  [&](const JoinQueryEntry& jqe) { return query_.GetJoinQueries()[jqe.joinIndex].joinType == JoinType::OrInnerJoin; },
-				  [&](const auto&) { return false; })));
+			(next != to && (next->operation == OpType::OpOr ||
+							next->Visit(
+								[&](const JoinQueryEntry& jqe) {
+									return JoinedImpl(query_.JoinQueries()[jqe.joinIndex]).GetJoinType() == JoinType::OrInnerJoin;
+								},
+								[&](const auto&) { return false; })));
 		formatter.AddCondition(op, isNextOr);
 		it->Visit(
 			[&](const AlwaysTrue&) {
@@ -473,19 +507,19 @@ void SQLEncoder<Formatter>::dumpWhereEntries(QueryEntries::const_iterator from, 
 			[&](const SubQueryEntry& sqe) {
 				{
 					const auto parenthesisGuard = formatter_.OpenParenthesis();
-					SQLEncoder{query_.GetSubQuery(sqe.QueryIndex()), formatter_}.DumpSQL(stripArgs);
+					SQLEncoder{Impl(query_.SubQueries()[sqe.QueryIndex()]), formatter_}.DumpSQL(stripArgs);
 				}
 				dumpCondWithValues<NeedQuote::No>(ser, formatter_, "", sqe.Condition(), sqe.Values(), stripArgs);
 			},
 			[&](const SubQueryFieldEntry& sqe) {
 				ser << sqe.FieldName() << ' ' << sqe.Condition() << ' ';
 				const auto parenthesisGuard = formatter_.OpenParenthesis();
-				SQLEncoder{query_.GetSubQuery(sqe.QueryIndex()), formatter_}.DumpSQL(stripArgs);
+				SQLEncoder{Impl(query_.SubQueries()[sqe.QueryIndex()]), formatter_}.DumpSQL(stripArgs);
 			},
 			[&](const SubQueryFunctionEntry& sqe) {
 				{
 					const auto parenthesisGuard = formatter_.OpenParenthesis();
-					SQLEncoder{query_.GetSubQuery(sqe.QueryIndex()), formatter_}.DumpSQL(stripArgs);
+					SQLEncoder{Impl(query_.SubQueries()[sqe.QueryIndex()]), formatter_}.DumpSQL(stripArgs);
 				}
 				ser << ' ' << sqe.Condition() << ' ' << sqe.Function().ToString();
 			},
@@ -510,6 +544,7 @@ void SQLEncoder<Formatter>::dumpWhereEntries(QueryEntries::const_iterator from, 
 									  [&](const functions::Serial&) { assertrx_dbg(0); }},
 						   entry.FunctionVariant());
 			},
+			[&](const QueryArithmeticEntry& entry) { dumpArithmeticEntry(ser, formatter_, entry, stripArgs); },
 			[&](const MultiDistinctQueryEntry&) {},
 			[&](const JoinQueryEntry& jqe) { SQLEncoder(query_, formatter_).DumpSingleJoinQuery(jqe.joinIndex, stripArgs); },
 			[&](const BetweenFieldsQueryEntry& entry) {

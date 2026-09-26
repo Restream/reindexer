@@ -631,7 +631,7 @@ public:
 			val = distribution(level_generator_);
 		}
 		double r = -log(val) * reverse_size;
-		return r;
+		return static_cast<int>(r);
 	}
 
 	size_t MaxElements() const noexcept override { return max_elements_; }
@@ -1210,7 +1210,7 @@ public:
 	// Read-only concurrency expected
 	void SaveIndex(IWriter& writer, const std::atomic_int32_t& cancel) override {
 		const size_t dim = fstdistfunc_.Dim();
-		constexpr size_t kCancelPeriod = 0x3FFFFF;
+		constexpr size_t kCancelPeriod = 0xFF;
 
 		writer.PutVarUInt(uint64_t(max_elements_));
 		writer.PutVarUInt(uint64_t(cur_element_count.load()));
@@ -1221,8 +1221,8 @@ public:
 
 		std::vector<float> dequantizedDeletedVectorsHolder(dim);
 		for (size_t i = 0; i < cur_element_count; ++i) {
-			if (((i & kCancelPeriod) == kCancelPeriod) && cancel.load(std::memory_order_relaxed)) {
-				throw std::runtime_error("HNSW index saving was canceled");
+			if (((i & kCancelPeriod) == 0) && cancel.load(std::memory_order_relaxed)) {
+				throw std::runtime_error(kSavingCanceledMsg);
 			}
 
 			static_assert(sizeof(linklistsizeint) == sizeof(tableint), "Expecting equality of those sizes here");
@@ -1251,8 +1251,8 @@ public:
 		}
 
 		for (size_t i = 0; i < cur_element_count; ++i) {
-			if (((i & kCancelPeriod) == kCancelPeriod) && cancel.load(std::memory_order_relaxed)) {
-				throw std::runtime_error("HNSW index saving was canceled");
+			if (((i & kCancelPeriod) == 0) && cancel.load(std::memory_order_relaxed)) {
+				throw std::runtime_error(kSavingCanceledMsg);
 			}
 
 			const unsigned int linkListSize = element_levels_[i] > 0 ? size_links_per_element_ * element_levels_[i] : 0;

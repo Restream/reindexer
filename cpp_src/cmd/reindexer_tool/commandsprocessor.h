@@ -81,7 +81,7 @@ private:
 	void bench(unsigned int numThreads, int benchTime);
 
 	bool isHavingReplicationConfig();
-	bool isHavingReplicationConfig(reindexer::WrSerializer& wser, std::string_view type);
+	bool isHavingReplicationConfig(reindexer::WrSerializer& wser, std::string_view type, std::string& details);
 
 	Error interactive() noexcept;
 	void fromFile(std::istream& in, std::optional<size_t> fileSize = std::nullopt);

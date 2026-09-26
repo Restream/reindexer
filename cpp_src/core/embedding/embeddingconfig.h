@@ -58,9 +58,16 @@ struct [[nodiscard]] CacheTagLess {
 };
 
 struct [[nodiscard]] EmbedderConfig {
+	enum class [[nodiscard]] Protocol { Rx, OpenAI };
+	enum class [[nodiscard]] Strategy { Always, EmptyOnly, Strict };
+	enum class [[nodiscard]] FieldsFormat { Join, Stringify };
+
 	CacheTag tag;
 	reindexer::h_vector<std::string, 1> fields;
-	enum class [[nodiscard]] Strategy { Always, EmptyOnly, Strict } strategy{Strategy::Always};
+	Protocol protocol{Protocol::Rx};
+	Strategy strategy{Strategy::Always};
+	FieldsFormat fieldsFormat{FieldsFormat::Stringify};
+	std::string model;
 	bool operator==(const EmbedderConfig& other) const noexcept = default;
 };
 

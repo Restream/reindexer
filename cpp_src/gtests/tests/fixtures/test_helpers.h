@@ -6,16 +6,18 @@
 
 namespace reindexer_tests {
 
-struct [[nodiscard]] QueryWatcher {
+class [[nodiscard]] QueryWatcher {
+public:
+	QueryWatcher(const reindexer::Query& q) noexcept : q_{q} {}
+
 	~QueryWatcher() {
 		if (::testing::Test::HasFailure()) {
-			reindexer::WrSerializer ser;
-			q.GetSQL(ser);
-			TEST_COUT << "Failed query dest: " << ser.Slice() << std::endl;
+			TEST_COUT << "Failed query dest: " << q_.GetSQL() << std::endl;
 		}
 	}
 
-	const reindexer::Query& q;
+private:
+	const reindexer::Query& q_;
 };
 
 template <typename ItemType>

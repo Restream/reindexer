@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+
 #include "core/keyvalue/variant.h"
 
 namespace reindexer {
@@ -20,6 +22,10 @@ public:
 
 	RX_ALWAYS_INLINE std::string_view Text() const noexcept { return std::string_view(text_.data(), text_.size()); }
 	TokenType Type() const noexcept { return type_; }
+	/// Double-quoted identifier (`"name"`). Single quotes produce TokenString, not a quoted name.
+	bool Quoted() const noexcept { return quoted_; }
+	/// Unquoted TokenName equal to `kw` (case-insensitive). Quoted names and strings are never keywords.
+	bool IsKeyword(std::string_view kw) const noexcept;
 
 private:
 	friend class Tokenizer;
@@ -27,22 +33,32 @@ private:
 	TokenType type_ = TokenSymbol;
 	StorageT text_;
 	size_t pos_;
+	bool quoted_ = false;
 };
 
 class [[nodiscard]] Tokenizer {
 public:
 	class [[nodiscard]] Flags {
 	public:
-		enum [[nodiscard]] Values : int { NoFlags = 0, ToLower = 1, TreatSignAsToken = 1 << 1, InOrderBy = 1 << 2, Last = InOrderBy };
+		enum [[nodiscard]] Values : int {
+			NoFlags = 0,
+			ToLower = 1,
+			TreatSignAsToken = 1 << 1,
+			InOrderBy = 1 << 2,
+			NoLineComments = 1 << 3,
+			Last = NoLineComments
+		};
 
 		explicit Flags(int f) noexcept : f_(f) {
-			assertrx(f <= (Values::NoFlags | Values::ToLower | Values::TreatSignAsToken | Values::InOrderBy | Values::Last));
+			assertrx(f <= (Values::NoFlags | Values::ToLower | Values::TreatSignAsToken | Values::InOrderBy | Values::NoLineComments |
+						   Values::Last));
 		}
 		Flags(Values f) noexcept : f_(f) {}
 
 		RX_ALWAYS_INLINE bool HasToLower() const noexcept { return f_ & Values::ToLower; }
 		RX_ALWAYS_INLINE bool HasTreatSignAsToken() const noexcept { return f_ & Values::TreatSignAsToken; }
 		RX_ALWAYS_INLINE bool HasInOrderBy() const noexcept { return f_ & Values::InOrderBy; }
+		RX_ALWAYS_INLINE bool HasNoLineComments() const noexcept { return f_ & Values::NoLineComments; }
 
 	private:
 		int f_ = Values::NoFlags;
@@ -70,7 +86,7 @@ public:
 		pos_ = savePos;
 		return res;
 	}
-	void SkipSpace() noexcept;
+	void SkipSpace(Flags f = Flags(Flags::NoFlags)) noexcept;
 	bool End() const noexcept { return cur_ == q_.end(); }
 	size_t GetPos() const noexcept { return pos_; }
 	size_t GetPrevPos() const;

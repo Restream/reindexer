@@ -98,7 +98,7 @@ void EmbedderStatus::GetJSON(JsonBuilder& builder) const {
 void TextIndexStats::GetJSON(JsonBuilder& builder) const {
 	builder.Put("total_vdocs", totalVdocs);
 	builder.Put("removed_vdocs", removedVdocs);
-	builder.Put("vdocs_compactions", vdocsCompactions);
+	builder.Put("dead_vdocs", deadVdocs);
 }
 
 void IndexMemStat::GetJSON(JsonBuilder& builder) const {
@@ -276,6 +276,10 @@ void IndexPerfStat::GetJSON(JsonBuilder& builder) const {
 		auto obj = builder.Object("commits");
 		commits.GetJSON(obj);
 	}
+	{
+		auto obj = builder.Object("cleans");
+		cleans.GetJSON(obj);
+	}
 	if (cache.state != LRUCachePerfStat::State::DoesNotExist) {
 		auto obj = builder.Object("cache");
 		cache.GetJSON(obj);
@@ -290,36 +294,6 @@ void IndexPerfStat::GetJSON(JsonBuilder& builder) const {
 		auto obj = builder.Object("query_embedder");
 		queryEmbedder->GetJSON(obj);
 	}
-}
-
-void ReplicationDataHash::GetJSON(JsonBuilder& builder) const {
-	builder.Put("data_hash", hashV1);
-	if (hashV2.has_value()) {
-		builder.Put("checksum", *hashV2);
-	}
-}
-
-void ReplicationDataHash::FromJSON(const gason::JsonNode& root) {
-	hashV1 = root["data_hash"].As<uint64_t>();
-	if (!root["checksum"].isEmpty()) {
-		hashV2 = root["checksum"].As<uint64_t>();
-	} else {
-		hashV2 = std::nullopt;
-	}
-}
-
-bool ReplicationDataHash::IsEqualByAnyVersionTo(const ReplicationDataHash& o) const noexcept {
-	if (hashV2.has_value() && o.hashV2.has_value()) {
-		return *hashV2 == *o.hashV2;
-	}
-	return hashV1 == o.hashV1;
-}
-
-bool ReplicationDataHash::IsEqualByAnyVersionTo(PayloadChecksum o) const noexcept {
-	if (hashV2.has_value()) {
-		return *hashV2 == o.hashV2;
-	}
-	return hashV1 == o.hashV1;
 }
 
 static bool LoadLsn(lsn_t& to, const gason::JsonNode& node) {
@@ -341,7 +315,7 @@ void ReplicationState::GetJSON(JsonBuilder& builder) const {
 		lastLsn.GetJSON(lastLsnObj);
 	}
 
-	dataHash.GetJSON(builder);
+	builder.Put("checksum", checksum);
 	builder.Put("data_count", dataCount);
 	builder.Put("updated_unix_nano", int64_t(updatedUnixNano));
 	builder.Put("admissible_token", token);
@@ -364,7 +338,7 @@ void ReplicationState::FromJSON(std::span<char> json) {
 			lastLsn = lsn_t(root["last_lsn"].As<int64_t>());
 		}
 
-		dataHash.FromJSON(root);
+		checksum = root["checksum"].As<uint64_t>();
 		dataCount = root["data_count"].As<int>();
 		updatedUnixNano = root["updated_unix_nano"].As<uint64_t>();
 		token = root["admissible_token"].As<std::string>();
@@ -499,7 +473,7 @@ void ClusterOperationStatus::FromJSON(const gason::JsonNode& root) {
 
 void ReplicationStateV2::GetJSON(JsonBuilder& builder) const {
 	builder.Put("last_lsn", int64_t(lastLsn));
-	dataHash.GetJSON(builder);
+	builder.Put("checksum", checksum);
 	builder.Put("data_count", dataCount);
 	builder.Put("ns_version", int64_t(nsVersion));
 	auto clusterObj = builder.Object("cluster_status");
@@ -511,7 +485,7 @@ void ReplicationStateV2::FromJSON(std::span<char> json) {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
 		lastLsn = lsn_t(root["last_lsn"].As<int64_t>());
-		dataHash.FromJSON(root);
+		checksum = root["checksum"].As<uint64_t>();
 		dataCount = root["data_count"].As<int64_t>();
 		nsVersion = lsn_t(root["ns_version"].As<int64_t>());
 		clusterStatus.FromJSON(root["cluster_status"]);

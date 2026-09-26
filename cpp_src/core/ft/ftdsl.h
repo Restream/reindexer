@@ -1,5 +1,7 @@
 #pragma once
 
+#include <variant>
+
 #include "stopwords/types.h"
 #include "tools/rhashmap.h"
 
@@ -21,11 +23,9 @@ struct [[nodiscard]] FtDslOpts {
 	bool typos = false;
 	bool exact = false;
 	bool number = false;
-	int phraseNum = -1;
 	OpType op = OpOr;
 	float boost = 1.0;
 	float termLenBoost = 1.0;
-	int distance = INT_MAX;
 	h_vector<FtDslFieldOpts, 8> fieldsOpts;
 
 	FtDslOpts() = default;
@@ -42,13 +42,17 @@ struct [[nodiscard]] FtDslOpts {
 	}
 };
 
-class [[nodiscard]] FtDSLEntry {
+class [[nodiscard]] FtDslTerm {
 public:
-	FtDSLEntry() = default;
-	FtDSLEntry(std::u16string&& p, const FtDslOpts& o) : pattern{std::move(p)}, opts{o} {}
-	FtDSLEntry(const std::u16string& p, const FtDslOpts& o) : pattern{p}, opts{o} {}
+	FtDslTerm() = default;
+	FtDslTerm(std::u16string&& p, const FtDslOpts& o) : pattern{std::move(p)}, opts{o} {}
+	FtDslTerm(const std::u16string& p, const FtDslOpts& o) : pattern{p}, opts{o} {}
 
-	bool CanBeJoinedWith(const FtDSLEntry& otherTerm) const noexcept {
+	bool CanBeJoinedWith(const FtDslTerm& otherTerm) const noexcept {
+		if (pattern.empty() || otherTerm.Pattern().empty()) {
+			return false;
+		}
+
 		if (opts.op != OpOr || otherTerm.Opts().op != OpOr) {
 			return false;
 		}
@@ -57,28 +61,72 @@ public:
 			return false;
 		}
 
-		if (opts.phraseNum != otherTerm.Opts().phraseNum) {
-			return false;
-		}
-
 		return true;
 	}
 
-	FtDSLEntry JoinWithPrevTerm(const FtDSLEntry& prevTerm) const {
+	FtDslTerm JoinWithPrevTerm(const FtDslTerm& prevTerm) const {
 		FtDslOpts resOpts = opts.JoinWithPrevTermOpts(prevTerm.Opts());
-		return FtDSLEntry(prevTerm.Pattern() + pattern, resOpts);
+		return FtDslTerm(prevTerm.Pattern() + pattern, resOpts);
 	}
 
 	const FtDslOpts& Opts() const noexcept { return opts; }
 	FtDslOpts& Opts() noexcept { return opts; }
 	const std::u16string& Pattern() const noexcept { return pattern; }
 	std::u16string& Pattern() noexcept { return pattern; }
+	const std::u16string& WrongKbLayoutPattern() const noexcept { return wrongKbLayoutPattern_; }
+	bool WrongKbLayoutPref() const noexcept { return wrongKbLayoutPref_; }
+	bool WrongKbLayoutSuff() const noexcept { return wrongKbLayoutSuff_; }
+	bool WrongKbLayoutTypos() const noexcept { return wrongKbLayoutTypos_; }
+	float WrongKbLayoutTermLenBoost() const noexcept { return wrongKbLayoutTermLenBoost_; }
 
 	friend class FtDSLQuery;
 
 private:
 	std::u16string pattern;
+	std::u16string wrongKbLayoutPattern_;
+	bool wrongKbLayoutPref_ = false;
+	bool wrongKbLayoutSuff_ = false;
+	bool wrongKbLayoutTypos_ = false;
+	float wrongKbLayoutTermLenBoost_ = 0.0f;
 	FtDslOpts opts;
+};
+
+class [[nodiscard]] FtDslPhrase {
+public:
+	FtDslPhrase(h_vector<FtDslTerm, 3>&& terms, unsigned distance) : terms_{std::move(terms)}, distance_{distance} {
+		assertrx_throw(!terms_.empty());
+		fieldsOpts_ = terms_[0].Opts().fieldsOpts;
+		op_ = terms_[0].Opts().op;
+	}
+
+	OpType Op() const noexcept { return op_; }
+	const h_vector<FtDslFieldOpts, 8>& FieldsOpts() const noexcept { return fieldsOpts_; }
+	unsigned Distance() const noexcept { return distance_; }
+	size_t NumTerms() const noexcept { return terms_.size(); }
+	const FtDslTerm& GetTerm(size_t idx) const noexcept { return terms_[idx]; }
+	FtDslTerm& GetTerm(size_t idx) noexcept { return terms_[idx]; }
+
+private:
+	h_vector<FtDslTerm, 3> terms_;
+	h_vector<FtDslFieldOpts, 8> fieldsOpts_;
+	OpType op_ = OpOr;
+	unsigned distance_ = 1;
+};
+
+class [[nodiscard]] FtDSLEntry {
+public:
+	explicit FtDSLEntry(FtDslTerm&& term) : value_{std::move(term)} {}
+	explicit FtDSLEntry(FtDslPhrase&& phrase) : value_{std::move(phrase)} {}
+
+	bool IsTerm() const noexcept { return value_.index() == 0; }
+	bool IsPhrase() const noexcept { return value_.index() == 1; }
+	const FtDslTerm& Term() const { return std::get<FtDslTerm>(value_); }
+	FtDslTerm& Term() { return std::get<FtDslTerm>(value_); }
+	const FtDslPhrase& Phrase() const { return std::get<FtDslPhrase>(value_); }
+	FtDslPhrase& Phrase() { return std::get<FtDslPhrase>(value_); }
+
+private:
+	std::variant<FtDslTerm, FtDslPhrase> value_;
 };
 
 #if !defined(__clang__) && !defined(_MSC_VER)
@@ -103,6 +151,21 @@ struct [[nodiscard]] FtDSLVariant {
 
 struct StopWord;
 
+// Parsed full-text DSL grammar (lexical separators and pattern characters depend on SplitOptions):
+//
+// query          := { [ field-selector ] operand | separator }
+// operand        := [ '+' | '-' ] (term | phrase)  // OR by default; '+' is AND, '-' is NOT
+// phrase         := quote { [ '+' ] term | separator } same-quote [ '~' positive-integer ]
+// term           := [ '=' ] [ '*' ] pattern { '*' | '~' | '^' float }
+// field-selector := '@' field-spec { ',' field-spec }
+// field-spec     := [ '+' ] (field-name | '*') [ '^' float ]
+// quote          := '\'' | '"'
+//
+// A backslash escapes the following character. Field selectors update the options for all subsequent operands. For a phrase, a field
+// selector is allowed only before the opening quote and applies to the entire phrase. Quotes always produce an FtDslPhrase when at least
+// one non-stop term remains, including a phrase with a single term. A phrase's boolean operator and field options are those parsed before
+// its opening quote;
+// '-' and field selectors are forbidden inside a phrase, while an inner '+' is accepted but has no boolean meaning.
 class [[nodiscard]] FtDSLQuery {
 public:
 	FtDSLQuery(const RHashMap<std::string, FtIndexFieldPros>& fields, const StopWordsSetT& stopWords, const SplitOptions& splitOptions,
@@ -112,22 +175,20 @@ public:
 	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, splitOptions_, strictMode_}; }
 	void Parse(std::string_view q);
 
-	template <typename... Args>
-	FtDSLEntry& AddTerm(Args&&... args) {
-		return terms_.emplace_back(std::forward<Args>(args)...);
-	}
+	const FtDSLEntry& GetEntry(size_t idx) const noexcept { return entries_[idx]; }
+	FtDSLEntry& GetEntry(size_t idx) noexcept { return entries_[idx]; }
+	size_t NumEntries() const noexcept { return entries_.size(); }
 
-	const FtDSLEntry& GetTerm(size_t idx) const noexcept { return terms_[idx]; }
-	FtDSLEntry& GetTerm(size_t idx) noexcept { return terms_[idx]; }
-
-	size_t NumTerms() const noexcept { return terms_.size(); }
-
-	h_vector<FtDSLEntry>::const_iterator begin() const noexcept { return terms_.begin(); }
-	h_vector<FtDSLEntry>::const_iterator end() const noexcept { return terms_.end(); }
+	h_vector<FtDSLEntry>::const_iterator begin() const noexcept { return entries_.begin(); }
+	h_vector<FtDSLEntry>::const_iterator end() const noexcept { return entries_.end(); }
 
 private:
 	void parseImpl(char16_t* str);
-	void closeGroup(char16_t*& str, int groupTermCounter, int groupCounter);
+	void parseOperand(char16_t*& str, char16_t*& wrongKbLayoutEnd, h_vector<FtDslFieldOpts, 8>& fieldsOpts, bool& hasAnythingExceptNot,
+					  size_t& maxPatternLen);
+	void parsePhrase(char16_t*& str, FtDslOpts opts, bool& hasAnythingExceptNot, size_t& maxPatternLen);
+	FtDslTerm parseTerm(char16_t*& str, FtDslOpts opts, char16_t phraseQuote = 0);
+	bool isStopWord(const FtDslTerm& term) const;
 	void parseFieldOpts(char16_t*& str, FtDslFieldOpts& defFieldOpts, h_vector<FtDslFieldOpts, 8>& fieldsOpts);
 	void parseFieldsOpts(char16_t*& str, h_vector<FtDslFieldOpts, 8>& fieldsOpts);
 
@@ -138,7 +199,7 @@ private:
 	const SplitOptions& splitOptions_;
 	const StrictMode strictMode_{StrictMode::StrictModeNotSet};
 
-	h_vector<FtDSLEntry> terms_;
+	h_vector<FtDSLEntry> entries_;
 };
 
 }  // namespace reindexer

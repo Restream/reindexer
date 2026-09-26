@@ -146,6 +146,7 @@ Item::FieldRef& Item::FieldRef::operator=(std::span<const T> arr) {
 	}
 
 	// Fast path, that works only if indexed array size was not changed
+	itemImpl_->cjson_ = {};	 // Payload is modified in place below, so the cached CJSON becomes outdated
 	auto pl(itemImpl_->GetPayload());
 	int pos = pl.ResizeArray(field_, arr.size(), Append_False);
 

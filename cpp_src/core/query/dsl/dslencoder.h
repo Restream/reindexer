@@ -1,13 +1,8 @@
 #pragma once
+#include "core/query/query_impl.h"
 
-#include <string>
+namespace reindexer::dsl {
 
-namespace reindexer {
+std::string toDsl(ConstQueryImpl query);
 
-class Query;
-
-namespace dsl {
-std::string toDsl(const Query& query);
-}  // namespace dsl
-
-}  // namespace reindexer
+}  // namespace reindexer::dsl

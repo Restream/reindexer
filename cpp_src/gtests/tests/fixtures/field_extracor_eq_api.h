@@ -3,12 +3,15 @@
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/field_extractor_grouping.h"
 #include "core/cjson/jsondecoder.h"
+#include "core/namespace/indexes/index_names.h"
 #include "reindexer_api.h"
 #include "tools/serilize/serializer.h"
 
 #include "core/cjson/jsonbuilder.h"
 
 namespace reindexer_tests {
+
+using reindexer::Variant;
 
 class [[nodiscard]] FieldExtractorEqApi : public ReindexerApi {
 public:
@@ -21,9 +24,9 @@ public:
 
 												  });
 	}
-	void Test(std::string_view json, std::string_view pathString, const std::vector<VariantArray>& resultVals) {
+	void Test(std::string_view json, std::string_view pathString, const std::vector<reindexer::VariantArray>& resultVals) {
 		reindexer::PayloadTypeImpl pti("ns");
-		reindexer::PayloadFieldType ft(reindexer::KeyValueType::String{}, "-tuple", {}, reindexer::IsArray_False);
+		reindexer::PayloadFieldType ft(reindexer::KeyValueType::String{}, reindexer::ns_indexes::kTupleName, {}, reindexer::IsArray_False);
 		pti.Add(ft);
 		reindexer::PayloadValue value(100);	 // for '-tuple' this is more than enough
 		reindexer::Payload pl(pti, value);

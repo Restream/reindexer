@@ -1,11 +1,14 @@
 #pragma once
 
-#include "client/item.h"
-#include "core/query/query.h"
+#include <memory>
 #include "tools/clock.h"
 #include "tools/lsn.h"
 
 namespace reindexer {
+
+class Query;
+class TagsMatcher;
+class PayloadType;
 
 namespace net::cproto {
 class CoroClientConnection;
@@ -15,6 +18,7 @@ namespace client {
 
 class Namespace;
 class RPCClient;
+class Item;
 
 class [[nodiscard]] CoroTransaction {
 public:
