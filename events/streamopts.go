@@ -1,6 +1,6 @@
 package events
 
-import "github.com/restream/reindexer/v4/bindings"
+import "github.com/restream/reindexer/v5/bindings"
 
 type EventsStreamOptions struct {
 	eventTypes          []string

@@ -6,13 +6,14 @@ package builtin
 import "C"
 
 import (
-	"encoding/json"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 
-	"github.com/restream/reindexer/v4/bindings"
+	"github.com/goccy/go-json"
+
+	"github.com/restream/reindexer/v5/bindings"
 )
 
 type CGOEventsHandler struct {

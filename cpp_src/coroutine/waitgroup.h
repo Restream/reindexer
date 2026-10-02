@@ -1,12 +1,12 @@
 #pragma once
 
+#include <exception>
 #include "coroutine.h"
 
-namespace reindexer {
-namespace coroutine {
+namespace reindexer::coroutine {
 
 /// @class Allows to await specified number of coroutines
-class wait_group {
+class [[nodiscard]] wait_group {
 public:
 	/// Add specified number of coroutines to wait
 	void add(size_t cnt) noexcept { wait_cnt_ += cnt; }
@@ -14,7 +14,11 @@ public:
 	void done() {
 		assertrx(wait_cnt_);
 		if (--wait_cnt_ == 0 && waiter_) {
-			resume(waiter_);
+			if (std::uncaught_exceptions() > 0) {
+				defer_resume(waiter_);
+			} else {
+				std::ignore = resume(waiter_);
+			}
 		}
 	}
 	/// Await coroutines
@@ -46,7 +50,7 @@ private:
 };
 
 /// @class Allows to call done() method for wait_group on guards destruction
-class wait_group_guard {
+class [[nodiscard]] wait_group_guard {
 public:
 	wait_group_guard(wait_group& wg) noexcept : wg_(wg) {}
 	~wait_group_guard() { wg_.done(); }
@@ -55,5 +59,4 @@ private:
 	wait_group& wg_;
 };
 
-}  // namespace coroutine
-}  // namespace reindexer
+}  // namespace reindexer::coroutine

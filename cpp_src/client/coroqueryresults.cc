@@ -2,21 +2,32 @@
 #include "client/itemimpl.h"
 #include "client/namespace.h"
 #include "core/cjson/csvbuilder.h"
+#include "core/cjson/encoderdatasources.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/p_string.h"
-#include "core/queryresults/additionaldatasource.h"
+#include "core/nsselecter/joins/query_joins_table.h"
+#include "core/query/query_impl.h"
+#include "core/queryresults/fields_filter.h"
 #include "net/cproto/coroclientconnection.h"
 #include "tools/catch_and_return.h"
 
-namespace reindexer {
-namespace client {
+#include <forward_list>
+#include <limits>
+
+namespace reindexer::client {
 
 using namespace reindexer::net;
 
 CoroQueryResults::~CoroQueryResults() {
 	if (holdsRemoteData()) {
-		i_.conn_->Call({cproto::kCmdCloseResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr,
-						false, i_.sessionTs_},
-					   i_.queryID_.main, i_.queryID_.uid);
+		try {
+			std::ignore = i_.conn_->Call({cproto::kCmdCloseResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1,
+										  ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
+										 i_.queryID_.main, i_.queryID_.uid);
+		} catch (std::exception& e) {
+			fprintf(stderr, "reindexer error: unexpected exception in ~CoroQueryResults: %s\n", e.what());
+			assertrx_dbg(false);
+		}
 	}
 }
 
@@ -56,17 +67,12 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query*
 	i_.queryID_ = id;
 	i_.isBound_ = true;
 
-	if (q) {
-		QueryData data;
-		data.joinedSize = uint16_t(q->GetJoinQueries().size());
-		data.mergedJoinedSizes.reserve(q->GetMergeQueries().size());
-		for (const auto& mq : q->GetMergeQueries()) {
-			data.mergedJoinedSizes.emplace_back(mq.GetJoinQueries().size());
-		}
-		i_.qData_.emplace(std::move(data));
+	if (q && reindexer::Impl(*q).HasJoinQueries()) {
+		i_.joinsTable_ = std::make_unique<joins::QueryJoinsTable>(reindexer::Impl(*q));
 	} else {
-		i_.qData_.reset();
+		i_.joinsTable_.reset();
 	}
+	i_.queryFormat_ = i_.conn_ ? i_.conn_->GetBindingCapabilities().GetQueryFormat() : QueryFormatV1;
 
 	ResultSerializer ser(rawResult);
 	try {
@@ -75,8 +81,8 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query*
 		ser.GetRawQueryParams(
 			i_.queryParams_,
 			[&ser, this](int nsIdx) {
-				const uint32_t stateToken = ser.GetVarUint();
-				const int version = ser.GetVarUint();
+				const uint32_t stateToken = ser.GetVarUInt();
+				const int version = ser.GetVarUInt();
 				TagsMatcher newTm;
 				newTm.deserialize(ser, version, stateToken);
 				i_.nsArray_[nsIdx]->TryReplaceTagsMatcher(std::move(newTm));
@@ -84,14 +90,14 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query*
 				// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
 				PayloadType("tmp").clone()->deserialize(ser);
 			},
-			opts, i_.parsingData_);
+			opts, i_.parsingData_, i_.queryFormat_);
 
 		const auto copyStart = i_.lazyMode_ ? rawResult.begin() : (rawResult.begin() + ser.Pos());
-		if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rx_unlikely(rawResLen > int64_t(QrRawBuffer::max_size()))) {
+		if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rawResLen > int64_t(QrRawBuffer::max_size())) [[unlikely]] {
 			throw Error(
 				errLogic,
-				"client::QueryResults::Bind: rawResult buffer overflow. Max size if %d bytes, but %d bytes requested. Try to reduce "
-				"fetch limit (current limit is %d)",
+				"client::QueryResults::Bind: rawResult buffer overflow. Max size if {} bytes, but {} bytes requested. Try to reduce "
+				"fetch limit (current limit is {})",
 				QrRawBuffer::max_size(), rawResLen, i_.fetchAmount_);
 		}
 
@@ -122,12 +128,12 @@ void CoroQueryResults::handleFetchedBuf(net::cproto::CoroRPCAnswer& ans) {
 	std::string_view rawResult = p_string(args[0]);
 	ResultSerializer ser(rawResult);
 
-	ser.GetRawQueryParams(i_.queryParams_, nullptr, ResultSerializer::Options{}, i_.parsingData_);
+	ser.GetRawQueryParams(i_.queryParams_, nullptr, ResultSerializer::Options{}, i_.parsingData_, i_.queryFormat_);
 	const auto copyStart = i_.lazyMode_ ? rawResult.begin() : (rawResult.begin() + ser.Pos());
-	if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rx_unlikely(rawResLen > int64_t(QrRawBuffer::max_size()))) {
+	if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rawResLen > int64_t(QrRawBuffer::max_size())) [[unlikely]] {
 		throw Error(errLogic,
-					"client::QueryResults::fetchNextResults: rawResult buffer overflow. Max size if %d bytes, but %d bytes requested. Try "
-					"to reduce fetch limit (current limit is %d)",
+					"client::QueryResults::fetchNextResults: rawResult buffer overflow. Max size if {} bytes, but {} bytes requested. Try "
+					"to reduce fetch limit (current limit is {})",
 					QrRawBuffer::max_size(), rawResLen, i_.fetchAmount_);
 	}
 	i_.rawResult_.assign(copyStart, rawResult.end());
@@ -168,6 +174,7 @@ TagsMatcher CoroQueryResults::GetTagsMatcher(int nsid) const noexcept {
 TagsMatcher CoroQueryResults::GetTagsMatcher(std::string_view nsName) const noexcept {
 	const auto it = std::find_if(i_.nsArray_.begin(), i_.nsArray_.end(),
 								 [&nsName](const std::shared_ptr<Namespace>& ns) { return (std::string_view(ns->name) == nsName); });
+
 	return (it != i_.nsArray_.end()) ? (*it)->GetTagsMatcher() : TagsMatcher();
 }
 
@@ -187,124 +194,136 @@ const std::string& CoroQueryResults::GetNsName(int nsid) const noexcept {
 	return i_.nsArray_[nsid]->payloadType.Name();
 }
 
-class EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
+template <typename Builder>
+class [[nodiscard]] EncoderDatasourceWithJoins final : public IJoinsDatasource<Builder> {
 public:
-	EncoderDatasourceWithJoins(const CoroQueryResults::Iterator::JoinedData& joinedData, const CoroQueryResults& qr)
-		: joinedData_(joinedData), qr_(qr), tm_(TagsMatcher::unsafe_empty_t()) {}
+	EncoderDatasourceWithJoins(int nsid, const ResultSerializer::JoinedData& joinedData, const CoroQueryResults& qr)
+		: nsid_(nsid), joinedData_(joinedData), qr_(qr), tm_(TagsMatcher::unsafe_empty_t()) {
+		assertrx_throw(nsid_ >= 0);
+	}
 	~EncoderDatasourceWithJoins() override = default;
 
-	size_t GetJoinedRowsCount() const noexcept override { return joinedData_.size(); }
-	size_t GetJoinedRowItemsCount(size_t rowId) const override {
+	EncoderContext<Builder> BuildFieldJoinsDatasourceContext(size_t joinedField, size_t itemIdx) override {
+		if (hasJoinedDataForField(joinedField)) {
+			const auto& fieldData{joinedData_[joinedField]};
+			if (itemIdx < fieldData.size() && !fieldData[itemIdx].joined.empty()) {
+				const auto& itemData{fieldData[itemIdx]};
+				datasourcesWithJoins_.emplace_front(itemData.nsid, itemData.joined, qr_);
+				EncoderContext<Builder> ctx;
+				ctx.joins = &datasourcesWithJoins_.front();
+				if (qr_.NeedOutputRank()) {
+					ctx.fields.rank = itemData.rank;
+				}
+				return ctx;
+			}
+		}
+		return {};
+	}
+	size_t GetFieldsCount() const noexcept override { return joinedData_.size(); }
+	size_t GetRowItemsCount(size_t rowId) const override {
 		const auto& fieldIt = joinedData_.at(rowId);
 		return fieldIt.size();
 	}
-	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) override {
-		auto& fieldIt = joinedData_.at(rowid);
-		auto& dataIt = fieldIt.at(plIndex);
-		itemimpl_ = ItemImpl<RPCClient>(qr_.GetPayloadType(getJoinedNsID(dataIt.nsid)), qr_.GetTagsMatcher(getJoinedNsID(dataIt.nsid)),
-										nullptr, std::chrono::milliseconds());
+	ConstPayload GetItemPayload(size_t joinedField, size_t itemIdx) override {
+		auto& fieldIt = joinedData_.at(joinedField);
+		auto& dataIt = fieldIt.at(itemIdx);
+		const auto joinedNsId = getJoinedNsID(nsid_, joinedField);
+		itemimpl_ =
+			ItemImpl<RPCClient>(qr_.GetPayloadType(joinedNsId), qr_.GetTagsMatcher(joinedNsId), nullptr, std::chrono::milliseconds());
 		itemimpl_.Unsafe(true);
 		itemimpl_.FromCJSON(dataIt.data);
 		return itemimpl_.GetConstPayload();
 	}
-	const TagsMatcher& GetJoinedItemTagsMatcher(size_t rowid) noexcept override {
-		auto& fieldIt = joinedData_.at(rowid);
-		if (fieldIt.empty()) {
+	const TagsMatcher& GetItemTagsMatcher(size_t joinedField) & noexcept override {
+		if (!hasJoinedDataForField(joinedField)) {
 			static const TagsMatcher kEmptyTm;
 			return kEmptyTm;
 		}
-		tm_ = qr_.GetTagsMatcher(getJoinedNsID(fieldIt[0].nsid));
+		tm_ = qr_.GetTagsMatcher(getJoinedNsID(nsid_, joinedField));
 		return tm_;
 	}
-	virtual const FieldsSet& GetJoinedItemFieldsFilter(size_t /*rowid*/) noexcept override {
-		static const FieldsSet empty;
+	const FieldsFilter& GetItemFieldsFilter(size_t /*joinedField*/) & noexcept override {
+		static const FieldsFilter empty;
 		return empty;
 	}
-	const std::string& GetJoinedItemNamespace(size_t rowid) noexcept override {
-		static const std::string empty;
-		if (joinedData_.size() <= rowid) {
+	const std::string& GetItemNamespace(size_t joinedField) & noexcept override {
+		if (!hasJoinedDataForField(joinedField)) {
+			static const std::string empty;
 			return empty;
 		}
-		auto& fieldIt = joinedData_.at(rowid);
-		if (fieldIt.empty()) {
-			return empty;
-		}
-		return qr_.GetNsName(getJoinedNsID(rowid));
+		return qr_.GetNsName(getJoinedNsID(nsid_, joinedField));
 	}
 
 private:
-	uint32_t getJoinedNsID(int parentNsId) noexcept {
-		if (cachedParentNsId_ == int64_t(parentNsId)) {
-			return cachedJoinedNsId_;
-		}
-		uint32_t joinedNsId = 1;
-		auto& qData = qr_.GetQueryData();
-		if (qData.has_value()) {
-			joinedNsId += qData->mergedJoinedSizes.size();
-			int mergedNsIdx = parentNsId;
-			if (mergedNsIdx > 0) {
-				joinedNsId += qData->joinedSize;
-				--mergedNsIdx;
-			}
-			for (int ns = 0; ns < mergedNsIdx; ++ns) {
-				assert(size_t(ns) < qData->mergedJoinedSizes.size());
-				joinedNsId += qData->mergedJoinedSizes[ns];
-			}
-		}
-		cachedParentNsId_ = parentNsId;
-		cachedJoinedNsId_ = joinedNsId;
-		return joinedNsId;
+	bool hasJoinedDataForField(size_t joinedField) const noexcept {
+		return (joinedField < joinedData_.size()) && !joinedData_[joinedField].empty();
 	}
 
-	const CoroQueryResults::Iterator::JoinedData& joinedData_;
+	uint32_t getJoinedNsID(int parentNsId, size_t joinedField) noexcept {
+		if (cachedParentNsId_ == int64_t(parentNsId) && cachedJoinedField_ == joinedField) {
+			return cachedJoinedNsId_;
+		}
+		const auto* joinsTable{qr_.GetJoinsTable()};
+		assertrx(joinsTable);
+		if (joinsTable) {
+			cachedParentNsId_ = parentNsId;
+			cachedJoinedField_ = joinedField;
+			cachedJoinedNsId_ = joinsTable->GetJoinedNsId(parentNsId, joinedField);
+		}
+		return cachedJoinedNsId_;
+	}
+
+	int nsid_;
+	const ResultSerializer::JoinedData& joinedData_;
 	const CoroQueryResults& qr_;
 	ItemImpl<RPCClient> itemimpl_;
 	int64_t cachedParentNsId_ = -1;
+	size_t cachedJoinedField_ = std::numeric_limits<size_t>::max();
 	uint32_t cachedJoinedNsId_ = 0;
 	TagsMatcher tm_;
+	std::forward_list<EncoderDatasourceWithJoins<Builder>> datasourcesWithJoins_;
 };
 
 void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen) const {
 	auto tm = qr_->GetTagsMatcher(itemParams_.nsid);
-	JsonEncoder enc(&tm);
+	JsonEncoder enc(&tm, nullptr);
 	JsonBuilder builder(wrser, ObjType::TypePlain);
-	h_vector<IAdditionalDatasource<JsonBuilder>*, 2> dss;
+	EncoderContext<JsonBuilder> ctx;
 	int shardId = (const_cast<Iterator*>(this))->GetShardID();
-	AdditionalDatasourceShardId dsShardId(shardId);
 	if (qr_->NeedOutputShardId() && shardId >= 0) {
-		dss.push_back(&dsShardId);
+		ctx.fields.shardId = shardId;
 	}
-	if (qr_->HaveJoined() && joinedData_.size()) {
-		EncoderDatasourceWithJoins joinsDs(joinedData_, *qr_);
-		AdditionalDatasource ds = qr_->NeedOutputRank() ? AdditionalDatasource(itemParams_.proc, &joinsDs) : AdditionalDatasource(&joinsDs);
-		dss.push_back(&ds);
+	if (qr_->HaveJoined() && itemParams_.joined.size()) {
+		EncoderDatasourceWithJoins<JsonBuilder> joinsDs(itemParams_.nsid, itemParams_.joined, *qr_);
+		ctx.joins = &joinsDs;
+		if (qr_->NeedOutputRank()) {
+			ctx.fields.rank = itemParams_.rank;
+		}
 		if (withHdrLen) {
 			auto slicePosSaver = wrser.StartSlice();
 		}
-		enc.Encode(cjson, builder, dss);
+		enc.Encode(cjson, builder, ctx);
 		return;
 	}
 
-	AdditionalDatasource ds(itemParams_.proc, nullptr);
-	AdditionalDatasource* dspPtr = qr_->NeedOutputRank() ? &ds : nullptr;
-	if (dspPtr) {
-		dss.push_back(dspPtr);
+	if (qr_->NeedOutputRank()) {
+		ctx.fields.rank = itemParams_.rank;
 	}
 	if (withHdrLen) {
 		auto slicePosSaver = wrser.StartSlice();
 	}
-	enc.Encode(cjson, builder, dss);
+	enc.Encode(cjson, builder, ctx);
 }
 
 void CoroQueryResults::Iterator::checkIdx() const {
 	if (!isAvailable()) {
-		throw Error(errNotValid, "QueryResults iterator refers to unavailable item index (%d). Current fetch offset is %d", idx_,
+		throw Error(errNotValid, "QueryResults iterator refers to unavailable item index ({}). Current fetch offset is {}", idx_,
 					qr_->i_.fetchOffset_);
 	}
 }
 
 Error CoroQueryResults::Iterator::unavailableIdxError() const {
-	return Error(errNotValid, "Requested item's index [%d] in not available in this QueryResults. Avalibale indexes: [%d, %d)", idx_,
+	return Error(errNotValid, "Requested item's index [{}] in not available in this QueryResults. Available indexes: [{}, {})", idx_,
 				 qr_->i_.fetchOffset_, qr_->i_.queryParams_.qcount);
 }
 
@@ -320,7 +339,7 @@ Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLe
 				wrser.Write(itemParams_.data);
 			}
 		} else {
-			return Error(errParseBin, "Impossible to get data in MsgPack because of a different format: %d", type);
+			return Error(errParseBin, "Impossible to get data in MsgPack because of a different format: {}", type);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -332,20 +351,20 @@ Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLe
 void CoroQueryResults::Iterator::getCSVFromCJSON(std::string_view cjson, WrSerializer& wrser, CsvOrdering& ordering) const {
 	auto tm = qr_->GetTagsMatcher(itemParams_.nsid);
 	CsvBuilder builder(wrser, ordering);
-	CsvEncoder encoder(&tm);
+	CsvEncoder encoder(&tm, nullptr);
 
-	if (qr_->HaveJoined() && joinedData_.size()) {
-		EncoderDatasourceWithJoins joinsDs(joinedData_, *qr_);
-		h_vector<IAdditionalDatasource<CsvBuilder>*, 2> dss;
-		AdditionalDatasourceCSV ds(&joinsDs);
-		encoder.Encode(cjson, builder, dss);
+	if (qr_->HaveJoined() && itemParams_.joined.size()) {
+		EncoderDatasourceWithJoins<CsvBuilder> joinsDs(itemParams_.nsid, itemParams_.joined, *qr_);
+		EncoderContext<CsvBuilder> ctx;
+		ctx.joins = &joinsDs;
+		encoder.Encode(cjson, builder, ctx);
 		return;
 	}
 
 	encoder.Encode(cjson, builder);
 }
 
-[[nodiscard]] Error CoroQueryResults::Iterator::GetCSV(WrSerializer& wrser, CsvOrdering& ordering) noexcept {
+Error CoroQueryResults::Iterator::GetCSV(WrSerializer& wrser, CsvOrdering& ordering) noexcept {
 	try {
 		checkIdx();
 		readNext();
@@ -355,10 +374,9 @@ void CoroQueryResults::Iterator::getCSVFromCJSON(std::string_view cjson, WrSeria
 				return {};
 			}
 			default:
-				return Error(errParseBin, "Server returned data in unexpected format %d", qr_->i_.queryParams_.flags & kResultsFormatMask);
+				return Error(errParseBin, "Server returned data in unexpected format {}", qr_->i_.queryParams_.flags & kResultsFormatMask);
 		}
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 	return {};
 }
 
@@ -388,7 +406,7 @@ Error CoroQueryResults::Iterator::GetJSON(WrSerializer& wrser, bool withHdrLen) 
 				break;
 			}
 			default:
-				return Error(errParseBin, "Server returned data in unknown format %d", qr_->i_.queryParams_.flags & kResultsFormatMask);
+				return Error(errParseBin, "Server returned data in unknown format {}", qr_->i_.queryParams_.flags & kResultsFormatMask);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -413,7 +431,7 @@ Error CoroQueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen)
 			case kResultsJson:
 				return Error(errParseBin, "Server returned data in json format, can't process");
 			default:
-				return Error(errParseBin, "Server returned data in unknown format %d", qr_->i_.queryParams_.flags & kResultsFormatMask);
+				return Error(errParseBin, "Server returned data in unknown format {}", qr_->i_.queryParams_.flags & kResultsFormatMask);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -470,7 +488,7 @@ int CoroQueryResults::Iterator::GetNSID() {
 	return itemParams_.nsid;
 }
 
-int CoroQueryResults::Iterator::GetID() {
+IdType CoroQueryResults::Iterator::GetID() {
 	readNext();
 	return itemParams_.id;
 }
@@ -487,10 +505,12 @@ int CoroQueryResults::Iterator::GetShardID() {
 	return ShardingKeyType::ProxyOff;
 }
 
-int16_t CoroQueryResults::Iterator::GetRank() {
+RankT CoroQueryResults::Iterator::GetRank() {
 	readNext();
-	return itemParams_.proc;
+	return itemParams_.rank;
 }
+
+bool CoroQueryResults::Iterator::IsRanked() noexcept { return qr_->HaveRank(); }
 
 bool CoroQueryResults::Iterator::IsRaw() {
 	readNext();
@@ -503,9 +523,9 @@ std::string_view CoroQueryResults::Iterator::GetRaw() {
 	return itemParams_.data;
 }
 
-const CoroQueryResults::Iterator::JoinedData& CoroQueryResults::Iterator::GetJoined() {
+const ResultSerializer::JoinedData& CoroQueryResults::Iterator::GetJoined() {
 	readNext();
-	return joinedData_;
+	return itemParams_.joined;
 }
 
 void CoroQueryResults::Iterator::readNext() {
@@ -520,31 +540,48 @@ void CoroQueryResults::Iterator::readNext() {
 	} else {
 		rawResult = std::string_view(qr_->i_.rawResult_.data(), qr_->i_.rawResult_.size());
 	}
-	ResultSerializer ser(rawResult.substr(pos_));
 
+	ResultSerializer ser(rawResult.substr(pos_));
 	try {
-		itemParams_ = ser.GetItemData(qr_->i_.queryParams_.flags, qr_->i_.queryParams_.shardId);
-		joinedData_.clear();
-		if (qr_->i_.queryParams_.flags & kResultsWithJoined) {
-			int format = qr_->i_.queryParams_.flags & kResultsFormatMask;
-			(void)format;
-			assert(format == kResultsCJson);
-			int joinedFields = ser.GetVarUint();
-			for (int i = 0; i < joinedFields; ++i) {
-				int itemsCount = ser.GetVarUint();
-				h_vector<ResultSerializer::ItemParams, 1> joined;
-				joined.reserve(itemsCount);
-				for (int j = 0; j < itemsCount; ++j) {
-					// joined data shard id equals query shard id
-					joined.emplace_back(ser.GetItemData(qr_->i_.queryParams_.flags, qr_->i_.queryParams_.shardId));
-				}
-				joinedData_.emplace_back(std::move(joined));
-			}
-		}
+		int format{qr_->i_.queryParams_.flags & kResultsFormatMask};
+		itemParams_ = qr_->i_.queryFormat_ == QueryFormatV2 ? readItem(ser, format) : readItemV1(ser, format);
 		nextPos_ = pos_ + ser.Pos();
 	} catch (const Error& err) {
 		const_cast<CoroQueryResults*>(qr_)->i_.status_ = err;
 	}
+}
+
+ResultSerializer::ItemParams CoroQueryResults::Iterator::readItemV1(ResultSerializer& ser, int format) {
+	ResultSerializer::ItemParams itemParams{ser.GetItemData(qr_->i_.queryParams_.flags, qr_->i_.queryParams_.shardId)};
+	if (qr_->i_.queryParams_.flags & kResultsWithJoined) {
+		std::ignore = format;
+		assertrx_throw(format == kResultsCJson);
+		auto joinedFields{ser.GetVarUInt()};
+		for (uint64_t i = 0; i < joinedFields; ++i) {
+			auto itemsCount{ser.GetVarUInt()};
+			auto& joined{itemParams.joined.emplace_back(ResultSerializer::JoinedFieldData(itemsCount))};
+			for (uint64_t j = 0; j < itemsCount; ++j) {
+				joined[j] = ser.GetItemData(qr_->i_.queryParams_.flags, qr_->i_.queryParams_.shardId);
+			}
+		}
+	}
+	return itemParams;
+}
+
+ResultSerializer::ItemParams CoroQueryResults::Iterator::readItem(ResultSerializer& ser, int format) {
+	ResultSerializer::ItemParams itemParams{ser.GetItemData(qr_->i_.queryParams_.flags, qr_->i_.queryParams_.shardId)};
+	if (qr_->i_.queryParams_.flags & kResultsWithJoined) {
+		assertrx_throw(format == kResultsCJson);
+		auto joinedFields{ser.GetVarUInt()};
+		for (uint64_t i = 0; i < joinedFields; ++i) {
+			auto itemsCount{ser.GetVarUInt()};
+			auto& joined{itemParams.joined.emplace_back(ResultSerializer::JoinedFieldData(itemsCount))};
+			for (uint64_t j = 0; j < itemsCount; ++j) {
+				joined[j] = readItem(ser, format);
+			}
+		}
+	}
+	return itemParams;
 }
 
 CoroQueryResults::Iterator& CoroQueryResults::Iterator::operator++() {
@@ -575,10 +612,19 @@ CoroQueryResults::Impl::Impl(cproto::CoroClientConnection* conn, CoroQueryResult
 	assert(conn_);
 	const auto sessionTs = conn_->LoginTs();
 	if (sessionTs.has_value()) {
-		sessionTs_ = sessionTs.value();
+		sessionTs_ = *sessionTs;
 	}
 	InitLazyData();
 }
 
-}  // namespace client
-}  // namespace reindexer
+CoroQueryResults::Impl::Impl(int fetchFlags, int fetchAmount, bool lazyMode) noexcept
+	: fetchFlags_(fetchFlags), fetchAmount_(fetchAmount), lazyMode_(lazyMode) {
+	InitLazyData();
+}
+
+CoroQueryResults::Impl::Impl(NsArray&& nsArray) noexcept : nsArray_(std::move(nsArray)) { InitLazyData(); }
+
+CoroQueryResults::Impl::Impl(Impl&&) noexcept = default;
+CoroQueryResults::Impl& CoroQueryResults::Impl::operator=(Impl&&) noexcept = default;
+CoroQueryResults::Impl::~Impl() = default;
+}  // namespace reindexer::client

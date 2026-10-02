@@ -1,4 +1,4 @@
-// +build pprof_jemalloc
+//go:build pprof_jemalloc
 
 #include <jemalloc/jemalloc.h>
 #include <memory.h>

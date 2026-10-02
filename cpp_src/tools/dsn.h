@@ -1,6 +1,6 @@
 #pragma once
-#include "assertrx.h"
-#include "fmt/printf.h"
+
+#include "fmt/format.h"
 #include "urlparser/urlparser.h"
 #include "yaml-cpp/node/node.h"
 
@@ -11,7 +11,7 @@ struct ShardingConfig;
 class AsyncReplNodeConfig;
 }  // namespace cluster
 
-class DSN {
+class [[nodiscard]] DSN {
 public:
 	DSN() noexcept = default;
 	explicit DSN(std::string dsn) : dsn_(std::move(dsn)) { processDSN(); }
@@ -22,7 +22,7 @@ public:
 	DSN& WithDb(std::string&& db) &;
 	DSN&& WithDb(std::string&& db) &&;
 
-	struct RefWrapperCompare {
+	struct [[nodiscard]] RefWrapperCompare {
 		bool operator()(const std::reference_wrapper<const DSN>& lhs, const std::reference_wrapper<const DSN>& rhs) const noexcept {
 			return lhs.get().dsn_ < rhs.get().dsn_;
 		}
@@ -42,8 +42,8 @@ private:
 	friend struct ::YAML::convert;
 	friend struct std::hash<reindexer::DSN>;
 
-	template <typename T>
-	friend struct fmt::printf_formatter;
+	template <typename, typename, typename>
+	friend struct fmt::formatter;
 
 	void processDSN();
 	std::string dsn_, masked_;
@@ -76,28 +76,21 @@ inline std::enable_if_t<std::is_convertible_v<DsnT, DSN>, bool> operator==(const
 }  // namespace reindexer
 
 template <>
-struct std::hash<reindexer::DSN> {
+struct [[nodiscard]] std::hash<reindexer::DSN> {
 	auto operator()(const reindexer::DSN& dsn) const noexcept { return std::hash<std::string>{}(dsn.dsn_); }
 };
 
 template <>
-struct fmt::printf_formatter<reindexer::DSN> {
-	template <typename ContextT>
-	constexpr auto parse(ContextT& ctx) {
-		return ctx.begin();
-	}
+struct [[nodiscard]] fmt::formatter<reindexer::DSN> : public fmt::formatter<std::string_view> {
 	template <typename ContextT>
 	auto format(const reindexer::DSN& dsn, ContextT& ctx) const {
-		return fmt::format_to(ctx.out(), "{}", dsn.masked_);
+		return fmt::formatter<std::string_view>::format(dsn.masked_, ctx);
 	}
 };
 
-template <>
-struct fmt::formatter<reindexer::DSN> : public fmt::printf_formatter<reindexer::DSN> {};
-
 namespace YAML {
 template <>
-struct convert<reindexer::DSN> {
+struct [[nodiscard]] convert<reindexer::DSN> {
 	static Node encode(const reindexer::DSN& dsn) { return Node(dsn.dsn_); }
 };
 }  // namespace YAML

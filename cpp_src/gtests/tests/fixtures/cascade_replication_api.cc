@@ -1,16 +1,40 @@
 #include "cascade_replication_api.h"
-#include "core/defnsconfigs.h"
+#include <algorithm>
+#include <thread>
+#include <type_traits>
+#include "core/system_ns_names.h"
+#include "vendor/gason/gason.h"
 
-void CascadeReplicationApi::SetUp() { reindexer::fs::RmDirAll(kBaseTestsetDbPath); }
+namespace reindexer_tests {
 
-void CascadeReplicationApi::TearDown()	// -V524
-{
-	reindexer::fs::RmDirAll(kBaseTestsetDbPath);
+using namespace reindexer;
+
+template <typename T>
+const typename CascadeReplicationApiP<T>::Defaults& CascadeReplicationApiP<T>::GetDefaults() const {
+	if constexpr (std::is_same_v<T, sq8_test::TestSyncType>) {
+		static Defaults defs{7970, 8080, fs::JoinPath(fs::GetTempDir(), "rx_test/Sq8CascadeReplicationApi")};
+		return defs;
+	} else {
+		static Defaults defs{7770, 7880, fs::JoinPath(fs::GetTempDir(), "rx_test/CascadeReplicationApi")};
+		return defs;
+	}
 }
 
-void CascadeReplicationApi::ValidateNsList(const CascadeReplicationApi::ServerPtr& s, const std::vector<std::string>& expected) {
-	std::vector<reindexer::NamespaceDef> nsDefs;
-	auto err = s->api.reindexer->EnumNamespaces(nsDefs, reindexer::EnumNamespacesOpts().OnlyNames().HideSystem().WithClosed());
+template <typename T>
+void CascadeReplicationApiP<T>::SetUp() {
+	std::ignore = fs::RmDirAll(GetDefaults().baseTestsetDbPath);
+}
+
+template <typename T>
+void CascadeReplicationApiP<T>::TearDown()	// -V524
+{
+	std::ignore = fs::RmDirAll(GetDefaults().baseTestsetDbPath);
+}
+
+template <typename T>
+void CascadeReplicationApiP<T>::ValidateNsList(const CascadeReplicationApiP::ServerPtr& s, const std::vector<std::string>& expected) {
+	std::vector<NamespaceDef> nsDefs;
+	auto err = s->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().WithClosed());
 	ASSERT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(nsDefs.size(), expected.size());
 	bool valid = nsDefs.size() == expected.size();
@@ -36,29 +60,57 @@ void CascadeReplicationApi::ValidateNsList(const CascadeReplicationApi::ServerPt
 	}
 }
 
-CascadeReplicationApi::Cluster CascadeReplicationApi::CreateConfiguration(const std::vector<int>& clusterConfig, int basePort,
-																		  int baseServerId, const std::string& dbPathMaster) {
-	std::vector<CascadeReplicationApi::FollowerConfig> config;
+template <typename T>
+void CascadeReplicationApiP<T>::AwaitNsAbsence(const CascadeReplicationApiP::ServerPtr& s, std::string_view nsName,
+											   std::chrono::milliseconds timeout) {
+	const auto step = std::chrono::milliseconds(50);
+	std::vector<NamespaceDef> nsDefs;
+	for (auto remain = timeout; remain.count() > 0; remain -= step) {
+		nsDefs.clear();
+		auto err = s->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary().WithClosed());
+		ASSERT_TRUE(err.ok()) << err.what();
+		const bool found =
+			std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef& def) { return def.name == nsName; }) != nsDefs.end();
+		if (!found) {
+			return;
+		}
+		std::this_thread::sleep_for(step);
+	}
+	std::string actual;
+	for (const auto& def : nsDefs) {
+		if (!actual.empty()) {
+			actual.append(", ");
+		}
+		actual.append(def.name);
+	}
+	ASSERT_TRUE(false) << "Namespace '" << nsName << "' is still present on server " << s->Id() << ". Actual: [" << actual << "]";
+}
+template <typename T>
+CascadeReplicationApiP<T>::Cluster CascadeReplicationApiP<T>::CreateConfiguration(const std::vector<int>& clusterConfig, int baseServerId,
+																				  const std::string& dbPathMaster) {
+	std::vector<CascadeReplicationApiP::FollowerConfig> config;
 	config.reserve(clusterConfig.size());
 	for (auto& c : clusterConfig) {
 		config.emplace_back(c);
 	}
-	return CreateConfiguration(std::move(config), basePort, baseServerId, dbPathMaster, {});
+	return CreateConfiguration(std::move(config), baseServerId, dbPathMaster, {});
 }
 
-CascadeReplicationApi::Cluster CascadeReplicationApi::CreateConfiguration(std::vector<CascadeReplicationApi::FollowerConfig> clusterConfig,
-																		  int basePort, int baseServerId, const std::string& dbPathMaster,
-																		  const AsyncReplicationConfigTest::NsSet& nsList) {
+template <typename T>
+CascadeReplicationApiP<T>::Cluster CascadeReplicationApiP<T>::CreateConfiguration(
+	std::vector<CascadeReplicationApiP::FollowerConfig> clusterConfig, int baseServerId, const std::string& dbPathMaster,
+	const AsyncReplicationConfigTest::NsSet& nsList, bool asServerProcess, size_t maxUpdatesSize) {
+	const auto& ports = GetDefaults();
 	if (clusterConfig.empty()) {
-		return CascadeReplicationApi::Cluster(basePort);
+		return CascadeReplicationApiP::Cluster(baseServerId, ports);
 	}
 	std::vector<ServerControl> nodes;
 	nodes.reserve(clusterConfig.size());
 	using ReplNode = AsyncReplicationConfigTest::Node;
 	for (size_t i = 0; i < clusterConfig.size(); ++i) {
 		const int serverId = baseServerId + i;
-		nodes.emplace_back().InitServer(
-			ServerControlConfig(serverId, basePort + i, basePort + 1000 + i, dbPathMaster + std::to_string(i), "db"));
+		nodes.emplace_back().InitServer(ServerControlConfig(serverId, ports.defaultRpcPort + i, ports.defaultHttpPort + i,
+															dbPathMaster + std::to_string(i), "db", true, maxUpdatesSize, asServerProcess));
 		const bool isFollower = clusterConfig[i].leaderId >= 0;
 		AsyncReplicationConfigTest config(isFollower ? "follower" : "leader", std::vector<ReplNode>(), false, true, serverId,
 										  "node_" + std::to_string(serverId), nsList);
@@ -67,81 +119,119 @@ CascadeReplicationApi::Cluster CascadeReplicationApi::CreateConfiguration(std::v
 
 		if (isFollower) {
 			assert(int(nodes.size()) > clusterConfig[i].leaderId + 1);
-			nodes[clusterConfig[i].leaderId].Get()->AddFollower(MakeDsn(reindexer_server::UserRole::kRoleReplication, srv),
-																std::move(clusterConfig[i].nsList));
+			nodes[clusterConfig[i].leaderId].Get()->AddFollower(srv, std::move(clusterConfig[i].nsList));
 		}
 	}
-	return CascadeReplicationApi::Cluster(baseServerId, std::move(nodes));
+	return CascadeReplicationApiP<T>::Cluster(baseServerId, ports, std::move(nodes));
 }
 
-void CascadeReplicationApi::ApplyConfig(const ServerPtr& sc, std::string_view json) {
+template <typename T>
+void CascadeReplicationApiP<T>::UpdateReplTokensByConfiguration(CascadeReplicationApiP::Cluster& cluster,
+																const std::vector<int>& clusterConfig) {
+	std::vector<std::string> tokens(clusterConfig.size());
+
+	for (size_t nodeId = 0; nodeId < clusterConfig.size(); ++nodeId) {
+		int leaderIndex = clusterConfig[nodeId];
+
+		// skip setting admissible tokens for leader
+		if (leaderIndex < 0) {
+			continue;
+		}
+
+		// set self token on leader only once
+		if (tokens[leaderIndex].empty()) {
+			tokens[leaderIndex] = randStringAlph(20);
+			cluster.Get(leaderIndex)->UpdateConfigReplTokens(tokens[leaderIndex]);
+		}
+		// set admissible tokens on follower
+		cluster.Get(nodeId)->UpdateConfigReplTokens(NsNamesHashMapT<std::string>{{NamespaceName("*"), tokens[leaderIndex]}});
+	}
+}
+
+template <typename T>
+void CascadeReplicationApiP<T>::UpdateReplicationConfigs(const ServerPtr& sc, const std::string& selfToken,
+														 const std::string& admissibleLeaderToken) {
+	if (!selfToken.empty()) {
+		sc->UpdateConfigReplTokens(selfToken);
+	}
+	if (!admissibleLeaderToken.empty()) {
+		sc->UpdateConfigReplTokens(NsNamesHashMapT<std::string>{{NamespaceName("*"), admissibleLeaderToken}});
+	}
+}
+
+template <typename T>
+void CascadeReplicationApiP<T>::ApplyConfig(const ServerPtr& sc, std::string_view json) {
 	auto& rx = *sc->api.reindexer;
-	auto item = rx.NewItem(reindexer::kConfigNamespace);
+	auto item = rx.NewItem(kConfigNamespace);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	auto err = item.FromJSON(json);
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = rx.Upsert(reindexer::kConfigNamespace, item);
+	err = rx.Upsert(kConfigNamespace, item);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-void CascadeReplicationApi::CheckTxCopyEventsCount(const ServerPtr& sc, int expectedCount) {
-	auto& rx = *sc->api.reindexer;
-	reindexer::client::QueryResults qr;
-	auto err = rx.Select(reindexer::Query(reindexer::kPerfStatsNamespace), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
+template <typename T>
+void CascadeReplicationApiP<T>::CheckTxCopyEventsCount(const ServerPtr& sc, int expectedCount) {
+	auto& rx = sc->api;
+	client::QueryResults qr;
+	rx.Select(Query(kPerfStatsNamespace), qr);
 	ASSERT_EQ(qr.Count(), 1);
-	reindexer::WrSerializer ser;
-	err = qr.begin().GetJSON(ser, false);
+	WrSerializer ser;
+	auto err = qr.begin().GetJSON(ser, false);
 	ASSERT_TRUE(err.ok()) << err.what();
 	gason::JsonParser parser;
 	auto resJS = parser.Parse(ser.Slice());
 	ASSERT_EQ(resJS["transactions"]["total_copy_count"].As<int>(-1), expectedCount) << ser.Slice();
 }
 
-CascadeReplicationApi::TestNamespace1::TestNamespace1(const ServerPtr& srv, std::string_view nsName) : nsName_(nsName) {
-	auto opt = StorageOpts().Enabled(true);
+template <typename T>
+CascadeReplicationApiP<T>::TestNamespace1::TestNamespace1(const ServerPtr& srv, std::string_view nsName, EnableStorage enableStorage)
+	: nsName_(nsName) {
+	auto opt = StorageOpts().Enabled(enableStorage == EnableStorage::Yes);
 	auto err = srv->api.reindexer->OpenNamespace(nsName_, opt);
 	EXPECT_TRUE(err.ok()) << err.what();
 	srv->api.DefineNamespaceDataset(nsName_, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
 }
 
-void CascadeReplicationApi::TestNamespace1::AddRows(const ServerPtr& srv, int from, unsigned int count, size_t dataLen) {
+template <typename T>
+void CascadeReplicationApiP<T>::TestNamespace1::AddRows(const ServerPtr& srv, int from, unsigned int count, size_t dataLen) {
 	for (unsigned int i = 0; i < count; i++) {
 		auto item = srv->api.NewItem(nsName_);
-		auto err = item.FromJSON(dataLen ? fmt::sprintf(R"json({"id":%d, "data":"%s"})json", from + i, reindexer::randStringAlph(dataLen))
-										 : fmt::sprintf(R"json({"id":%d})json", from + i));
+		auto err = item.FromJSON(dataLen ? fmt::format(R"json({{"id":{}, "data":"{}"}})json", from + i, randStringAlph(dataLen))
+										 : fmt::format(R"json({{"id":{}}})json", from + i));
 		ASSERT_TRUE(err.ok()) << err.what();
 		srv->api.Upsert(nsName_, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 }
 
-void CascadeReplicationApi::TestNamespace1::AddRowsTx(const ServerPtr& srv, int from, unsigned int count, size_t dataLen) {
+template <typename T>
+void CascadeReplicationApiP<T>::TestNamespace1::AddRowsTx(const ServerPtr& srv, int from, unsigned int count, size_t dataLen) {
 	auto& rx = *srv->api.reindexer;
 	auto tr = rx.NewTransaction(nsName_);
 	ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
 	for (unsigned int i = 0; i < count; i++) {
-		reindexer::client::Item item = tr.NewItem();
-		auto err = item.FromJSON(dataLen ? fmt::sprintf(R"json({"id":%d, "data":"%s"})json", from + i, reindexer::randStringAlph(dataLen))
-										 : fmt::sprintf(R"json({"id":%d})json", from + i));
+		client::Item item = tr.NewItem();
+		auto err = item.FromJSON(dataLen ? fmt::format(R"json({{"id":{}, "data":"{}"}})json", from + i, randStringAlph(dataLen))
+										 : fmt::format(R"json({{"id":{}}})json", from + i));
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = tr.Upsert(std::move(item));
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-	reindexer::client::QueryResults qr;
+	client::QueryResults qr;
 	auto err = rx.CommitTransaction(tr, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), count);
 }
 
-void CascadeReplicationApi::TestNamespace1::GetData(const ServerPtr& srv, std::vector<int>& ids) {
-	auto qr = reindexer::Query(nsName_).Sort("id", false);
+template <typename T>
+void CascadeReplicationApiP<T>::TestNamespace1::GetData(const ServerPtr& srv, std::vector<int>& ids) {
+	auto q = Query(nsName_).Sort("id", SortOrder::Asc);
 	BaseApi::QueryResultsType res;
-	auto err = srv->api.reindexer->Select(qr, res);
-	EXPECT_TRUE(err.ok()) << err.what();
+	srv->api.Select(q, res);
 	for (auto it : res) {
-		reindexer::WrSerializer ser;
-		err = it.GetJSON(ser, false);
+		WrSerializer ser;
+		auto err = it.GetJSON(ser, false);
 		EXPECT_TRUE(err.ok()) << err.what();
 		gason::JsonParser parser;
 		auto root = parser.Parse(ser.Slice());
@@ -149,13 +239,15 @@ void CascadeReplicationApi::TestNamespace1::GetData(const ServerPtr& srv, std::v
 	}
 }
 
-void CascadeReplicationApi::Cluster::RestartServer(size_t id, int port, const std::string& dbPathMaster) {
+template <typename T>
+void CascadeReplicationApiP<T>::Cluster::RestartServer(size_t id, const std::string& dbPathMaster) {
 	assert(id < nodes_.size());
 	ShutdownServer(id);
-	nodes_[id].InitServer(ServerControlConfig(baseServerId_ + id, port + id, port + 1000 + id, dbPathMaster + std::to_string(id), "db"));
+	InitServer(id, dbPathMaster + std::to_string(id), "db", true);
 }
 
-void CascadeReplicationApi::Cluster::ShutdownServer(size_t id) {
+template <typename T>
+void CascadeReplicationApiP<T>::Cluster::ShutdownServer(size_t id) {
 	assert(id < nodes_.size());
 	if (nodes_[id].Get()) {
 		nodes_[id].Stop();
@@ -171,13 +263,16 @@ void CascadeReplicationApi::Cluster::ShutdownServer(size_t id) {
 	}
 }
 
-void CascadeReplicationApi::Cluster::InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort, const std::string& storagePath,
-												const std::string& dbName, bool enableStats) {
+template <typename T>
+void CascadeReplicationApiP<T>::Cluster::InitServer(size_t id, const std::string& storagePath, const std::string& dbName, bool enableStats,
+													bool asServerProcess) {
 	assert(id < nodes_.size());
-	nodes_[id].InitServer(ServerControlConfig(baseServerId_ + id, rpcPort, httpPort, storagePath, dbName, enableStats, 0));
+	nodes_[id].InitServer(ServerControlConfig(baseServerId_ + id, ports_.defaultRpcPort + id, ports_.defaultHttpPort + id, storagePath,
+											  dbName, enableStats, 0, asServerProcess));
 }
 
-CascadeReplicationApi::Cluster::~Cluster() {
+template <typename T>
+CascadeReplicationApiP<T>::Cluster::~Cluster() {
 	std::vector<std::thread> shutdownThreads(nodes_.size());
 	for (size_t i = 0; i < shutdownThreads.size(); ++i) {
 		shutdownThreads[i] = std::thread(
@@ -193,3 +288,8 @@ CascadeReplicationApi::Cluster::~Cluster() {
 		th.join();
 	}
 }
+
+template class CascadeReplicationApiP<void*>;
+template class CascadeReplicationApiP<sq8_test::TestSyncType>;
+
+}  // namespace reindexer_tests
