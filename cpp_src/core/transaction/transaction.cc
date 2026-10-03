@@ -1,5 +1,7 @@
 #include "transaction.h"
 #include "core/item.h"
+#include "core/query/query_impl.h"
+#include "tools/logger.h"
 #include "transactionimpl.h"
 
 namespace reindexer {
@@ -21,42 +23,78 @@ std::string_view Transaction::GetNsName() const noexcept {
 	return empty;
 }
 
-Error Transaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
+Error Transaction::Upsert(Item&& item, const Completion& cmpl, lsn_t lsn) noexcept {
+	Error err = Modify(std::move(item), ModeUpsert, lsn);
+	try {
+		cmpl(err);
+	} catch (const std::exception& e) {
+		logFmt(LogError, "Transaction::Upsert: completion function threw an exception: {}", e.what());
+	}
+	return err;
+}
+
+Error Transaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) noexcept {
 	if (impl_) {
-		return impl_->Modify(std::move(item), mode, lsn);
+		try {
+			impl_->Modify(std::move(item), mode, lsn);
+			return {};
+		} catch (std::exception& err) {
+			return err;
+		}
 	}
 	return status_;
 }
 
-Error Transaction::Modify(Query&& query, lsn_t lsn) {
-	if (impl_) {
-		return impl_->Modify(std::move(query), lsn);
+Error Transaction::Modify(Query&& query, lsn_t lsn) noexcept {
+	try {
+		Impl(query).VerifyForUpdateTransaction();
+		if (impl_) {
+			impl_->Modify(std::move(query), lsn);
+			return {};
+		}
+	} catch (std::exception& err) {
+		return err;
 	}
 	return status_;
 }
 
-Error Transaction::Nop(lsn_t lsn) {
+Error Transaction::Nop(lsn_t lsn) noexcept {
 	if (impl_) {
-		return impl_->Nop(lsn);
+		try {
+			impl_->Nop(lsn);
+			return {};
+		} catch (std::exception& err) {
+			return err;
+		}
 	}
 	return status_;
 }
 
-Error Transaction::PutMeta(std::string_view key, std::string_view value, lsn_t lsn) {
+Error Transaction::PutMeta(std::string_view key, std::string_view value, lsn_t lsn) noexcept {
 	if (impl_) {
-		return impl_->PutMeta(key, value, lsn);
+		try {
+			impl_->PutMeta(key, value, lsn);
+			return {};
+		} catch (std::exception& err) {
+			return err;
+		}
 	}
 	return status_;
 }
 
-Error Transaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
+Error Transaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) noexcept {
 	if (impl_) {
-		return impl_->SetTagsMatcher(std::move(tm), lsn);
+		try {
+			impl_->SetTagsMatcher(std::move(tm), lsn);
+			return {};
+		} catch (std::exception& err) {
+			return err;
+		}
 	}
 	return status_;
 }
 
-Item Transaction::NewItem() {
+Item Transaction::NewItem() noexcept {
 	if (impl_) {
 		return impl_->NewItem();
 	}
@@ -81,13 +119,14 @@ Transaction::TimepointT Transaction::GetStartTime() const noexcept {
 	return Transaction::TimepointT();
 }
 
-LocalTransaction Transaction::Transform(Transaction&& tx) {
+LocalTransaction Transaction::Transform(Transaction&& tx) noexcept {
 	if (tx.impl_) {
 		return TransactionImpl::Transform(*tx.impl_);
 	}
 	return LocalTransaction(Error(errNotValid, "Empty local transaction"));
 }
 
+// NOLINTNEXTLINE (bugprone-throw-keyword-missing)
 Transaction::Transaction(Error err) : status_(std::move(err)) {}
 
 Transaction::Transaction(Transaction&& tr, sharding::LocatorServiceAdapter shardingRouter) : Transaction(std::move(tr)) {
@@ -97,10 +136,24 @@ Transaction::Transaction(Transaction&& tr, sharding::LocatorServiceAdapter shard
 
 Transaction::Transaction() = default;
 
-Error Transaction::rollback(int serverId, const RdxContext& ctx) { return impl_ ? impl_->Rollback(serverId, ctx) : status_; }
+Error Transaction::rollback(int serverId, const RdxContext& ctx) noexcept {
+	if (!impl_) [[unlikely]] {
+		return status_;
+	}
+	impl_->Rollback(serverId, ctx);
+	return {};
+}
 
-Error Transaction::commit(int serverId, bool expectSharding, ReindexerImpl& rx, QueryResults& result, const RdxContext& ctx) {
-	return impl_ ? impl_->Commit(serverId, expectSharding, rx, result, ctx) : status_;
+Error Transaction::commit(int serverId, bool expectSharding, ReindexerImpl& rx, QueryResults& result, const RdxContext& ctx) noexcept {
+	if (!impl_) [[unlikely]] {
+		return status_;
+	}
+	try {
+		impl_->Commit(serverId, expectSharding, rx, result, ctx);
+	} catch (std::exception& err) {
+		return err;
+	}
+	return {};
 }
 
 }  // namespace reindexer

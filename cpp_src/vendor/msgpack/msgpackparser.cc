@@ -9,7 +9,7 @@ MsgPackTag MsgPackValue::getTag() const {
 
 MsgPackValue MsgPackValue::operator[](std::string_view key) const {
 	if (getTag() != MSGPACK_MAP) {
-		throw reindexer::Error(errParseMsgPack, "Can't convert msgpack field '%s' to object or array", key.data());
+		throw reindexer::Error(errParseMsgPack, "Can't convert msgpack field '{}' to object or array", key.data());
 	}
 	if (p->via.map.ptr->key.type != MSGPACK_OBJECT_STR) {
 		throw reindexer::Error(errParseMsgPack, "Maps with string keys are only allowed for MsgPack!");

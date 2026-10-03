@@ -141,12 +141,12 @@ bool WinService::Install(const char* cmdline) {
 
 			return true;
 		} else {
-			Message(false, "CreateService failed:\n%s\n", GetLastErrorAsString().c_str());
+			Message(false, "CreateService failed:\n{}\n", GetLastErrorAsString().c_str());
 		}
 
 		CloseServiceHandle(schSCManager);
 	} else {
-		Message(true, "OpenSCManager failed:\n%s\n", GetLastErrorAsString().c_str());
+		Message(true, "OpenSCManager failed:\n{}\n", GetLastErrorAsString().c_str());
 	}
 	return false;
 }
@@ -182,17 +182,17 @@ bool WinService::Remove(bool silent) {
 
 				return true;
 			} else if (!silent) {
-				Message(true, "DeleteService failed:\n%s\n", GetLastErrorAsString().c_str());
+				Message(true, "DeleteService failed:\n{}\n", GetLastErrorAsString().c_str());
 			}
 
 			CloseServiceHandle(schService);
 		} else if (!silent) {
-			Message(true, "OpenService failed:\n%s\n", GetLastErrorAsString().c_str());
+			Message(true, "OpenService failed:\n{}\n", GetLastErrorAsString().c_str());
 		}
 
 		CloseServiceHandle(schSCManager);
 	} else if (!silent) {
-		Message(true, "OpenSCManager failed:\n%s\n", GetLastErrorAsString().c_str());
+		Message(true, "OpenSCManager failed:\n{}\n", GetLastErrorAsString().c_str());
 	}
 
 	return false;
@@ -201,6 +201,6 @@ bool WinService::Remove(bool silent) {
 }  // namespace reindexer_server
 
 #else
-// suppress clang warngig
+// suppress clang warning
 int ___winservice_dummy_suppress_warning;
 #endif

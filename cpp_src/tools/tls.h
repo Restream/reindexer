@@ -36,8 +36,8 @@ LIBSSL_EXPAND_MACRO_LIST(LIBSSL_EXTERN_SYM)
 #else
 
 namespace reindexer::openssl {
-struct SSL_CTX {};
-struct SSL {};
+struct [[nodiscard]] SSL_CTX {};
+struct [[nodiscard]] SSL {};
 
 typedef enum {
 	TLS_ST_OK,
@@ -54,7 +54,7 @@ LIBSSL_EXPAND_MACRO_LIST(OPENSSL_DUMMY_SYM)
 namespace reindexer::openssl {
 
 template <typename T, auto DeleterFn>
-struct SslWrapper {
+struct [[nodiscard]] SslWrapper {
 	SslWrapper() = default;
 	SslWrapper(T& obj) noexcept : obj(obj) {}
 	operator T*() noexcept { return &obj; }

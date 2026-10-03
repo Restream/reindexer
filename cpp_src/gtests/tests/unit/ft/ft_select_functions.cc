@@ -3,22 +3,23 @@
 #include "ft_api.h"
 #include "gtests/tests/gtest_cout.h"
 
+namespace reindexer_tests {
+
 using namespace std::string_view_literals;
 
-class FTSelectFunctionsApi : public FTApi {
+class [[nodiscard]] FTSelectFunctionsApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_select_fn_default_namespace"; }
 };
 
-class FTSelectFunctionsApiF : public FTSelectFunctionsApi {
+class [[nodiscard]] FTSelectFunctionsApiF : public FTSelectFunctionsApi {
 public:
-	reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2) override {
-		reindexer::FtFastConfig cfg(fieldsCount);
+	reindexer::FTConfig GetDefaultConfig(size_t fieldsCount = 2) override {
+		reindexer::FTConfig cfg(fieldsCount);
 		cfg.enableNumbersSearch = true;
 		cfg.logLevel = 5;
 		cfg.mergeLimit = 20000;
-		cfg.maxStepSize = 100;
-		cfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
+		cfg.optimization = reindexer::FTConfig::Optimization::Memory;
 		return cfg;
 	}
 };
@@ -29,305 +30,288 @@ TEST_P(FTSelectFunctionsApi, SnippetN) {
 	Add("one two three gg three empty empty empty empty three"sv);
 
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,'{')");
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,'{')");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Incorrect count of position arguments. Found 5 required 4.");
+		EXPECT_STREQ(err.what(), "snippet_n: Incorrect count of position arguments. Found 5 required 4.");
 	}
 	{  // check other case, error on not last argument
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,'{','{')");
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,'{','{')");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ','.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token ','.");
 	}
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',pre_delim='}')");
+		auto q = reindexer::Query("nm1")
+					 .Where("ft1", CondEq, "three")
+					 .AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',pre_delim='}')");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Argument already added 'pre_delim'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Argument already added 'pre_delim'.");
 	}
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',pre_delim='}',post_delim='!')");
+		auto q = reindexer::Query("nm1")
+					 .Where("ft1", CondEq, "three")
+					 .AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',pre_delim='}',post_delim='!')");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Argument already added 'pre_delim'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Argument already added 'pre_delim'.");
 	}
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,pre_delim='{')");
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,pre_delim='{')");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Incorrect count of position arguments. Found 3 required 4.");
+		EXPECT_STREQ(err.what(), "snippet_n: Incorrect count of position arguments. Found 3 required 4.");
 	}
 	{  // check other case, error on not last argument
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>' , '</b>',5,pre_delim='{',post_delim='')");
+		auto q = reindexer::Query("nm1")
+					 .Where("ft1", CondEq, "three")
+					 .AddFunction("ft1=snippet_n('<b>' , '</b>',5,pre_delim='{',post_delim='')");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ',', expecting positional argument (1 more positional args required)");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token ',', expecting positional argument (1 more positional args required)");
 	}
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',pre_delim='}') g");
+		auto q = reindexer::Query("nm1")
+					 .Where("ft1", CondEq, "three")
+					 .AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',pre_delim='}') g");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected character `g` after closing parenthesis.");
-	}
-
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',,5,pre_delim='{')");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ',', expecting positional argument (2 more positional args required)");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,,pre_delim='{')");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ','.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',,post_delim='}')");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ','.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected character `g` after closing parenthesis.");
 	}
 
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>''n','</b>',5,5,pre_delim='{')");
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',,5,pre_delim='{')");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'n'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token ',', expecting positional argument (2 more positional args required)");
 	}
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>'n,'</b>',5,5,pre_delim='{')");
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,,pre_delim='{')");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'n'.");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token ','.");
 	}
 	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>'5,5,5,pre_delim='{')");
+		auto q = reindexer::Query("nm1")
+					 .Where("ft1", CondEq, "three")
+					 .AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',,post_delim='}')");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
 		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '5'.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5'v',5,pre_delim='{')");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'v'.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,\"pre_delim\"pre_delim='{')");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'pre_delim'.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim= ='{')");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '='.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{'8)");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '8'.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim=)");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'pre_delim'.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,not_delim='{')");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unknown argument name 'not_delim'.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,not_delim='{',pre_delim='}')");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unknown argument name 'not_delim'.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: The closing parenthesis is required, but found `5`");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n{('<b>','</b>',5,5}");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: An open parenthesis is required, but found `{`");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n('<b>','</b>',5,5,"post_delim"="v"})#");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'v'.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n(<>,'</b>',5,5,"post_delim"='v'})#");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '<>'");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n('<>','</b>',5,5,='v'})#");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "snippet_n: Argument name is empty.");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n('<>','</b>','5a',5))#");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Invalid snippet param before - 5a is not a number");
-	}
-	{
-		reindexer::Query q("nm1");
-		q.Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n('<>','</b>',5,'5b'))#");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Invalid snippet param after - 5b is not a number");
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token ','.");
 	}
 
 	{
-		reindexer::Query q("nm1");
-		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim=',')");
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>''n','</b>',5,5,pre_delim='{')");
 		reindexer::QueryResults res;
 		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'n'.");
+	}
+	{
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>'n,'</b>',5,5,pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'n'.");
+	}
+	{
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>'5,5,5,pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token '5'.");
+	}
+	{
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5'v',5,pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'v'.");
+	}
+	{
+		auto q =
+			reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,\"pre_delim\"pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'pre_delim'.");
+	}
+	{
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim= ='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token '='.");
+	}
+	{
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{'8)");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token '8'.");
+	}
+	{
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim=)");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'pre_delim'.");
+	}
+	{
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,not_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unknown argument name 'not_delim'.");
+	}
+	{
+		auto q = reindexer::Query("nm1")
+					 .Where("ft1", CondEq, "three")
+					 .AddFunction("ft1=snippet_n('<b>','</b>',5,5,not_delim='{',pre_delim='}')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unknown argument name 'not_delim'.");
+	}
+	{
+		const auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: The closing parenthesis is required, but found `5`");
+	}
+	{
+		const auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n{('<b>','</b>',5,5}");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: An open parenthesis is required, but found `{`");
+	}
+	{
+		const auto q =
+			reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n('<b>','</b>',5,5,"post_delim"="v"})#");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token 'v'.");
+	}
+	{
+		const auto q =
+			reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n(<>,'</b>',5,5,"post_delim"='v'})#");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Unexpected token '<>'");
+	}
+	{
+		const auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n('<>','</b>',5,5,='v'})#");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "snippet_n: Argument name is empty.");
+	}
+	{
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n('<>','</b>','5a',5))#");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "Invalid snippet param before - 5a is not a number");
+	}
+	{
+		auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n('<>','</b>',5,'5b'))#");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "Invalid snippet param after - 5b is not a number");
+	}
+
+	{
+		auto q = reindexer::Query("nm1")
+					 .Select("ft1")
+					 .Where("ft1", CondEq, "three")
+					 .AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim=',')");
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		reindexer::WrSerializer wrSer;
-		err = res.begin().GetJSON(wrSer, false);
+		auto err = res.begin().GetJSON(wrSer, false);
 		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_EQ(std::string(wrSer.Slice()), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt ,mpty <b>three</b> "})S");
+		EXPECT_EQ(wrSer.Slice(), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt ,mpty <b>three</b> "})S");
 	}
 
 	{
-		reindexer::Query q("nm1");
-		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>' , 		'</b>'
+		auto q = reindexer::Query("nm1").Select("ft1").Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>' , 		'</b>'
 																											,5	,5 ,       pre_delim=','))S");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		reindexer::WrSerializer wrSer;
-		err = res.begin().GetJSON(wrSer, false);
+		auto err = res.begin().GetJSON(wrSer, false);
 		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_EQ(std::string(wrSer.Slice()), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt ,mpty <b>three</b> "})S");
+		EXPECT_EQ(wrSer.Slice(), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt ,mpty <b>three</b> "})S");
 	}
 
 	{
-		reindexer::Query q("nm1");
-		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,pre_delim=' g ', post_delim='h'))S");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto q = reindexer::Query("nm1")
+					 .Select("ft1")
+					 .Where("ft1", CondEq, "three")
+					 .AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,pre_delim=' g ', post_delim='h'))S");
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":" g  two <b>three</b> gg <b>three</b> empth g mpty <b>three</b>h"})S");
 		}
 	}
 	{
-		reindexer::Query q("nm1");
-		q.Select({"ft1"})
-			.Where("ft1", CondEq, "three")
-			.AddFunction(R"S(ft1=snippet_n('<b>','</b>','5',5,post_delim='h',pre_delim=' g '))S");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto q = reindexer::Query("nm1")
+					 .Select("ft1")
+					 .Where("ft1", CondEq, "three")
+					 .AddFunction(R"S(ft1=snippet_n('<b>','</b>','5',5,post_delim='h',pre_delim=' g '))S");
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":" g  two <b>three</b> gg <b>three</b> empth g mpty <b>three</b>h"})S");
 		}
 	}
 	{
-		reindexer::Query q("nm1");
-		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,post_delim='h'))S");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto q = reindexer::Query("nm1")
+					 .Select("ft1")
+					 .Where("ft1", CondEq, "three")
+					 .AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,post_delim='h'))S");
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":" two <b>three</b> gg <b>three</b> empthmpty <b>three</b>h"})S");
 		}
 	}
 	{
-		reindexer::Query q("nm1");
-		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,pre_delim='!'))S");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		const auto q = reindexer::Query("nm1")
+						   .Select("ft1")
+						   .Where("ft1", CondEq, "three")
+						   .AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,pre_delim='!'))S");
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":"! two <b>three</b> gg <b>three</b> empt !mpty <b>three</b> "})S");
 		}
@@ -351,15 +335,12 @@ TEST_P(FTSelectFunctionsApi, SnippetNOthers) {
 	[[maybe_unused]] auto [ss4, id4] = Add(s4);
 
 	auto check = [&](int index, const std::string& find, const std::string& fun, std::string_view answer) {
-		reindexer::Query q("nm1");
-		q.Select({"ft1"}).Where("ft1", CondEq, find).Where("id", CondEq, index).AddFunction(fun);
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		const auto q = reindexer::Query("nm1").Select("ft1").Where("ft1", CondEq, find).Where("id", CondEq, index).AddFunction(fun);
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), answer);
 		}
@@ -400,15 +381,12 @@ TEST_P(FTSelectFunctionsApi, SnippetNOffset) {
 	[[maybe_unused]] auto [ss6, id6] = Add(s6);
 
 	auto check = [&](int index, const std::string& find, const std::string& fun, std::string_view answer) {
-		reindexer::Query q("nm1");
-		q.Select({"ft1"}).Where("ft1", CondEq, find).Where("id", CondEq, index).AddFunction(fun);
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		const auto q = reindexer::Query("nm1").Select("ft1").Where("ft1", CondEq, find).Where("id", CondEq, index).AddFunction(fun);
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), answer);
 		}
@@ -465,15 +443,12 @@ TEST_P(FTSelectFunctionsApi, SnippetNBounds) {
 	[[maybe_unused]] auto [ss3, id3] = Add(s3);
 
 	auto check = [&](int index, const std::string& find, const std::string& fun, std::string_view answer) {
-		reindexer::Query q("nm1");
-		q.Select({"ft1"}).Where("ft1", CondEq, find).Where("id", CondEq, index).AddFunction(fun);
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		const auto q = reindexer::Query("nm1").Select("ft1").Where("ft1", CondEq, find).Where("id", CondEq, index).AddFunction(fun);
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), 1);
 		if (res.Count()) {
 			reindexer::WrSerializer wrSer;
-			err = res.begin().GetJSON(wrSer, false);
+			auto err = res.begin().GetJSON(wrSer, false);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_EQ(wrSer.Slice(), answer);
 		}
@@ -492,11 +467,59 @@ TEST_P(FTSelectFunctionsApi, SnippetNBounds) {
 	check(id3, "one", R"S(ft1=snippet_n('','',5,5,with_area=1,left_bound='!',right_bound='|'))S", R"S({"ft1":"[0,13]as|d one g!hj "})S");
 }
 
+TEST_P(FTSelectFunctionsApi, RankAsField) {
+	auto ftCfg = GetDefaultConfig();
+	Init(ftCfg);
+	Add("one two three gg three empty empty empty empty three"sv);
+
+	{
+		const auto q = reindexer::Query("nm1").Where("ft1", CondEq, "three").Select("ft1", "rank()");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(res.Count(), 1);
+		reindexer::Expected<std::string> json = res.begin().GetJSON();
+		EXPECT_TRUE(json.has_value()) << json.error().what();
+		EXPECT_EQ(json.value(), R"#({"ft1":"one two three gg three empty empty empty empty three","rank()":93.0})#");
+	}
+}
+
+TEST_P(FTSelectFunctionsApi, SelectFunctionRequiresFullTextIndex) {
+	auto ftCfg = GetDefaultConfig();
+	Init(ftCfg);
+	Add("one two three"sv);
+
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=highlight(<,>)");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("id=highlight(<,>)");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_STREQ(err.what(), "Select functions require full-text index on field 'id'");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("not_indexed=highlight(<,>)");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_STREQ(err.what(), "Select functions require full-text index on field 'not_indexed'");
+	}
+}
+
 #if !defined(REINDEX_WITH_TSAN)
 TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
-	const unsigned int kItemCount = 140'000;
+	const unsigned int kItemCount = 70'000;	 // This values has to be larger than 65k
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.mergeLimit = 1'000'000;
+	ftCfg.optimization = reindexer::FTConfig::Optimization::CPU;
 	ftCfg.maxAreasInDoc = 100000;
 	Init(ftCfg);
 	const std::vector<std::string_view> words = {"zero",	 "one",		"two",	   "three",		"four",		"five",	   "six",
@@ -505,11 +528,11 @@ TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
 	const std::vector<std::string_view> testWord = {"test", "mest", "nest", "sest", "vest", "best"};
 
 	auto generateStr = [&](int num, unsigned int posW, unsigned int posT, bool adding) {
-		std::string res = fmt::sprintf("%d ", num), resSnippet = res;
+		std::string res = fmt::format("{} ", num), resSnippet = res;
 		for (unsigned int i = 0; i < words.size(); i++) {
 			if (i == posW) {
-				res += fmt::sprintf("%s empty ", testWord[posT]);
-				resSnippet += fmt::sprintf("!%s! empty ", testWord[posT]);
+				res += fmt::format("{} empty ", testWord[posT]);
+				resSnippet += fmt::format("!{}! empty ", testWord[posT]);
 			} else {
 				res.append(words[i]).append(" ");
 				resSnippet.append(words[i]).append(" ");
@@ -524,8 +547,8 @@ TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
 			}
 		}
 		const auto& w = testWord[std::rand() % testWord.size()];
-		res += fmt::sprintf("empty %s ", w);
-		resSnippet += fmt::sprintf("empty !%s! ", w);
+		res += fmt::format("empty {} ", w);
+		resSnippet += fmt::format("empty !{}! ", w);
 		return std::make_pair(res, resSnippet);
 	};
 
@@ -542,11 +565,9 @@ TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
 	}
 
 	{
-		reindexer::Query q("nm1");
-		q.Select({"ft1"}).Where("ft3", CondEq, "test~").AddFunction(R"(ft1=snippet(!,!,1000000,1000000,,))");
-		reindexer::QueryResults res;
-		reindexer::Error err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		const auto q =
+			reindexer::Query("nm1").Select("ft1").Where("ft3", CondEq, "test~").AddFunction(R"(ft1=snippet(!,!,1000000,1000000,,))");
+		auto res = rt.Select(q);
 		EXPECT_EQ(res.Count(), kItemCount);
 		for (auto& r : res) {
 			auto item = r.GetItem();
@@ -565,16 +586,16 @@ TEST_F(FTSelectFunctionsApiF, TotalOrVids) {
 }
 #endif
 
-INSTANTIATE_TEST_SUITE_P(, FTSelectFunctionsApi,
-						 ::testing::Values(reindexer::FtFastConfig::Optimization::Memory, reindexer::FtFastConfig::Optimization::CPU),
-						 [](const auto& info) {
-							 switch (info.param) {
-								 case reindexer::FtFastConfig::Optimization::Memory:
-									 return "OptimizationByMemory";
-								 case reindexer::FtFastConfig::Optimization::CPU:
-									 return "OptimizationByCPU";
-								 default:
-									 assert(false);
-									 std::abort();
-							 }
-						 });
+INSTANTIATE_TEST_SUITE_P(, FTSelectFunctionsApi, ::testing::Values(kRxFtTestTypes), [](const auto& info) {
+	switch (info.param) {
+		case reindexer::FTConfig::Optimization::Memory:
+			return "OptimizationByMemory";
+		case reindexer::FTConfig::Optimization::CPU:
+			return "OptimizationByCPU";
+		default:
+			assert(false);
+			std::abort();
+	}
+});
+
+}  // namespace reindexer_tests

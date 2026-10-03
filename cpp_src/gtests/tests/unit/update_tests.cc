@@ -1,13 +1,18 @@
 #include <gtest/gtest.h>
+#include "core/query/query_impl.h"
 #include "reindexer_api.h"
 
-class CompositeUpdate : public ReindexerApi {
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+using reindexer::Variant;
+
+class [[nodiscard]] CompositeUpdate : public ReindexerApi {
 public:
 	void SetUp() override {
 		using namespace std::string_literals;
-		Error err = rt.reindexer->OpenNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
+		ReindexerApi::SetUp();
+		rt.OpenNamespace(default_namespace);
 		DefineNamespaceDataset(
 			default_namespace,
 			{IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{kFieldV1, "hash", "int", IndexOpts(), 0},
@@ -28,55 +33,46 @@ public:
 	static constexpr char kFieldV3_V4[] = "v3_4";
 	static constexpr char kFieldArray[] = "array";
 
-	void ExecuteAndCheckResult(const Query& q, const std::string& item) {
+	void ExecuteAndCheckResult(const Query& q, const std::string& item) { ExecuteAndCheckResult(Impl(q), item); }
+	void ExecuteAndCheckResult(reindexer::ConstQueryImpl q, const std::string& item) {
+		SCOPED_TRACE(q.GetSQL());
 		reindexer::QueryResults res;
-		Error err;
-		switch (q.type_) {
+		switch (q.Type()) {
 			case QuerySelect:
-				err = rt.reindexer->Select(q, res);
+				res = rt.Select(*q);
 				break;
 			case QueryUpdate:
-				err = rt.reindexer->Update(q, res);
+				rt.Update(*q, res);
 				break;
 			case QueryDelete:
-				err = rt.reindexer->Delete(q, res);
+				rt.Delete(*q, res);
 				break;
 			case QueryTruncate:
 				assertrx(false);
 		}
-		ASSERT_TRUE(err.ok()) << err.what() << " q=" << q.GetSQL();
 		if (!item.empty()) {
 			ASSERT_EQ(res.Count(), 1);
 			reindexer::WrSerializer ser;
 			auto err = res.begin().GetJSON(ser, false);
 			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(std::string(ser.c_str()), item);
+			ASSERT_EQ(ser.Slice(), item);
 		} else {
 			ASSERT_EQ(res.Count(), 0);
 		}
 	}
 
 private:
-	void fillDefaultNs() {
-		auto item(rt.reindexer->NewItem(default_namespace));
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-		Error err = item.FromJSON(R"({"id":1, "array":[1,2,3], "v1": 1, "v2":200, "v3":1000, "v4":"v4"})");
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->Upsert(default_namespace, item);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
+	void fillDefaultNs() { rt.UpsertJSON(default_namespace, R"({"id":1, "array":[1,2,3], "v1": 1, "v2":200, "v3":1000, "v4":"v4"})"); }
 };
 
 TEST_F(CompositeUpdate, CompositeAndArray) {
 	{
 		auto q = Query(default_namespace).Set(kFieldV1, 10).Set(kFieldArray, {10, 11}).Where(kFieldId, CondEq, 1);
-		q.type_ = QueryUpdate;
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[10,11],"v1":10,"v2":200,"v3":1000,"v4":"v4"})");
 	}
 	{
 		auto q =
 			Query(default_namespace).Set(kFieldV1, 20).Set(kFieldV4, "str").Set(kFieldArray, {10, 11, 20, 30}).Where(kFieldId, CondEq, 1);
-		q.type_ = QueryUpdate;
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[10,11,20,30],"v1":20,"v2":200,"v3":1000,"v4":"str"})");
 	}
 	{
@@ -89,12 +85,10 @@ TEST_F(CompositeUpdate, CompositeAndArray) {
 	}
 	{
 		auto q = Query(default_namespace).Set(kFieldArray, {11, 11}).Set(kFieldV1, 11).Where(kFieldId, CondEq, 1);
-		q.type_ = QueryUpdate;
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[11,11],"v1":11,"v2":200,"v3":1000,"v4":"str"})");
 	}
 	{
 		auto q = Query(default_namespace).Set(kFieldV1, 12).Set(kFieldArray, {12, 12}).Set(kFieldV4, "a").Where(kFieldId, CondEq, 1);
-		q.type_ = QueryUpdate;
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[12,12],"v1":12,"v2":200,"v3":1000,"v4":"a"})");
 	}
 	{
@@ -106,7 +100,8 @@ TEST_F(CompositeUpdate, CompositeAndArray) {
 					 .Set(kFieldArray, {23, 23})
 					 .Set(kFieldV1, 23)
 					 .Where(kFieldId, CondEq, 1);
-		q.type_ = QueryUpdate;
 		ExecuteAndCheckResult(q, R"({"id":1,"array":[23,23],"v1":23,"v2":22,"v3":1000,"v4":"b"})");
 	}
 }
+
+}  // namespace reindexer_tests

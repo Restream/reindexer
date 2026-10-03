@@ -8,9 +8,11 @@ import (
 )
 
 const testMetaAPINs = "test_meta"
+const testMetaEmojiNs = "test_meta_emoji"
 
 func init() {
 	tnamespaces[testMetaAPINs] = TestItemSimple{}
+	tnamespaces[testMetaEmojiNs] = TestItemSimple{}
 }
 
 func TestMetaAPI(t *testing.T) {
@@ -124,5 +126,63 @@ func TestMetaAPI(t *testing.T) {
 		readKeys, err = DB.EnumMeta(t, ns)
 		require.NoError(t, err)
 		require.Len(t, readKeys, 0)
+	})
+
+	t.Run("add and get meta with escaping", func(t *testing.T) {
+		metadata := map[string]string{
+			"key\"":     "value\"",
+			"key\\\"":   "value\\\"",
+			"key\\\\\"": "value\\\\\"",
+		}
+		for k, v := range metadata {
+			err := DB.PutMeta(ns, k, []byte(v))
+			require.NoError(t, err)
+		}
+
+		keys, err := DB.EnumMeta(t, ns)
+		require.NoError(t, err)
+		expectedKeys := make([]string, 0, len(metadata))
+		for k := range metadata {
+			expectedKeys = append(expectedKeys, k)
+		}
+		require.ElementsMatch(t, expectedKeys, keys)
+
+		for k, v := range metadata {
+			value, err := DB.GetMeta(t, ns, k)
+			require.NoError(t, err)
+			require.Equal(t, []byte(v), value)
+		}
+	})
+
+	t.Run("add and get meta with emoji", func(t *testing.T) {
+		const ns2 = testMetaEmojiNs
+		metadata := map[string]string{
+			"👀":     "😀",
+			"👌🤌👋":   "👌🤌👋",
+			"👁️‍🗨️": "👁️‍🗨️",
+			"🧑‍🧑‍🧒‍🧒👁️‍🗨️":         "🧑‍🧑‍🧒‍🧒👁️‍🗨️",
+			"\U0001F63E\U0001F64D": "\U0001F64D\U0001F64E",
+			"\"🚅\"🚝\"":             "\"🚅\"🚝\"",
+			"\\\"ヽ(>∀<☆)ノ":         "\\\"(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+			"\t🏁💬\" 🧑‍🧑‍🧒‍🧒\"👁️‍🗨️\\\"\U0001F64E😀": "🧑‍🧑‍🧒‍🧒\\\"👁️‍🗨️\"\t\U0001F64E😀 🏁\"\\\"💬",
+		}
+		for k, v := range metadata {
+			err := DB.PutMeta(ns2, k, []byte(v))
+			require.NoError(t, err)
+		}
+
+		keys, err := DB.EnumMeta(t, ns2)
+		require.NoError(t, err)
+		expectedKeys := make([]string, 0, len(metadata))
+		for k := range metadata {
+			expectedKeys = append(expectedKeys, k)
+		}
+		require.ElementsMatch(t, expectedKeys, keys)
+
+		for k, v := range metadata {
+			value, err := DB.GetMeta(t, ns2, k)
+			require.NoError(t, err)
+			require.Equal(t, []byte(v), value)
+		}
 	})
 }

@@ -1,9 +1,9 @@
 #include "msgpackbuilder.h"
 #include "core/type_consts_helpers.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 #include "vendor/gason/gason.h"
 
-namespace reindexer {
+namespace reindexer::builders {
 
 MsgPackBuilder::MsgPackBuilder(WrSerializer& wrser, ObjType type, size_t size)
 	: tm_(nullptr), tagsLengths_(nullptr), type_(type), tagIndex_(nullptr) {
@@ -29,8 +29,7 @@ MsgPackBuilder::MsgPackBuilder(msgpack_packer& packer, const TagsLengths* tagsLe
 	init(KUnknownFieldSize);
 }
 
-void MsgPackBuilder::Array(int tagName, Serializer& ser, TagType tagType, int count) {
-	checkIfCorrectArray(tagName);
+void MsgPackBuilder::Array(concepts::TagNameOrIndex auto tagName, Serializer& ser, TagType tagType, int count) {
 	skipTag();
 	packKeyName(tagName);
 	packArray(count);
@@ -38,15 +37,16 @@ void MsgPackBuilder::Array(int tagName, Serializer& ser, TagType tagType, int co
 		packCJsonValue(tagType, ser);
 	}
 }
+template void MsgPackBuilder::Array(TagName, Serializer&, TagType, int);
+template void MsgPackBuilder::Array(TagIndex, Serializer&, TagType, int);
 
-MsgPackBuilder& MsgPackBuilder::Json(std::string_view name, std::string_view arg) {
+void MsgPackBuilder::Json(std::string_view name, std::string_view arg) {
 	gason::JsonParser parser;
 	auto root = parser.Parse(arg);
 	appendJsonObject(name, root);
-	return *this;
 }
 
-MsgPackBuilder& MsgPackBuilder::End() {
+void MsgPackBuilder::End() {
 	switch (type_) {
 		case ObjType::TypeObjectArray:
 		case ObjType::TypeArray:
@@ -59,7 +59,6 @@ MsgPackBuilder& MsgPackBuilder::End() {
 			break;
 	}
 	type_ = ObjType::TypePlain;
-	return *this;
 }
 
 void MsgPackBuilder::init(int size) {
@@ -96,39 +95,41 @@ void MsgPackBuilder::packCJsonValue(TagType tagType, Serializer& rdser) {
 		case TAG_UUID:
 			packValue(rdser.GetUuid());
 			break;
+		case TAG_FLOAT:
+			packValue(rdser.GetFloat());
+			break;
 		case TAG_NULL:
 			packNil();
 			break;
 		case TAG_END:
 		case TAG_ARRAY:
 		case TAG_OBJECT:
-			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", TagTypeToStr(tagType));
+			throw Error(errParseJson, "Unexpected cjson typeTag '{}' while parsing value", TagTypeToStr(tagType));
 	}
 }
 
 void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNode& obj) {
 	auto type = obj.value.getTag();
 	switch (type) {
-		case gason::JSON_STRING: {
+		case gason::JsonTag::STRING: {
 			Put(name, obj.As<std::string_view>(), 0);
 			break;
 		}
-		case gason::JSON_NUMBER: {
+		case gason::JsonTag::NUMBER:
 			Put(name, obj.As<int64_t>(), 0);
 			break;
-		}
-		case gason::JSON_DOUBLE: {
+		case gason::JsonTag::DOUBLE: {
 			Put(name, obj.As<double>(), 0);
 			break;
 		}
-		case gason::JSON_OBJECT:
-		case gason::JSON_ARRAY: {
+		case gason::JsonTag::OBJECT:
+		case gason::JsonTag::ARRAY: {
 			int size = 0;
 			for (const auto& node : obj) {
 				(void)node;
 				++size;
 			}
-			if (type == gason::JSON_OBJECT) {
+			if (type == gason::JsonTag::OBJECT) {
 				auto pack = Object(name, size);
 				for (const auto& node : obj) {
 					pack.appendJsonObject(std::string_view(node.key), node);
@@ -141,22 +142,22 @@ void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNo
 			}
 			break;
 		}
-		case gason::JSON_TRUE: {
+		case gason::JsonTag::JTRUE: {
 			Put(std::string_view(obj.key), true, 0);
 			break;
 		}
-		case gason::JSON_FALSE: {
+		case gason::JsonTag::JFALSE: {
 			Put(std::string_view(obj.key), false, 0);
 			break;
 		}
-		case gason::JSON_NULL: {
+		case gason::JsonTag::JSON_NULL: {
 			Null(std::string_view(obj.key));
 			break;
 		}
-		case gason::JSON_EMPTY:
+		case gason::JsonTag::EMPTY:
 		default:
-			throw(Error(errLogic, "Unexpected json tag for Object: %d", int(obj.value.getTag())));
+			throw(Error(errLogic, "Unexpected json tag for Object: {}", int(obj.value.getTag())));
 	}
 }
 
-}  // namespace reindexer
+}  // namespace reindexer::builders

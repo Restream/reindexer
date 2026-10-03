@@ -7,6 +7,12 @@
  *    (See accompanying file LICENSE_1_0.txt or copy at
  *    http://www.boost.org/LICENSE_1_0.txt)
  */
+
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+#endif
+
 #if defined(_KERNEL_MODE)
 #  undef  _NO_CRT_STDIO_INLINE
 #  define _NO_CRT_STDIO_INLINE
@@ -480,3 +486,7 @@ bool msgpack_object_equal(const msgpack_object x, const msgpack_object y)
         return false;
     }
 }
+
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif

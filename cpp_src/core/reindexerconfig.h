@@ -9,11 +9,14 @@ namespace reindexer {
 class IClientsStats;
 class IExternalEventsListener;
 
-struct ReindexerConfig {
+// NOLINTBEGIN(performance-unnecessary-value-param) // TODO: Temprorary comment to avoid false-positive on warning on moved params
+
+struct [[nodiscard]] ReindexerConfig {
 	ReindexerConfig& WithClientStats(IClientsStats* cs) noexcept {
 		clientsStats = cs;
 		return *this;
 	}
+	// NOLINTNEXTLINE(performance-unnecessary-value-param)
 	ReindexerConfig& WithDBName(std::string _dbName) noexcept {
 		dbName = std::move(_dbName);
 		return *this;
@@ -29,6 +32,10 @@ struct ReindexerConfig {
 		allocatorCachePart = maxCachePart;
 		return *this;
 	}
+	ReindexerConfig& WithBackgroundThreads(size_t val) noexcept {
+		backgroundThreads = val;
+		return *this;
+	}
 
 	/// Object for receiving clients statistics
 	IClientsStats* clientsStats = nullptr;
@@ -40,6 +47,12 @@ struct ReindexerConfig {
 	int64_t allocatorCacheLimit = -1;
 	/// Recommended maximum free cache size of tcmalloc memory allocator in relation to total reindexer allocated memory size, in units
 	float allocatorCachePart = -1.0;
+	/// Number of threads in the process-wide background thread pool (fulltext and other indexes).
+	/// 0 means the thread count is chosen automatically based on the number of CPU cores.
+	/// The value of the first created Reindexer instance is used.
+	size_t backgroundThreads = 0;
 };
+
+// NOLINTEND(performance-unnecessary-value-param) // Temprorary comment to avoid false-positive on warning on moved params
 
 }  // namespace reindexer

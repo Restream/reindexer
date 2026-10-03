@@ -1,23 +1,34 @@
 #pragma once
 
-#include <optional>
 #include <vector>
+#include "core/ft/idrelset.h"
+#include "estl/dynamic_bitset.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
 using index_t = uint32_t;
 
-struct FtMergeStatuses {
-	using Statuses = std::vector<index_t>;
+struct [[nodiscard]] FtMergeStatuses {
+	using Statuses = DynamicBitset<>;
 
-	static constexpr size_t kEmpty = std::numeric_limits<size_t>::max();
-	// 0: means not added,
-	// kExcluded: means should not be added
-	// others: 1 + index of rawResult which added
-	enum : index_t { kExcluded = std::numeric_limits<index_t>::max() };
-	Statuses statuses;
+	static constexpr size_t kEmpty = kEmptyVDocId;
+	// Empty bitset means no extern exclusions were applied.
+	Statuses docsExcluded;
+	// Empty on the regular SelectKey path; sized by PreparePreselectBuffers() before preselect writes.
 	std::vector<bool> rowIds;
-	const std::vector<size_t>* rowId2Vdoc;
+	const std::vector<uint32_t>* rowId2VdocId = nullptr;
+	size_t vdocsCount = 0;
+
+	void PreparePreselectBuffers() {
+		assertrx_throw(rowId2VdocId);
+		if (docsExcluded.size() == 0) {
+			docsExcluded = Statuses(vdocsCount, true);
+		}
+		if (rowIds.empty()) {
+			rowIds.assign(rowId2VdocId->size(), false);
+		}
+	}
 };
 
 using FtPreselectT = FtMergeStatuses;
