@@ -6,49 +6,134 @@
 
 namespace reindexer {
 bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDef& to) {
-	if (RelaxedEqual(from, to)) {
-		logFmt(LogInfo, "[{}]:{} Start fast update index '{}'", ns.name_, ns.wal_.GetServer(), from.name_);
+	if (!RelaxedEqual(from, to)) {
+		return false;
+	}
 
-		const auto idxNo = ns.indexesNames_.find(from.name_)->second;
-		auto& index = ns.indexes_[idxNo];
-		auto newIndex = Index::New(to, PayloadType(index->GetPayloadType()), FieldsSet{index->Fields()}, ns.config_.cacheConfig);
+	auto indexDiff = from.Compare(to);
+	logFmt(LogInfo, "[{}]:{} Start fast update index '{}'", ns.name_, ns.wal_.GetServer(), from.Name());
+	if (needRecreateIndex(indexDiff)) {
+		logFmt(LogTrace, "[{}]:{} Index '{}' will be created anew without changing the payloads of the items.", ns.name_,
+			   ns.wal_.GetServer(), from.Name());
+
+		// The fast update never changes the JSON-paths, so the verification has nothing to register. The throwaway copy
+		// here just keeps the namespace tags matcher out of reach of the checks
+		TagsMatcher tmCopy{ns.tagsMatcher()};
+		ns.verifyUpdateIndex(to, tmCopy);
+
+		const auto idxNo = ns.getIndexByName(from.Name());
+		const auto& index = ns.indexes()[idxNo];
+		const auto& fields = index->Fields();
+		const auto isSparse = index->Opts().IsSparse();
+		if (isSparse && fields.getJsonPathsLength() != 1) {
+			assertrx_dbg(false);  // Currently we do not support sparse indexes with multiple jsonpaths
+			logFmt(LogWarning,
+				   "[{}]:{} Index '{}' was not updated using a fast strategy: got {} jsonpaths in sparse index, but exactly 1 jsonpath was "
+				   "expected",
+				   ns.name_, ns.wal_.GetServer(), from.Name(), fields.getJsonPathsLength());
+			return false;
+		}
+
 		VariantArray keys, resKeys;
-		for (size_t rowId = 0; rowId < ns.items_.size(); ++rowId) {
-			if (ns.items_[rowId].IsFree()) {
+		auto newIndex = Index::New(to, PayloadType(index->GetPayloadType()), FieldsSet{fields}, ns.config_.cacheConfig, ns.itemsCount());
+		const auto isComposite = IsComposite(index->Type());
+		for (size_t id = 0; id < ns.items_.size(); ++id) {
+			const auto rowId = IdType::FromNumber(id);
+			const auto& item = ns.items_[rowId];
+			if (item.IsFree()) {
 				continue;
 			}
 
-			bool needClearCache = false;
-			ConstPayload(ns.payloadType_, ns.items_[rowId]).Get(idxNo, keys);
-			newIndex->Upsert(resKeys, keys, rowId, needClearCache);
-		}
-		if (index->IsOrdered()) {
-			auto indexesCacheCleaner{ns.GetIndexesCacheCleaner()};
-			indexesCacheCleaner.Add(index->SortId());
+			if (isComposite) {
+				keys.Clear();
+				keys.emplace_back(item);
+			} else if (isSparse) {
+				try {
+					ConstPayload(ns.payloadType(), item).GetByJsonPath(fields.getJsonPath(0), ns.tagsMatcher(), keys, index->KeyType());
+				} catch (const std::exception& e) {
+					logFmt(LogInfo, "[{}]:{} Unable to index sparse value during index fast update (index name: '{}'): '{}'", ns.name_,
+						   ns.wal_.GetServer(), index->Name(), e.what());
+					keys.resize(0);
+				}
+			} else {
+				ConstPayload(ns.payloadType(), item).Get(idxNo, keys);
+			}
+
+			resKeys.resize(0);
+			bool needClearCacheUnused = false;
+			newIndex->Upsert(resKeys, keys, rowId, needClearCacheUnused);
 		}
 
-		index = std::move(newIndex);
+		auto indexesCacheCleaner{ns.GetIndexesCacheCleaner()};
+		indexesCacheCleaner.Add(*index);
 
-		ns.updateSortedIdxCount();
+		std::ignore = ns.indexRegistry_.ReplaceIndex(idxNo, std::move(newIndex));
+
+		ns.indexOptimizer_.UpdateSortedIdxCount(ns.indexes(), ns.name_);
 		ns.markUpdated(IndexOptimization::Full);
+	} else if (indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::Embedding, FloatVectorIndexOpts::Diff::Radius,
+										  FloatVectorIndexOpts::Diff::QuantizationConfig, IndexOpts::ParamsDiff::Config)) {
+		logFmt(LogTrace, "[{}]:{} Only the options will be updated for the index '{}'.", ns.name_, ns.wal_.GetServer(), from.Name());
+		const auto idx = ns.getIndexByName(to.Name());
+		auto* index = ns.indexes()[idx].get();
 
-		logFmt(LogInfo, "[{}]:{} Index '{}' successfully updated using a fast strategy", ns.name_, ns.wal_.GetServer(), from.name_);
+		const bool quantizationChanged = indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::QuantizationConfig);
+		const bool embeddingChanged = indexDiff.AnyOfIsDifferent(FloatVectorIndexOpts::Diff::Embedding);
 
-		return true;
-	}
-	return false;
-}
+		// Every verification has to run before the first mutation below (reloadNonQuantizedIndex/ReplaceFieldType are not
+		// reversible), so a failed check here leaves the live index untouched
+		if (quantizationChanged) {
+			ns.verifyUpsertQuantizationConfigHNSWIndex("update", to);
+			ns.verifyUpdateQuantizationConfigHNSWIndex(index, to);
+		}
+		if (embeddingChanged) {
+			ns.verifyUpsertEmbedder("update", to);
+		}
 
-bool IndexFastUpdate::RelaxedEqual(const IndexDef& from, const IndexDef& to) noexcept {
-	if (!isLegalTypeTransform(from.Type(), to.Type())) {
+		if (quantizationChanged && !to.Opts().FloatVector().QuantizationConfig()) {
+			// If quantization config is reset in new IndexDef we must reload the origin non-quantized index.
+			ns.reloadNonQuantizedIndex(idx);
+			index = ns.indexes()[idx].get();
+		}
+		if (embeddingChanged) {
+			PayloadFieldType f(ns.name_.ToLower(), *index, to, ns.embeddersCache_, ns.enablePerfCounters_);
+			f.SetOffset(ns.payloadType().Field(idx).Offset());
+			ns.indexRegistry_.ReplaceFieldType(idx, std::move(f));
+		}
+
+		index->SetOpts(to.Opts());
+		index->ClearCache();
+		ns.clearNamespaceCaches();
+	} else {
+		logFmt(LogWarning,
+			   "[{}]:{} Index '{}' was not updated using a fast strategy for an unknown reason. Index will be updated completely.",
+			   ns.name_, ns.wal_.GetServer(), from.Name());
 		return false;
 	}
-	auto comparisonIndex = from;
-	comparisonIndex.indexType_ = to.indexType_;
-	comparisonIndex.opts_.Dense(to.opts_.IsDense());
-	comparisonIndex.opts_.SetCollateMode(to.opts_.GetCollateMode());
-	comparisonIndex.opts_.SetCollateSortOrder(to.opts_.GetCollateSortOrder());
-	return comparisonIndex.IsEqual(to, IndexComparison::Full);
+
+	logFmt(LogInfo, "[{}]:{} Index '{}' successfully updated using a fast strategy", ns.name_, ns.wal_.GetServer(), from.Name());
+	return true;
+}
+
+bool IndexFastUpdate::needRecreateIndex(auto indexDiff) noexcept {
+	return indexDiff.AnyOfIsDifferent(IndexDef::Diff::IndexType, IndexOpts::OptsDiff::kIndexOptDense,
+									  IndexOpts::OptsDiff::kIndexOptNoColumn, IndexOpts::ParamsDiff::CollateOpts);
+}
+
+bool IndexFastUpdate::RelaxedEqual(const IndexDef& from, const IndexDef& to) {
+	if (!isLegalTypeTransform(from.IndexType(), to.IndexType())) {
+		return false;
+	}
+	return from.Compare(to)
+		.Skip(IndexDef::Diff::IndexType)
+		.Skip(IndexOpts::OptsDiff::kIndexOptDense)
+		.Skip(IndexOpts::OptsDiff::kIndexOptNoColumn)
+		.Skip(IndexOpts::ParamsDiff::CollateOpts)
+		.Skip(IndexOpts::ParamsDiff::Config)
+		.Skip(FloatVectorIndexOpts::Diff::Embedding)
+		.Skip(FloatVectorIndexOpts::Diff::Radius)
+		.Skip(FloatVectorIndexOpts::Diff::QuantizationConfig)
+		.Equal();
 }
 
 bool IndexFastUpdate::isLegalTypeTransform(IndexType from, IndexType to) noexcept {
@@ -62,5 +147,11 @@ const std::vector<fast_hash_set<IndexType>> IndexFastUpdate::kTransforms = {
 	{IndexType::IndexStrBTree, IndexType::IndexStrHash, IndexType::IndexStrStore},
 	{IndexType::IndexDoubleStore, IndexType::IndexDoubleBTree},
 	{IndexType::IndexUuidStore, IndexType::IndexUuidHash},
+	{IndexType::IndexFastFT},
+	{IndexType::IndexCompositeFastFT},
+	{IndexType::IndexHnsw},
+	{IndexType::IndexVectorBruteforce},
+	{IndexType::IndexIvf},
+	{IndexType::IndexTtl},
 };
 }  // namespace reindexer

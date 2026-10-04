@@ -1,21 +1,23 @@
 #pragma once
 
 #include <string.h>
-#include <mutex>
+#include <tuple>
 #include "connectinstatscollector.h"
 #include "estl/cbuf.h"
 #include "estl/chunk_buf.h"
+#include "estl/dummy_mutex.h"
 #include "estl/mutex.h"
 #include "net/socket.h"
-#include "tools/ssize_t.h"
 
 namespace reindexer {
 namespace net {
 
 constexpr ssize_t kConnReadbufSize = 0x8000;
 constexpr ssize_t kConnWriteBufSize = 0x800;
+constexpr size_t kConnReadBufKeepCap = 64 * 1024;
+constexpr size_t kConnReadBufShrinkAt = 1024 * 1024;
 
-struct ConnectionStat {
+struct [[nodiscard]] ConnectionStat {
 	ConnectionStat() noexcept {
 		startTime = std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now_coarse().time_since_epoch()).count();
 	}
@@ -33,14 +35,14 @@ struct ConnectionStat {
 using reindexer::cbuf;
 
 template <typename Mutex>
-class Connection {
+class [[nodiscard]] Connection {
 public:
 	Connection(socket&& s, ev::dynamic_loop& loop, bool enableStat, size_t readBufSize = kConnReadbufSize,
 			   size_t writeBufSize = kConnWriteBufSize, int idleTimeout = -1);
 	virtual ~Connection();
 
 protected:
-	enum class ReadResT { Default, Rebalanced };
+	enum class [[nodiscard]] ReadResT { Default, Rebalanced };
 
 	// @return false if connection was moved into another thread
 	virtual ReadResT onRead() = 0;
@@ -48,6 +50,7 @@ protected:
 
 	// Generic callback
 	void callback(ev::io& watcher, int revents);
+	void update_cur_events(int nevents) noexcept;
 	void write_cb();
 	ReadResT read_cb();
 	void async_cb(ev::async& watcher);
@@ -57,6 +60,7 @@ protected:
 	void attach(ev::dynamic_loop& loop);
 	void detach();
 	void restart(socket&& s);
+	void shrinkRdBufIfNeeded() noexcept { std::ignore = rdBuf_.shrink_if_needed(kConnReadBufKeepCap, kConnReadBufShrinkAt); }
 
 	socket sock_;
 	ev::io io_;
@@ -87,8 +91,8 @@ private:
 	const int kIdleCheckPeriod_;
 };
 
-using ConnectionST = Connection<reindexer::dummy_mutex>;
-using ConnectionMT = Connection<std::mutex>;
+using ConnectionST = Connection<reindexer::DummyMutex>;
+using ConnectionMT = Connection<mutex>;
 
 }  // namespace net
 }  // namespace reindexer

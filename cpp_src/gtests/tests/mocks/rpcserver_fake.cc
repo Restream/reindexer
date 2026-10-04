@@ -6,6 +6,8 @@
 #include "net/listener.h"
 #include "reindexer_version.h"
 
+namespace reindexer_tests {
+
 RPCServerFake::RPCServerFake(const RPCServerConfig& conf) : startTs_(system_clock_w::now()), conf_(conf), state_(Init) {}
 
 Error RPCServerFake::Ping(cproto::Context&) {
@@ -24,7 +26,7 @@ Error RPCServerFake::Login(cproto::Context& ctx, p_string /*login*/, p_string /*
 	ctx.SetClientData(std::unique_ptr<RPCClientData>(new RPCClientData));
 	int64_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
 	if (loginError_.ok()) {
-		state_ = Connected;
+		state_.store(Connected);
 		ctx.Return({cproto::Arg(p_string(REINDEX_VERSION)), cproto::Arg(startTs)});
 	}
 
@@ -54,20 +56,20 @@ Error RPCServerFake::DropNamespace(cproto::Context&, p_string) { return Error(er
 
 Error RPCServerFake::Stop() {
 	listener_->Stop();
-	state_ = Stopped;
+	state_.store(Stopped);
 	if (const int openedQR = OpenedQRCount(); openedQR == 0) {
 		return errOK;
 	} else {
-		return Error{errLogic, "There are %d opened QueryResults", openedQR};
+		return Error{errLogic, "There are {} opened QueryResults", openedQR};
 	}
 }
 
-Error RPCServerFake::Select(cproto::Context& ctx, p_string /*query*/, int /*flags*/, int /*limit*/, p_string /*ptVersions*/) {
+Error RPCServerFake::Select(cproto::Context& ctx, p_string /*query*/, int /*flags*/, int /*limit*/, p_string /*tmVersions*/) {
 	static constexpr size_t kQueryResultsPoolSize = 1024;
 	std::this_thread::sleep_for(conf_.selectDelay);
 	int qrId;
 	{
-		std::lock_guard lock{qrMutex_};
+		lock_guard lock{qrMutex_};
 		if (usedQrIds_.size() >= kQueryResultsPoolSize) {
 			return Error{errLogic, "Too many parallel queries"};
 		}
@@ -92,10 +94,10 @@ Error RPCServerFake::CloseResults(cproto::Context& ctx, int reqId, std::optional
 		ctx.respSent = true;
 	}
 	{
-		std::lock_guard lock{qrMutex_};
+		lock_guard lock{qrMutex_};
 		const auto it = usedQrIds_.find(reqId);
 		if (it == usedQrIds_.end()) {
-			return Error(errLogic, "ReqId %d not found", reqId);
+			return Error(errLogic, "ReqId {} not found", reqId);
 		}
 		unusedQrIds_.insert(*it);
 		usedQrIds_.erase(it);
@@ -105,11 +107,11 @@ Error RPCServerFake::CloseResults(cproto::Context& ctx, int reqId, std::optional
 }
 
 size_t RPCServerFake::OpenedQRCount() {
-	std::lock_guard lock{qrMutex_};
+	lock_guard lock{qrMutex_};
 	return usedQrIds_.size();
 }
 
-bool RPCServerFake::Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError) {
+void RPCServerFake::Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError) {
 #ifndef _WIN32
 	signal(SIGPIPE, SIG_IGN);
 #endif
@@ -125,13 +127,10 @@ bool RPCServerFake::Start(const std::string& addr, ev::dynamic_loop& loop, Error
 
 	dispatcher_.Middleware(this, &RPCServerFake::CheckAuth);
 
-#ifdef REINDEX_WITH_V3_FOLLOWERS
-	listener_ = std::make_unique<Listener<ListenerType::Mixed>>(
-		loop, cproto::ServerConnection::NewFactory(dispatcher_, false, 1024 * 1024 * 1024), nullptr);
-#else	// REINDEX_WITH_V3_FOLLOWERS
 	listener_ = std::make_unique<Listener<ListenerType::Mixed>>(loop, cproto::ServerConnection::NewFactory(dispatcher_, false), nullptr);
-#endif	// REINDEX_WITH_V3_FOLLOWERS
-	return listener_->Bind(addr, socket_domain::tcp);
+	listener_->Bind(addr, socket_domain::tcp);
 }
 
 RPCServerStatus RPCServerFake::Status() const { return state_; }
+
+}  // namespace reindexer_tests

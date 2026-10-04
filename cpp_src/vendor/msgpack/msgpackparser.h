@@ -48,7 +48,7 @@ struct MsgPackValue {
 			case MSGPACK_ARRAY:
 			case MSGPACK_MAP:
 			default:
-				throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%d] to number", tag);
+				throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to number", tag);
 		}
 		if (v < minv || v > maxv) {
 			throw reindexer::Error(errParams, fmt::format("Value is out of bounds: [{},{}]", minv, maxv));
@@ -63,7 +63,7 @@ struct MsgPackValue {
 		}
 		MsgPackTag tag = getTag();
 		if (tag != MSGPACK_STRING) {
-			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%d] to string", tag);
+			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to string", tag);
 		}
 		return T(p->via.str.ptr, p->via.str.size);
 	}
@@ -74,7 +74,7 @@ struct MsgPackValue {
 		}
 		MsgPackTag tag = getTag();
 		if (tag != MSGPACK_BOOLEAN) {
-			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%d] to bool", tag);
+			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [{}] to bool", tag);
 		}
 		return p->via.boolean;
 	}

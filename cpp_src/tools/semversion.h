@@ -7,7 +7,7 @@
 namespace reindexer {
 
 constexpr size_t kVersionDigitsCount = 3;
-class SemVersion {
+class [[nodiscard]] SemVersion {
 public:
 	SemVersion() = default;
 	SemVersion(std::string_view version) { parse(version); }
@@ -33,12 +33,12 @@ private:
 		if (input.size() && input.data()[0] == 'v') {
 			version = input.substr(1);
 		}
-		split(version, "-", false, splitted);
+		std::ignore = split(version, "-", false, splitted);
 		if (!splitted.size()) {
 			return;
 		}
 		version = splitted[0];
-		split(version, ".", false, splitted);
+		std::ignore = split(version, ".", false, splitted);
 		for (auto& it : splitted) {
 			bool valid = true;
 			int res = jsteemann::atoi<int>(it.data(), it.data() + it.size(), valid);

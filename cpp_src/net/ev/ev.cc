@@ -1,9 +1,10 @@
 #include "ev.h"
 #include <stdio.h>
 #include <string.h>
-#include <algorithm>
 #include <sstream>
+#include "coroutine/coroutine.h"
 #include "debug/backtrace.h"
+#include "tools/assertrx.h"
 #include "tools/oscompat.h"
 
 #ifdef HAVE_EVENT_FD
@@ -25,9 +26,53 @@ namespace ev {
 
 constexpr bool gEnableBusyLoop = false;
 
+void dynamic_loop::spawn(std::function<void()> func, size_t stack_size) {
+	auto tid = std::this_thread::get_id();
+	if (coroTid_ != std::thread::id() && coroTid_ != tid) {
+		// Every coroutine has to be spawned from the same thread
+		assertrx(false);
+	} else {
+		coroTid_ = tid;
+	}
+	coroutine::routine_t id = 0;
+	try {
+		id = coroutine::create(std::move(func), stack_size);
+		new_tasks_.emplace_back(id);
+	} catch (const std::exception& e) {
+		if (id) {
+			coroutine::abandon_unstarted(id);
+		}
+		fprintf(stderr, "reindexer error: unable to spawn coroutine \"%u\": %s\n", id, e.what());
+		assertrx_dbg(false);
+		throw;
+	}
+}
+
+void dynamic_loop::spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size) {
+	wg.add(1);
+	struct [[nodiscard]] WgWatcher {
+		coroutine::wait_group& wg;
+		bool committed = false;
+
+		~WgWatcher() {
+			if (!committed) {
+				wg.done();
+			}
+		}
+	} balance{.wg = wg};
+
+	spawn(
+		// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
+		[f = std::move(func), &wg]() {	// NOLINT(*.NewDeleteLeaks) False positive
+			coroutine::wait_group_guard wgg(wg);
+			f();
+		},
+		stack_size);
+	balance.committed = true;
+}
+
 #ifdef HAVE_POSIX_LOOP
 #ifdef HAVE_EVENT_FD
-loop_posix_base::loop_posix_base() {}
 loop_posix_base::~loop_posix_base() {
 	if (async_fd_ >= 0) {
 		close(async_fd_);
@@ -60,7 +105,6 @@ bool loop_posix_base::check_async(int fd) {
 	return false;
 }
 #else	// HAVE_EVENT_FD
-loop_posix_base::loop_posix_base() {}
 loop_posix_base::~loop_posix_base() {
 	if (async_fds_[0] >= 0) {
 		close(async_fds_[0]);
@@ -98,7 +142,7 @@ bool loop_posix_base::check_async(int fd) {
 #endif	// HAVE_POSIX_LOOP
 
 #ifdef HAVE_SELECT_LOOP
-class loop_select_backend_private {
+class [[nodiscard]] loop_select_backend_private {
 public:
 	fd_set rfds_, wfds_;
 	int maxfd_;
@@ -173,7 +217,7 @@ int loop_select_backend::capacity() noexcept { return FD_SETSIZE; }
 #endif
 
 #ifdef HAVE_POLL_LOOP
-class loop_poll_backend_private {
+class [[nodiscard]] loop_poll_backend_private {
 public:
 	std::vector<pollfd> fds_;
 	bool wasErased_;
@@ -250,7 +294,7 @@ int loop_poll_backend::capacity() { return 500000; }
 
 #ifdef HAVE_EPOLL_LOOP
 
-class loop_epoll_backend_private {
+class [[nodiscard]] loop_epoll_backend_private {
 public:
 	int ctlfd_ = -1;
 	std::vector<epoll_event> events_;
@@ -316,12 +360,12 @@ int loop_epoll_backend::runonce(int64_t t) {
 #endif
 
 #ifdef HAVE_WSA_LOOP
-struct win_fd {
+struct [[nodiscard]] win_fd {
 	HANDLE hEvent = INVALID_HANDLE_VALUE;
 	int fd = -1;
 };
 
-class loop_wsa_backend_private {
+class [[nodiscard]] loop_wsa_backend_private {
 public:
 	std::vector<win_fd> wfds_;
 	HANDLE hAsyncEvent = INVALID_HANDLE_VALUE;
@@ -444,7 +488,12 @@ dynamic_loop::dynamic_loop() : async_sent_(false) {
 
 dynamic_loop::~dynamic_loop() {
 	if (!running_tasks_.empty() || !new_tasks_.empty()) {
-		run();
+		try {
+			run();
+		} catch (std::exception& e) {
+			fprintf(stderr, "reindexer error: unexpected exception in ~dynamic_loop: %s\n", e.what());
+			assertrx_dbg(false);
+		}
 	}
 	if (coro_cb_is_set_) {
 		remove_coro_cb();
@@ -456,7 +505,7 @@ void dynamic_loop::run() {
 		// Loop has coroutines from another thread
 		std::stringstream ss;
 		reindexer::debug::print_backtrace(ss, nullptr, -1);
-		fprintf(stderr, "Backtrace:\n%s\n", ss.str().c_str());
+		fprintf(stderr, "reindexer error: incorrect coroutine in dynamic loop. Backtrace:\n%s\n", ss.str().c_str());
 		assertrx(false);
 	}
 
@@ -467,6 +516,14 @@ void dynamic_loop::run() {
 	set_coro_cb();
 	bool has_coro_tasks = false;
 	while (!break_) {
+		// Loop-level drain of resumes deferred from an unwind path (see ordinator::defer_resume). This complements entry()'s
+		// per-fiber-exit drain: it is the point that rescues deferrals whose fiber keeps running after catching its own exception
+		// (e.g. in a loop) and therefore never reaches entry(). Draining at the TOP of the iteration is deliberate -- waiters resumed
+		// here that run to completion shrink running_tasks_ before the break check below, keeping the loop-exit decision consistent.
+		// A deferral enqueued LATER in the same iteration (e.g. while resuming new_tasks_ below) is not flushed by this pass; the
+		// tv == 0 guard before runonce() prevents the loop from blocking while such a deferral is pending, so it is drained on the
+		// next iteration. Together these guarantee a deferred waiter can never be stranded behind a blocking runonce(-1).
+		coroutine::flush_deferred_resumes();
 		while (new_tasks_.size()) {
 			has_coro_tasks = true;
 			running_tasks_.reserve(running_tasks_.size() + new_tasks_.size());
@@ -492,10 +549,17 @@ void dynamic_loop::run() {
 		int tv = busy_loop ? 0 : -1;
 
 		if (!busy_loop && timers_.size()) {
+			now = steady_clock_w::now();
 			tv = std::chrono::duration_cast<std::chrono::microseconds>(timers_.front()->deadline_ - now).count();
 			if (tv < 0) {
 				tv = 0;
 			}
+		}
+		// Never block in runonce() while a deferred resume is still pending (e.g. one enqueued while resuming new_tasks_ above): force
+		// a non-blocking poll so the next iteration's flush_deferred_resumes() drains it. Without this a deferred waiter could be
+		// stranded behind a blocking runonce(-1) that has no wakeup source.
+		if (tv != 0 && coroutine::has_deferred_resumes()) {
+			tv = 0;
 		}
 		int ret = backend_.runonce(tv);
 
@@ -511,6 +575,7 @@ void dynamic_loop::run() {
 			}
 			if (pendingSignalsMask) {
 				fprintf(stderr, "Unexpected signals %08X", pendingSignalsMask);
+				assertrx_dbg(false);
 			}
 		}
 		if (ret >= 0 && timers_.size()) {
@@ -527,7 +592,7 @@ void dynamic_loop::run() {
 		h_vector<coroutine::routine_t, 5> yielded_tasks;
 		std::swap(yielded_tasks, yielded_tasks_);
 		for (auto id : yielded_tasks) {
-			coroutine::resume(id);
+			std::ignore = coroutine::resume(id);
 		}
 		yielded_tasks.clear();
 	}
@@ -545,7 +610,7 @@ void dynamic_loop::set(int fd, io* watcher, int events) {
 	backend_.set(fd, events, oldevents);
 }
 
-void dynamic_loop::stop(int fd) {
+void dynamic_loop::stop(int fd) noexcept {
 	if (fd < 0 || fd >= int(fds_.size())) {
 		return;
 	}
@@ -570,7 +635,7 @@ void dynamic_loop::set(timer* watcher, double t) {
 	timers_.insert(it, watcher);
 }
 
-void dynamic_loop::stop(timer* watcher) {
+void dynamic_loop::stop(timer* watcher) noexcept {
 	auto it = std::find(timers_.begin(), timers_.end(), watcher);
 	if (it != timers_.end()) {
 		timers_.erase(it);
@@ -580,7 +645,7 @@ void dynamic_loop::stop(timer* watcher) {
 void dynamic_loop::set(sig* watcher) {
 	auto it = std::find(sigs_.begin(), sigs_.end(), watcher);
 	if (it != sigs_.end()) {
-		fprintf(stderr, "sig %d already set\n", watcher->signum_);
+		fprintf(stderr, "reindexer warning: sig %d already set\n", watcher->signum_);
 		return;
 	}
 	sigs_.push_back(watcher);
@@ -592,7 +657,7 @@ void dynamic_loop::set(sig* watcher) {
 
 	auto res = sigaction(watcher->signum_, &new_action, &old_action);
 	if (res < 0) {
-		fprintf(stderr, "sigaction error: %d\n", res);
+		fprintf(stderr, "reindexer error: sigaction error: %d\n", res);
 		return;
 	}
 	watcher->old_action_ = old_action;
@@ -601,17 +666,17 @@ void dynamic_loop::set(sig* watcher) {
 #endif
 }
 
-void dynamic_loop::stop(sig* watcher) {
+void dynamic_loop::stop(sig* watcher) noexcept {
 	auto it = std::find(sigs_.begin(), sigs_.end(), watcher);
 	if (it == sigs_.end()) {
-		fprintf(stderr, "sig %d is not set\n", watcher->signum_);
+		fprintf(stderr, "reindexer warning: sig %d is not set\n", watcher->signum_);
 		return;
 	}
 	sigs_.erase(it);
 #ifndef _WIN32
 	auto res = sigaction(watcher->signum_, &(watcher->old_action_), 0);
 	if (res < 0) {
-		fprintf(stderr, "sigaction error: %d\n", res);
+		fprintf(stderr, "reindexer error: sigaction error: %d\n", res);
 		return;
 	}
 #else
@@ -628,7 +693,7 @@ void dynamic_loop::set(async* watcher) {
 	asyncs_.push_back(watcher);
 }
 
-void dynamic_loop::stop(async* watcher) {
+void dynamic_loop::stop(async* watcher) noexcept {
 	auto it = std::find(asyncs_.begin(), asyncs_.end(), watcher);
 	if (it == asyncs_.end()) {
 		return;
@@ -636,7 +701,7 @@ void dynamic_loop::stop(async* watcher) {
 	asyncs_.erase(it);
 }
 
-void dynamic_loop::send(async* watcher) {
+void dynamic_loop::send(async* watcher) noexcept {
 	watcher->sent_ = true;
 	bool was = async_sent_.exchange(true);
 	if (!was) {
@@ -675,7 +740,7 @@ void dynamic_loop::set_coro_cb() {
 	[[maybe_unused]] bool res = coroutine::set_loop_completion_callback([this](coroutine::routine_t id) {
 		auto found = std::find(running_tasks_.begin(), running_tasks_.end(), id);
 		assertrx(found != running_tasks_.end());
-		running_tasks_.erase(found);
+		std::ignore = running_tasks_.erase(found);
 		if (new_tasks_.empty() && running_tasks_.empty()) {
 			coroTid_ = std::thread::id();
 			break_loop();
@@ -686,7 +751,7 @@ void dynamic_loop::set_coro_cb() {
 	coro_cb_is_set_ = true;
 }
 
-void dynamic_loop::remove_coro_cb() {
+void dynamic_loop::remove_coro_cb() noexcept {
 	[[maybe_unused]] bool res = coroutine::remove_loop_completion_callback();
 	assertrx(res);
 	coro_cb_is_set_ = false;

@@ -1,10 +1,11 @@
 #pragma once
 
 #include <math.h>
+#include "estl/defines.h"
 
 namespace reindexer {
 
-class Bm25Rx {
+class [[nodiscard]] Bm25Rx {
 public:
 	Bm25Rx(double totalDocCount, double matchedDocCount, double k1, double b) noexcept
 		: k1_(k1), b_(b), idf_(IDF(totalDocCount, matchedDocCount)) {}
@@ -34,7 +35,7 @@ private:
 	const double idf_;
 };
 
-class Bm25Classic {
+class [[nodiscard]] Bm25Classic {
 public:
 	Bm25Classic(double totalDocCount, double matchedDocCount, double k1, double b) noexcept
 		: k1_(k1), b_(b), idf_(IDF(totalDocCount, matchedDocCount)) {}
@@ -49,14 +50,17 @@ private:
 	static RX_ALWAYS_INLINE double IDF(double totalDocCount, double matchedDocCount) noexcept {
 		return log(totalDocCount / (matchedDocCount + 1)) + 1;
 	}
-	static RX_ALWAYS_INLINE double TF(double termCountInDoc, double wordsInDoc) noexcept { return termCountInDoc / wordsInDoc; }
+	static RX_ALWAYS_INLINE double TF(double termCountInDoc, double wordsInDoc) noexcept {
+		(void)wordsInDoc;
+		return termCountInDoc;
+	}
 
 	const double k1_;
 	const double b_;
 	const double idf_;
 };
 
-class TermCount {
+class [[nodiscard]] TermCount {
 public:
 	TermCount(double /*totalDocCount*/, double /*matchedDocCount*/, double /*k1*/, double /*b*/) noexcept {}
 
@@ -67,7 +71,7 @@ public:
 };
 
 template <typename BM>
-class Bm25Calculator {
+class [[nodiscard]] Bm25Calculator {
 public:
 	Bm25Calculator(double totalDocCount, double matchedDocCount, double k1, double b) : bm_(totalDocCount, matchedDocCount, k1, b) {}
 	RX_ALWAYS_INLINE double Get(double termCountInDoc, double wordsInDoc, double avgDocLen) const {
