@@ -7,7 +7,7 @@
 namespace reindexer {
 namespace datastorage {
 
-class StorageFactory {
+class [[nodiscard]] StorageFactory {
 public:
 	static IDataStorage* create(StorageType);
 	static IDataStorage* create(std::string_view type);

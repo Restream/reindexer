@@ -2,67 +2,66 @@
 
 #include <cstdlib>
 #include <functional>
+
+#include "core/tag_name_index.h"
 #include "estl/h_vector.h"
+#include "indexed_path_node.h"
+#include "tools/assertrx.h"
 #include "tools/customhash.h"
 
 namespace reindexer {
 
-using TagsPath = h_vector<int16_t, 16>;
+class TagsMatcher;
 
-class IndexedPathNode {
-	struct AllItemsType {};
+using TagsPath = h_vector<TagName, 16>;
+void Dump(auto& os, const TagsPath&, TagsMatcher* = nullptr);
+
+enum [[nodiscard]] IndexedTagsPathCompareType { IgnoreAllOmittedIndexes, NotIgnoreLeftTrailingIndexes, NotIgnoreTrailingIndexes };
+
+class [[nodiscard]] IndexedTagsPathView : public std::span<const IndexedPathNode> {
+	using Base = std::span<const IndexedPathNode>;
 
 public:
-	static constexpr AllItemsType AllItems{};
-	IndexedPathNode() = default;
-	IndexedPathNode(AllItemsType) noexcept : index_{ForAllItems} {}
-	IndexedPathNode(int16_t _nameTag) noexcept : nameTag_(_nameTag) {}
-	IndexedPathNode(int16_t _nameTag, int32_t _index) noexcept : nameTag_(_nameTag), index_(_index) {}
-	bool operator==(const IndexedPathNode& obj) const noexcept {
-		if (nameTag_ != obj.nameTag_) {
-			return false;
-		}
-		if (IsForAllItems() || obj.IsForAllItems()) {
-			return true;
-		}
-		if (index_ != IndexValueType::NotSet && obj.index_ != IndexValueType::NotSet) {
-			if (index_ != obj.index_) {
-				return false;
-			}
-		}
-		return true;
-	}
-	bool operator!=(const IndexedPathNode& obj) const noexcept { return !(operator==(obj)); }
-	bool operator==(int16_t _nameTag) const noexcept { return _nameTag == nameTag_; }
-	bool operator!=(int16_t _nameTag) const noexcept { return _nameTag != nameTag_; }
-	explicit operator int() const noexcept { return nameTag_; }
-
-	int NameTag() const noexcept { return nameTag_; }
-	int Index() const noexcept { return index_; }
-
-	bool IsArrayNode() const noexcept { return (IsForAllItems() || index_ != IndexValueType::NotSet); }
-	bool IsWithIndex() const noexcept { return index_ != ForAllItems && index_ != IndexValueType::NotSet; }
-	bool IsForAllItems() const noexcept { return index_ == ForAllItems; }
-
-	void MarkAllItems(bool enable) noexcept {
-		if (enable) {
-			index_ = ForAllItems;
-		} else if (index_ == ForAllItems) {
-			index_ = IndexValueType::NotSet;
-		}
-	}
-
-	void SetIndex(int32_t index) noexcept { index_ = index; }
-	void SetNameTag(int16_t nameTag) noexcept { nameTag_ = nameTag; }
-
-private:
-	enum : int32_t { ForAllItems = -2 };
-	int16_t nameTag_ = 0;
-	int32_t index_ = IndexValueType::NotSet;
+	using Base::Base;
+	template <size_t Count>
+	IndexedTagsPathView(std::span<const IndexedPathNode, Count> other) noexcept : Base{other} {}
+	IndexedTagsPathView(std::span<const IndexedPathNode, std::dynamic_extent> other) noexcept : Base{other} {}
 };
 
+inline auto ComparePrefix(IndexedTagsPathView lhs, IndexedTagsPathView rhs) noexcept {
+	struct [[nodiscard]] PrefixCompRes {
+		size_t leftPos;
+		size_t rightPos;
+		bool res;
+	};
+	bool result = true;
+	size_t lI = 0, rI = 0;
+	const size_t lSize = lhs.size();
+	const size_t rSize = rhs.size();
+	while (result && lI < lSize && rI < rSize) {
+		const auto& lNode = lhs[lI];
+		const auto& rNode = rhs[rI];
+		if (lNode.IsTagIndex()) {
+			++lI;
+			if (rNode.IsTagIndex()) {
+				++rI;
+				result = (lNode.GetTagIndex() == rNode.GetTagIndex());
+			}
+		} else {
+			++rI;
+			if (rNode.IsTagName()) {
+				++lI;
+				result = (lNode.GetTagName() == rNode.GetTagName());
+			}
+		}
+	}
+	return PrefixCompRes{lI, rI, result};
+}
+
+bool Compare(IndexedTagsPathView lhs, const TagsPath& rhs) noexcept;
+
 template <unsigned hvSize>
-class IndexedTagsPathImpl : public h_vector<IndexedPathNode, hvSize> {
+class [[nodiscard]] IndexedTagsPathImpl : public h_vector<IndexedPathNode, hvSize> {
 public:
 	using Base = h_vector<IndexedPathNode, hvSize>;
 	using Base::Base;
@@ -72,98 +71,119 @@ public:
 			this->emplace_back(t);
 		}
 	}
-	template <unsigned hvSizeO>
-	bool Compare(const IndexedTagsPathImpl<hvSizeO>& obj) const noexcept {
+	bool Compare(const TagsPath& other) const noexcept { return reindexer::Compare(*this, other); }
+	bool IsNestedOrEqualTo(const TagsPath& other) const noexcept {
 		const size_t ourSize = this->size();
-		if (obj.size() != ourSize) {
-			return false;
-		}
-		if (this->back().IsArrayNode() != obj.back().IsArrayNode()) {
+		if (ourSize > other.size()) {
 			return false;
 		}
 		for (size_t i = 0; i < ourSize; ++i) {
-			const auto& ourNode = this->operator[](i);
-			if (i == ourSize - 1) {
-				if (ourNode.IsArrayNode()) {
-					if (ourNode.NameTag() != obj[i].NameTag()) {
-						return false;
-					}
-					if (ourNode.IsForAllItems() || obj[i].IsForAllItems()) {
-						break;
-					}
-					return (ourNode.Index() == obj[i].Index());
-				} else {
-					return (ourNode.NameTag() == obj[i].NameTag());
-				}
-			} else {
-				if (ourNode != obj[i]) {
-					return false;
-				}
-			}
-		}
-		return true;
-	}
-	bool Compare(const TagsPath& obj) const noexcept {
-		const auto sz = this->size();
-		if (obj.size() != sz) {
-			return false;
-		}
-		for (size_t i = 0; i < sz; ++i) {
-			if ((*this)[i].NameTag() != obj[i]) {
+			if ((*this)[i] != other[i]) {
 				return false;
 			}
 		}
 		return true;
 	}
-	bool IsNestedOrEqualTo(const TagsPath& obj) const noexcept {
-		const auto sz = this->size();
-		if (sz > obj.size()) {
-			return false;
-		}
-		for (size_t i = 0; i < sz; ++i) {
-			if ((*this)[i].NameTag() != obj[i]) {
-				return false;
-			}
-		}
-		return true;
+
+	template <unsigned otherHvSize>
+	bool ComparePrefix(const IndexedTagsPathImpl<otherHvSize>& other) const noexcept {
+		return reindexer::ComparePrefix(*this, other).res;
 	}
+
+	void Dump(auto& os, TagsMatcher* = nullptr) const;
+
+	bool operator==(const IndexedTagsPathImpl&) = delete;  // use Compare
 };
 using IndexedTagsPath = IndexedTagsPathImpl<6>;
 
-template <typename TagsPath>
-class TagsPathScope {
-public:
-	TagsPathScope(TagsPath& tagsPath, int16_t tagName) : tagsPath_(tagsPath), tagName_(tagName) {
-		if (tagName_) {
-			tagsPath_.emplace_back(tagName);
+template <IndexedTagsPathCompareType compareType>
+bool Compare(IndexedTagsPathView lhs, IndexedTagsPathView rhs) noexcept {
+	const size_t lSize = lhs.size();
+	const size_t rSize = rhs.size();
+	size_t lPrefixCompareSize = lSize;
+	if constexpr (compareType != IgnoreAllOmittedIndexes) {
+		while (lPrefixCompareSize > 0 && lhs[lPrefixCompareSize - 1].IsTagIndex()) {
+			--lPrefixCompareSize;
 		}
 	}
-	TagsPathScope(TagsPath& tagsPath, int16_t tagName, int32_t index) : tagsPath_(tagsPath), tagName_(tagName) {
-		if (tagName_) {
-			tagsPath_.emplace_back(tagName, index);
+	auto [lI, rI, result] = ComparePrefix(lhs.first(lPrefixCompareSize), rhs);
+	if (!result) {
+		return false;
+	}
+	if constexpr (compareType != IgnoreAllOmittedIndexes) {
+		while (lI < lSize && rI < rSize) {
+			const auto& lNode = lhs[lI];
+			assertrx_dbg(lNode.IsTagIndex());
+			const auto& rNode = rhs[rI];
+			if (rNode.IsTagIndex()) {
+				++lI;
+				++rI;
+				if (lNode.GetTagIndex() != rNode.GetTagIndex()) {
+					return false;
+				}
+			} else {
+				return false;
+			}
+		}
+		if (lI != lSize) {
+			return false;
+		}
+	} else {
+		for (; lI < lSize; ++lI) {
+			if (!lhs[lI].IsTagIndex()) {
+				return false;
+			}
+		}
+	}
+	if (compareType == NotIgnoreTrailingIndexes) {
+		return rI == rSize;
+	} else {
+		for (; rI < rSize; ++rI) {
+			if (!rhs[rI].IsTagIndex()) {
+				return false;
+			}
+		}
+		return true;
+	}
+}
+
+template <typename Path>
+class [[nodiscard]] TagsPathScope {
+public:
+	TagsPathScope(Path& path, TagName tagName) : path_(path), pathNode_(tagName) {
+		if (!tagName.IsEmpty()) {
+			path_.emplace_back(tagName);
+		}
+	}
+	TagsPathScope(Path& path, TagIndex tagIndex) : path_(path), pathNode_(tagIndex) { path_.emplace_back(tagIndex); }
+	TagsPathScope(Path& path, IndexedPathNode tag) : path_(path), pathNode_(tag) {
+		if (!pathNode_.IsTagNameEmpty()) {
+			path_.emplace_back(pathNode_);
 		}
 	}
 	~TagsPathScope() {
-		if (tagName_ && !tagsPath_.empty()) {
-			tagsPath_.pop_back();
+		if (!path_.empty() && !pathNode_.IsTagNameEmpty()) {
+			path_.pop_back();
 		}
 	}
 	TagsPathScope(const TagsPathScope&) = delete;
 	TagsPathScope& operator=(const TagsPathScope&) = delete;
 
 private:
-	TagsPath& tagsPath_;
-	const int16_t tagName_;
+	Path& path_;
+	const IndexedPathNode pathNode_;
 };
 
 }  // namespace reindexer
 
 namespace std {
+
 template <>
-struct hash<reindexer::TagsPath> {
+struct [[nodiscard]] hash<reindexer::TagsPath> {
 public:
 	size_t operator()(const reindexer::TagsPath& v) const noexcept {
 		return reindexer::_Hash_bytes(v.data(), v.size() * sizeof(typename reindexer::TagsPath::value_type));
 	}
 };
+
 }  // namespace std

@@ -1,12 +1,12 @@
 #include "crashqueryreporter.h"
-#include <sstream>
+#include <optional>
 #include "core/nsselecter/nsselecter.h"
-#include "debug/backtrace.h"
+#include "core/query/query_impl.h"
 #include "tools/logger.h"
 
 namespace reindexer {
 
-struct QueryDebugContext {
+struct [[nodiscard]] QueryDebugContext {
 	bool HasTrackedQuery() const noexcept { return mainQuery || externQuery || parentQuery || !externSql.empty(); }
 	std::string_view GetMainSQL(std::string& storage) const noexcept {
 		try {
@@ -35,16 +35,18 @@ struct QueryDebugContext {
 		}
 	}
 	void ResetQueries() noexcept {
-		mainQuery = externQuery = parentQuery = nullptr;
+		mainQuery.reset();
+		externQuery.reset();
+		parentQuery.reset();
 		externSql = std::string_view();
 	}
 
-	const Query* mainQuery = nullptr;
-	const Query* externQuery = nullptr;
+	std::optional<ConstQueryImpl> mainQuery;
+	std::optional<ConstQueryImpl> externQuery;
 	std::string_view externSql;
-	const Query* parentQuery = nullptr;
-	const std::atomic<int>* nsOptimizationState = nullptr;
-	ExplainCalc* explainCalc = nullptr;
+	std::optional<ConstQueryImpl> parentQuery;
+	const std::atomic<OptimizationState>* nsOptimizationState = nullptr;
+	SingleQueryExplainCalc* explainCalc = nullptr;
 	const std::atomic<int>* nsLockerState = nullptr;
 	StringsHolder* nsStrHolder = nullptr;
 	QueryType realQueryType = QuerySelect;
@@ -53,11 +55,12 @@ struct QueryDebugContext {
 
 thread_local QueryDebugContext g_queryDebugCtx;
 
-ActiveQueryScope::ActiveQueryScope(SelectCtx& ctx, const std::atomic<int>& nsOptimizationState, ExplainCalc& explainCalc,
-								   const std::atomic<int>& nsLockerState, StringsHolder* strHolder) noexcept
+ActiveQueryScope::ActiveQueryScope(SelectCtx& ctx, const std::atomic<OptimizationState>& nsOptimizationState,
+								   SingleQueryExplainCalc& explainCalc, const std::atomic<int>& nsLockerState,
+								   StringsHolder* strHolder) noexcept
 	: type_(ctx.requiresCrashTracking ? Type::CoreQueryTracker : Type::NoTracking) {
 	if (ctx.requiresCrashTracking) {
-		g_queryDebugCtx.mainQuery = &ctx.query;
+		g_queryDebugCtx.mainQuery = ctx.query;
 		g_queryDebugCtx.parentQuery = ctx.parentQuery;
 		g_queryDebugCtx.nsOptimizationState = &nsOptimizationState;
 		g_queryDebugCtx.explainCalc = &explainCalc;
@@ -67,11 +70,11 @@ ActiveQueryScope::ActiveQueryScope(SelectCtx& ctx, const std::atomic<int>& nsOpt
 	}
 }
 
-ActiveQueryScope::ActiveQueryScope(const Query& q, QueryType realQueryType, const std::atomic<int>& nsOptimizationState,
+ActiveQueryScope::ActiveQueryScope(ConstQueryImpl q, QueryType realQueryType, const std::atomic<OptimizationState>& nsOptimizationState,
 								   StringsHolder* strHolder) noexcept
 	: type_(Type::CoreQueryTracker) {
-	g_queryDebugCtx.mainQuery = &q;
-	g_queryDebugCtx.parentQuery = nullptr;
+	g_queryDebugCtx.mainQuery = q;
+	g_queryDebugCtx.parentQuery.reset();
 	g_queryDebugCtx.nsOptimizationState = &nsOptimizationState;
 	g_queryDebugCtx.explainCalc = nullptr;
 	g_queryDebugCtx.nsLockerState = nullptr;
@@ -79,8 +82,8 @@ ActiveQueryScope::ActiveQueryScope(const Query& q, QueryType realQueryType, cons
 	g_queryDebugCtx.realQueryType = realQueryType;
 }
 
-ActiveQueryScope::ActiveQueryScope(const Query& q, QueryType realQueryType) noexcept : type_(Type::ExternalQueryTracker) {
-	g_queryDebugCtx.externQuery = &q;
+ActiveQueryScope::ActiveQueryScope(ConstQueryImpl q, QueryType realQueryType) noexcept : type_(Type::ExternalQueryTracker) {
+	g_queryDebugCtx.externQuery = q;
 	g_queryDebugCtx.externRealQueryType = realQueryType;
 }
 
@@ -94,10 +97,10 @@ ActiveQueryScope::~ActiveQueryScope() {
 			break;
 		case Type::CoreQueryTracker:
 			if (!g_queryDebugCtx.mainQuery) {
-				logPrintf(LogWarning, "~ActiveQueryScope: Empty query pointer in the ActiveQueryScope");
+				logFmt(LogWarning, "~ActiveQueryScope: Empty query pointer in the ActiveQueryScope");
 			}
-			g_queryDebugCtx.mainQuery = nullptr;
-			g_queryDebugCtx.parentQuery = nullptr;
+			g_queryDebugCtx.mainQuery.reset();
+			g_queryDebugCtx.parentQuery.reset();
 			g_queryDebugCtx.nsOptimizationState = nullptr;
 			g_queryDebugCtx.explainCalc = nullptr;
 			g_queryDebugCtx.nsLockerState = nullptr;
@@ -106,29 +109,31 @@ ActiveQueryScope::~ActiveQueryScope() {
 			break;
 		case Type::ExternalQueryTracker:
 			if (!g_queryDebugCtx.externQuery) {
-				logPrintf(LogWarning, "~ActiveQueryScope: Empty external query pointer in the ActiveQueryScope");
+				logFmt(LogWarning, "~ActiveQueryScope: Empty external query pointer in the ActiveQueryScope");
 			}
-			g_queryDebugCtx.externQuery = nullptr;
+			g_queryDebugCtx.externQuery.reset();
 			g_queryDebugCtx.externRealQueryType = QuerySelect;
 			break;
 		case Type::ExternalSQLQueryTracker:
 			if (g_queryDebugCtx.externSql.empty()) {
-				logPrintf(LogWarning, "~ActiveQueryScope: Empty external query SQL in the ActiveQueryScope");
+				logFmt(LogWarning, "~ActiveQueryScope: Empty external query SQL in the ActiveQueryScope");
 			}
 			g_queryDebugCtx.externSql = std::string_view();
 			break;
 	}
 }
 
-static std::string_view nsOptimizationStateName(int state) {
+static std::string_view nsOptimizationStateName(OptimizationState state) {
 	using namespace std::string_view_literals;
 	switch (state) {
-		case NamespaceImpl::NotOptimized:
+		case OptimizationState::None:
 			return "Not optimized"sv;
-		case NamespaceImpl::OptimizedPartially:
+		case OptimizationState::Partial:
 			return "Optimized Partially"sv;
-		case NamespaceImpl::OptimizationCompleted:
+		case OptimizationState::Completed:
 			return "Optimization completed"sv;
+		case OptimizationState::Error:
+			return "Unexpected optimization error"sv;
 		default:
 			return "<Unknown>"sv;
 	}
@@ -167,7 +172,7 @@ void PrintCrashedQuery(std::ostream& out) {
 	}
 	if (g_queryDebugCtx.nsLockerState) {
 		out << " NS.locker state: ";
-		nsInvalidationStateName(g_queryDebugCtx.nsLockerState->load());
+		out << nsInvalidationStateName(g_queryDebugCtx.nsLockerState->load());
 		out << std::endl;
 	}
 	if (g_queryDebugCtx.nsStrHolder) {

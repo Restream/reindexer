@@ -7,7 +7,6 @@
 #ifndef _WIN32
 #include <dlfcn.h>
 #include <stdlib.h>
-#include <mutex>
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #endif	// _WIN32
 

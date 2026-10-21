@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-class chunk {
+class [[nodiscard]] chunk {
 public:
 	chunk() noexcept : data_(nullptr), len_(0), offset_(0), cap_(0) {}
 	chunk(uint8_t* data, size_t len, size_t cap, size_t offset = 0) noexcept : data_(data), len_(len), offset_(offset), cap_(cap) {}

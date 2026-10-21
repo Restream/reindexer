@@ -1,0 +1,73 @@
+#pragma once
+
+#include <random>
+
+#include "base_fixture.h"
+#include "ft_base.h"
+
+namespace reindexer_benchmarks::knn_bench {
+
+enum class [[nodiscard]] IndexType { Hnsw, Ivf };
+enum class [[nodiscard]] KnnParams { K, K_Radius, Radius };
+enum class [[nodiscard]] WithQuantization { No, Yes };
+
+template <IndexType, reindexer::VectorMetric>
+class [[nodiscard]] KnnBench : private BaseFixture, private FullTextBase {
+public:
+	~KnnBench() override = default;
+	KnnBench(Reindexer* db, std::string_view name, WithQuantization = WithQuantization::No);
+
+	reindexer::Error Initialize() override {
+		reindexer::Error err = BaseFixture::Initialize();
+		if (!err.ok()) {
+			return err;
+		}
+		return FullTextBase::Initialize();
+	}
+	void RegisterAllCases();
+
+private:
+	template <KnnParams>
+	class ItemsCounter;
+
+	reindexer::Item MakeItem(State&) override;
+	reindexer::Item MakeItem(State&, int id);
+
+	void Fill(State&);
+	void FillFtIndex(State&);
+	void DeleteFtIndex(State&);
+	void Insert(State&);
+	void Update(State&);
+	template <KnnParams>
+	void Knn(State&);
+	template <KnnParams>
+	void KnnWithVectors(State&);
+	template <KnnParams>
+	void KnnWithCondition(State&);
+	template <KnnParams>
+	void KnnWith2Conditions(State&);
+	template <KnnParams>
+	void AndHybridRrf(State&);
+	template <KnnParams>
+	void OrHybridRrf(State&);
+	template <KnnParams>
+	void AndHybridLinear(State&);
+	template <KnnParams>
+	void OrHybridLinear(State&);
+	void StreamingKnnTree50pct(State&);
+	void StreamingKnnTree50pctLimit10(State&);
+	void StreamingKnn2Cond25pct(State&);
+	void StreamingKnnNoFilter(State&);
+	void prepareStreamingParams(State& state);
+	void Sleep(State&);
+
+	// NOLINTNEXTLINE(bugprone-random-generator-seed) Using the same seed here for more stable results
+	std::mt19937 randomEngine_{1};
+	std::uniform_int_distribution<int> randomGenerator_{};
+	const WithQuantization withQuantization_;
+	std::vector<float> streamingQuery_;
+	size_t streamingLimitTree50_{0};
+	size_t streamingLimit2Cond_{0};
+};
+
+}  // namespace reindexer_benchmarks::knn_bench

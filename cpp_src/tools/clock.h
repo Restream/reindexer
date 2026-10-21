@@ -12,7 +12,7 @@
 
 namespace reindexer {
 
-class system_clock_w : public std::chrono::system_clock {
+class [[nodiscard]] system_clock_w : public std::chrono::system_clock {
 public:
 	using std::chrono::system_clock::duration;
 	using std::chrono::system_clock::rep;
@@ -31,6 +31,7 @@ public:
 		return std::chrono::system_clock::now();
 #endif	// !REINDEXER_OVERRIDES_STD_NOW
 	}
+	static uint64_t now_count() noexcept { return system_clock_w::now().time_since_epoch().count(); }
 	// Coarse version of the clock gets time ~2-3 times faster, but has worse granularity. Expected granularity is about 2-4 ms.
 	static time_point now_coarse() noexcept {
 #if defined(CLOCK_REALTIME_COARSE)
@@ -43,7 +44,7 @@ public:
 	}
 };
 
-class steady_clock_w : public std::chrono::steady_clock {
+class [[nodiscard]] steady_clock_w : public std::chrono::steady_clock {
 public:
 	using std::chrono::steady_clock::duration;
 	using std::chrono::steady_clock::rep;

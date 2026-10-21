@@ -16,14 +16,14 @@ constexpr std::size_t hash_ascii_string_nocase(const String& value, std::size_t 
 	return d >> 8;
 }
 
-struct nocase_hash_str {
+struct [[nodiscard]] nocase_hash_str {
 	constexpr std::size_t operator()(std::string_view hs, std::size_t seed) const noexcept { return hash_ascii_string_nocase(hs, seed); }
 	constexpr std::size_t operator()(const frozen::string& hs, std::size_t seed) const noexcept {
 		return hash_ascii_string_nocase(hs, seed);
 	}
 };
 
-struct nocase_equal_str {
+struct [[nodiscard]] nocase_equal_str {
 	constexpr bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return reindexer::iequals(lhs, rhs); }
 	constexpr bool operator()(const frozen::string& lhs, std::string_view rhs) const noexcept {
 		return reindexer::iequals(std::string_view(lhs.data(), lhs.size()), rhs);

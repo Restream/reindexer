@@ -22,7 +22,7 @@ def ParseRef(ref, typeDict, allTypeDict, propDict, level):
         raise ValueError("Incorrect ref "+ref)
     if splitref[0] != "#":
         raise ValueError("Incorrect ref "+ref)
-    refObj = server_yml["definitions"][splitref[-1]]
+    refObj = server_yml["components"]["schemas"][splitref[-1]]
     if splitref[-1] in typeDict:
         if typeDict[splitref[-1]].counter < RefSubLevel:
             typeDict[splitref[-1]].counter += 1
@@ -44,7 +44,7 @@ def GetParentType(typeDict, allTypeDict, Obj, jsonObj, level):
     if "type" in Obj:
         if Obj["type"] == "object":
             jsonObj["type"] = "object"
-            if "properties" in Obj:
+            if "properties" in Obj and len(Obj["properties"]) != 0:
                 if "required" in Obj:
                     jsonObj["required"] = Obj["required"]
                 jsonObj["additionalProperties"] = False
@@ -85,7 +85,7 @@ def Generate():
         try:
             global server_yml
             server_yml = yaml.safe_load(stream)
-            Query = server_yml["definitions"]["Query"]
+            Query = server_yml["components"]["schemas"]["Query"]
             typeDict = {}
             typeDict["Query"] = TypeData(1, Query)
             allTypeDict = {}
@@ -95,7 +95,7 @@ def Generate():
 
             schema = {}
             if RefSubLevel == 0:
-                schema["$ref"] = "#/definitions/Query"
+                schema["$ref"] = "#/components/schemas/Query"
             else:
                 allDummy = {}
                 typeDummy = {}
