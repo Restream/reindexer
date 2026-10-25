@@ -9,7 +9,7 @@ namespace reindexer::openssl {
 
 #define SSL_ERROR_LOG(param)                                           \
 	Error err = Error(param, ERR_error_string(ERR_get_error(), NULL)); \
-	logPrintf(LogError, "%s", err.what());
+	logFmt(LogError, "{}", err.what());
 
 #define SSL_ERROR_LOG_THROW(param) SSL_ERROR_LOG(param) throw err;
 

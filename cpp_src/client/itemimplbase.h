@@ -1,26 +1,28 @@
 #pragma once
 
 #include <vector>
+#include "core/keyvalue/float_vectors_holder.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
 #include "core/query/query.h"
-#include "tools/serializer.h"
+#include "tools/serilize/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
 namespace reindexer {
 namespace client {
 
 class RPCClient;
 
-class ItemImplBase {
+class [[nodiscard]] ItemImplBase {
 public:
 	// Construct empty item
 	ItemImplBase() = default;
-	ItemImplBase(PayloadType type, const TagsMatcher& tagsMatcher)
+	ItemImplBase(const PayloadType& type, const TagsMatcher& tagsMatcher)
 		: payloadType_(type), payloadValue_(type.TotalSize(), 0, type.TotalSize() + 0x100), tagsMatcher_(tagsMatcher) {
 		tagsMatcher_.clearUpdated();
 	}
 
-	ItemImplBase(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher)
+	ItemImplBase(const PayloadType& type, const PayloadValue& v, const TagsMatcher& tagsMatcher)
 		: payloadType_(type), payloadValue_(v), tagsMatcher_(tagsMatcher) {
 		tagsMatcher_.clearUpdated();
 	}
@@ -62,12 +64,13 @@ public:
 	static bool ReadBundledTmTag(Serializer& ser) { return ser.GetCTag() == kCTagEnd; }
 
 protected:
-	virtual Error tryToUpdateTagsMatcher() = 0;
-
 	// Index fields payload data
 	PayloadType payloadType_;
 	PayloadValue payloadValue_;
 	TagsMatcher tagsMatcher_;
+
+private:
+	virtual Error tryToUpdateTagsMatcher() = 0;
 
 	WrSerializer ser_;
 	std::string_view tupleData_;
@@ -77,6 +80,7 @@ protected:
 	bool unsafe_ = false;
 	h_vector<key_string, 16> holder_;
 	std::vector<std::unique_ptr<char[]>> largeJSONStrings_;
+	FloatVectorsHolderVector floatVectorsHolder_;
 };
 
 }  // namespace client

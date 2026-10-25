@@ -1,18 +1,23 @@
 #include "client/transaction.h"
 #include "client/reindexerimpl.h"
 #include "core/cjson/tagsmatcher.h"
+#include "tools/logger.h"
 
 namespace reindexer {
 namespace client {
 
 static const auto kBadTxStatus = Error(errBadTransaction, "Transaction is free");
 
-Item Transaction::NewItem() {
-	if (!Status().ok()) {
+Item Transaction::NewItem() noexcept {
+	if (!Status().ok()) [[unlikely]] {
 		return Item(Status());
 	}
 	if (!IsFree()) {
-		return rx_->newItemTx(tr_);
+		try {
+			return rx_->newItemTx(tr_);
+		} catch (std::exception& err) {
+			return Item(std::move(err));
+		}
 	}
 	return Item(kBadTxStatus);
 }
@@ -25,62 +30,152 @@ Transaction::~Transaction() {
 	tr_.clear();
 }
 
-PayloadType Transaction::GetPayloadType() const { return tr_.GetPayloadType(); }
-TagsMatcher Transaction::GetTagsMatcher() const { return tr_.GetTagsMatcher(); }
+PayloadType Transaction::GetPayloadType() const noexcept { return tr_.GetPayloadType(); }
+TagsMatcher Transaction::GetTagsMatcher() const noexcept { return tr_.GetTagsMatcher(); }
 
 int64_t Transaction::GetTransactionId() const noexcept { return tr_.i_.txId_; }
 
-Error Transaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
-	return modify(std::move(item), mode, InternalRdxContext(std::move(lsn)));
-}
-Error Transaction::PutMeta(std::string_view key, std::string_view value, lsn_t lsn) {
-	return putMeta(key, value, InternalRdxContext(std::move(lsn)));
-}
-Error Transaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) { return setTagsMatcher(std::move(tm), InternalRdxContext(std::move(lsn))); }
-Error Transaction::Modify(Query&& query, lsn_t lsn) { return modify(std::move(query), InternalRdxContext(std::move(lsn))); }
-
-Error Transaction::modify(Item&& item, ItemModifyMode mode, InternalRdxContext&& ctx) {
-	if (!IsFree()) {
-		auto err = rx_->addTxItem(*this, std::move(item), mode, ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
-		if (!err.ok()) {
-			setStatus(std::move(err));
-		}
-		return Status();
+Error Transaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) noexcept {
+	try {
+		modify(std::move(item), mode, InternalRdxContext(std::move(lsn)));
+		return {};
+	} catch (std::exception& e) {
+		return e;
 	}
-	return Status().ok() ? kBadTxStatus : Status();
+}
+Error Transaction::Modify(Item&& item, ItemModifyMode mode, Completion cmpl, lsn_t lsn) noexcept {
+	try {
+		modify(std::move(item), mode, InternalRdxContext(std::move(lsn)).WithCompletion(std::move(cmpl)));
+		return {};
+	} catch (std::exception& e) {
+		return e;
+	}
+}
+Error Transaction::PutMeta(std::string_view key, std::string_view value, lsn_t lsn) noexcept {
+	try {
+		putMeta(key, value, InternalRdxContext(std::move(lsn)));
+		return {};
+	} catch (std::exception& e) {
+		return e;
+	}
+}
+Error Transaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) noexcept {
+	try {
+		setTagsMatcher(std::move(tm), InternalRdxContext(std::move(lsn)));
+		return {};
+	} catch (std::exception& e) {
+		return e;
+	}
+}
+Error Transaction::Modify(Query&& query, lsn_t lsn) noexcept {
+	try {
+		modify(std::move(query), InternalRdxContext(std::move(lsn)));
+		return {};
+	} catch (std::exception& e) {
+		return e;
+	}
 }
 
-Error Transaction::modify(Query&& query, InternalRdxContext&& ctx) {
-	if (!IsFree()) {
-		auto err = rx_->modifyTx(*this, std::move(query), ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
-		if (!err.ok()) {
-			setStatus(std::move(err));
+static void safeCallCompletion(const InternalRdxContext& ctx, const Error& err) noexcept {
+	if (ctx.cmpl()) {
+		try {
+			ctx.cmpl()(err);
+		} catch (std::exception& e) {
+			logFmt(LogError, "Transaction::modify: completion function threw an exception: {}", e.what());
 		}
-		return Status();
 	}
-	return Status().ok() ? kBadTxStatus : Status();
 }
 
-Error Transaction::putMeta(std::string_view key, std::string_view value, InternalRdxContext&& ctx) {
+void Transaction::modify(Item&& item, ItemModifyMode mode, InternalRdxContext&& ctx) {
+	checkStatus(ctx);
+
 	if (!IsFree()) {
-		auto err = rx_->putTxMeta(*this, key, value, ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
-		if (!err.ok()) {
-			setStatus(std::move(err));
+		try {
+			auto err = rx_->addTxItem(*this, std::move(item), mode, ctx.WithEmitterServerId(tr_.i_.emitterServerId_));
+			if (!err.ok()) [[unlikely]] {
+				throw err;
+			}
+			return;
+		} catch (std::exception& e) {
+			setStatus(std::move(e));
+			auto status = Status();
+			safeCallCompletion(ctx, status);
+			throw status;
 		}
-		return Status();
 	}
-	return Status().ok() ? kBadTxStatus : Status();
+	safeCallCompletion(ctx, kBadTxStatus);
+	throw kBadTxStatus;
 }
 
-Error Transaction::setTagsMatcher(TagsMatcher&& tm, InternalRdxContext&& ctx) {
+void Transaction::modify(Query&& query, InternalRdxContext&& ctx) {
+	checkStatus(ctx);
+
 	if (!IsFree()) {
-		auto err = rx_->setTxTm(*this, std::move(tm), ctx.WithEmmiterServerId(tr_.i_.emmiterServerId_));
-		if (!err.ok()) {
-			setStatus(std::move(err));
+		try {
+			auto err = rx_->modifyTx(*this, std::move(query), ctx.WithEmitterServerId(tr_.i_.emitterServerId_));
+			if (!err.ok()) [[unlikely]] {
+				throw err;
+			}
+			return;
+		} catch (std::exception& e) {
+			setStatus(std::move(e));
+			auto status = Status();
+			safeCallCompletion(ctx, status);
+			throw status;
 		}
-		return Status();
 	}
-	return Status().ok() ? kBadTxStatus : Status();
+	safeCallCompletion(ctx, kBadTxStatus);
+	throw kBadTxStatus;
+}
+
+void Transaction::putMeta(std::string_view key, std::string_view value, InternalRdxContext&& ctx) {
+	checkStatus(ctx);
+
+	if (!IsFree()) {
+		try {
+			auto err = rx_->putTxMeta(*this, key, value, ctx.WithEmitterServerId(tr_.i_.emitterServerId_));
+			if (!err.ok()) [[unlikely]] {
+				throw err;
+			}
+			return;
+		} catch (std::exception& e) {
+			setStatus(std::move(e));
+			auto status = Status();
+			safeCallCompletion(ctx, status);
+			throw status;
+		}
+	}
+	safeCallCompletion(ctx, kBadTxStatus);
+	throw kBadTxStatus;
+}
+
+void Transaction::setTagsMatcher(TagsMatcher&& tm, InternalRdxContext&& ctx) {
+	checkStatus(ctx);
+
+	if (!IsFree()) {
+		try {
+			auto err = rx_->setTxTm(*this, std::move(tm), ctx.WithEmitterServerId(tr_.i_.emitterServerId_));
+			if (!err.ok()) [[unlikely]] {
+				throw err;
+			}
+			return;
+		} catch (std::exception& e) {
+			setStatus(std::move(e));
+			auto status = Status();
+			safeCallCompletion(ctx, status);
+			throw status;
+		}
+	}
+	safeCallCompletion(ctx, kBadTxStatus);
+	throw kBadTxStatus;
+}
+
+void Transaction::checkStatus(const InternalRdxContext& ctx) {
+	if (!Status().ok()) [[unlikely]] {
+		auto status = Status();
+		safeCallCompletion(ctx, status);
+		throw status;
+	}
 }
 
 }  // namespace client

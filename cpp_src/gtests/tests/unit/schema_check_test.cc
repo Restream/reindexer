@@ -1,15 +1,17 @@
 #include "core/cjson/jschemachecker.h"
-#include "estl/span.h"
 #include "gtest/gtest.h"
 
 #include "core/query/dsl/query.json.h"
 
+namespace reindexer_tests {
+
 using namespace reindexer;
+
 TEST(SchemaTest, BaseTest) {
-	static reindexer::JsonSchemaChecker check(kQueryJson, "query");
+	static JsonSchemaChecker check(kQueryJson, "query");
 	gason::JsonParser parser;
 
-	std::string dsl = R"#({
+	std::string_view dsl = R"#({
 		"namespace":"12223"
 		"limit":-1,
 		"offset":0,
@@ -32,23 +34,23 @@ TEST(SchemaTest, BaseTest) {
 		"aggregations":[]
 	})#";
 	{
-		auto root = parser.Parse(giftStr(dsl));
+		auto root = parser.Parse(dsl);
 		Error err = check.Check(root);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	std::string dslExtraTag = R"#({
+	std::string_view dslExtraTag = R"#({
 		"namespace":"test_namespace",
 		"extra_tag":"tag",
 	})#";
 	{
-		auto root = parser.Parse(giftStr(dslExtraTag));
+		auto root = parser.Parse(dslExtraTag);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what().c_str(), "Key [extra_tag] not allowed in [query] object.");
+		EXPECT_STREQ(err.what(), "Key [extra_tag] not allowed in [query] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
-	std::string dslExtraTag2 = R"#({
+	std::string_view dslExtraTag2 = R"#({
 		"namespace":"test_namespace",
 		"sort":{
 				"field":"f1",
@@ -56,13 +58,13 @@ TEST(SchemaTest, BaseTest) {
 			}
 	})#";
 	{
-		auto root = parser.Parse(giftStr(dslExtraTag2));
+		auto root = parser.Parse(dslExtraTag2);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what().c_str(), "Key [extra_tag] not allowed in [query.sort] object.");
+		EXPECT_STREQ(err.what(), "Key [extra_tag] not allowed in [query.sort] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
-	std::string dsl2Tag = R"#({
+	std::string_view dsl2Tag = R"#({
 			"namespace":"test_namespace",
 			"limit":100,
 			"aggregations":{
@@ -73,67 +75,67 @@ TEST(SchemaTest, BaseTest) {
 
 		})#";
 	{
-		auto root = parser.Parse(giftStr(dsl2Tag));
+		auto root = parser.Parse(dsl2Tag);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what().c_str(), "Key [type] can occur only once in [query.aggregations] object.");
+		EXPECT_STREQ(err.what(), "Key [type] can occur only once in [query.aggregations] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
-	std::string dsl0Tag = R"#({
+	std::string_view dsl0Tag = R"#({
 			"limit":100,
 		})#";
 	{
-		auto root = parser.Parse(giftStr(dsl0Tag));
+		auto root = parser.Parse(dsl0Tag);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what().c_str(), "Key [namespace] must occur in [query] object.");
+		EXPECT_STREQ(err.what(), "Key [namespace] must occur in [query] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
-	std::string dslSort1 = R"#({
+	std::string_view dslSort1 = R"#({
 			"namespace":"test_namespace",
 			"sort":[{"desc":true,"field":"abc","values":[1,2,3]}],
 		})#";
 	{
-		auto root = parser.Parse(giftStr(dslSort1));
+		auto root = parser.Parse(dslSort1);
 		Error err = check.Check(root);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	std::string dslSort2 = R"#({
+	std::string_view dslSort2 = R"#({
 			"namespace":"test_namespace",
 			"sort":[{"desc1":true,"field":"abc","values":[1,2,3]}],
 		})#";
 	{
-		auto root = parser.Parse(giftStr(dslSort2));
+		auto root = parser.Parse(dslSort2);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what().c_str(), "Key [desc1] not allowed in [query.sort] object.");
+		EXPECT_STREQ(err.what(), "Key [desc1] not allowed in [query.sort] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
-	std::string dslSort3 = R"#({
+	std::string_view dslSort3 = R"#({
 			"namespace":"test_namespace",
 			"sort":[{"values":[1,2,3]}],
 		})#";
 	{
-		auto root = parser.Parse(giftStr(dslSort3));
+		auto root = parser.Parse(dslSort3);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what().c_str(), "Key [field] must occur in [query.sort] object.");
+		EXPECT_STREQ(err.what(), "Key [field] must occur in [query.sort] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
-	std::string dslSort4 = R"#({
+	std::string_view dslSort4 = R"#({
 			"namespace":"test_namespace",
 			"sort":{"values":[1,2,3]},
 		})#";
 	{
-		auto root = parser.Parse(giftStr(dslSort4));
+		auto root = parser.Parse(dslSort4);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what().c_str(), "Key [field] must occur in [query.sort] object.");
+		EXPECT_STREQ(err.what(), "Key [field] must occur in [query.sort] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 }
 TEST(SchemaTest, AdditionalProperties) {
-	const std::string scemaStr = R"#({
+	std::string_view scemaStr = R"#({
 		"required":["v1"],
 		"additionalProperties": true,
 		"type": "object",
@@ -144,50 +146,50 @@ TEST(SchemaTest, AdditionalProperties) {
 	}
 	)#";
 
-	static reindexer::JsonSchemaChecker check;
+	static JsonSchemaChecker check;
 	Error e = check.Init(scemaStr, "query");
 	ASSERT_TRUE(e.ok()) << e.what();
 	gason::JsonParser parser;
 
-	std::string str1 = R"#({
+	std::string_view str1 = R"#({
 			"v1":10,
 			"v2":20,
 			"v3":30
 		})#";
 	{
-		auto root = parser.Parse(giftStr(str1));
+		auto root = parser.Parse(str1);
 		Error err = check.Check(root);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	std::string str2 = R"#({
+	std::string_view str2 = R"#({
 			"v2":20,
 			"v3":30
 		})#";
 	{
-		auto root = parser.Parse(giftStr(str2));
+		auto root = parser.Parse(str2);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what().c_str(), "Key [v1] must occur in [query] object.");
+		EXPECT_STREQ(err.what(), "Key [v1] must occur in [query] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
-	std::string str3 = R"#({
+	std::string_view str3 = R"#({
 			"v1":10,
 			"v2":{"subv":100},
 			"v3":30
 		})#";
 	{
-		auto root = parser.Parse(giftStr(str3));
+		auto root = parser.Parse(str3);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what().c_str(), "Key [subv] not allowed in [query.v2] object.");
+		EXPECT_STREQ(err.what(), "Key [subv] not allowed in [query.v2] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
-	std::string str4 = R"#({
+	std::string_view str4 = R"#({
 			"v1":10,
 		})#";
 	{
-		auto root = parser.Parse(giftStr(str4));
+		auto root = parser.Parse(str4);
 		Error err = check.Check(root);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
@@ -196,7 +198,7 @@ TEST(SchemaTest, AdditionalProperties) {
 TEST(SchemaTest, LevelAny3) {
 	static reindexer::JsonSchemaChecker check(kQueryJson, "query");
 	gason::JsonParser parser;
-	std::string dsl2level = R"#({
+	std::string_view dsl2level = R"#({
 		"namespace":"test_namespace",
 		"filters":[
 			{
@@ -212,13 +214,13 @@ TEST(SchemaTest, LevelAny3) {
 
 	})#";
 	{
-		auto root = parser.Parse(giftStr(dsl2level));
+		auto root = parser.Parse(dsl2level);
 		Error err = check.Check(root);
-		EXPECT_STREQ(err.what().c_str(), "Key [error] not allowed in [query.filters.filters.filters] object.");
+		EXPECT_STREQ(err.what(), "Key [error] not allowed in [query.filters.filters.filters] object");
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 
-	std::string dsl3level = R"#({
+	std::string_view dsl3level = R"#({
 		"namespace":"test_namespace",
 		"filters":[
 			{
@@ -239,8 +241,10 @@ TEST(SchemaTest, LevelAny3) {
 
 	})#";
 	{
-		auto root = parser.Parse(giftStr(dsl3level));
+		auto root = parser.Parse(dsl3level);
 		Error err = check.Check(root);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 }
+
+}  // namespace reindexer_tests

@@ -1,14 +1,16 @@
 #pragma once
 
 #include <string>
-#include <vector>
-
 #include "base_fixture.h"
 
-class Aggregation : protected BaseFixture {
+namespace reindexer_benchmarks {
+
+class [[nodiscard]] Aggregation : protected BaseFixture {
 public:
 	~Aggregation() override = default;
-	Aggregation(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	Aggregation(Reindexer* db, std::string_view name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+		using reindexer::IndexOpts;
+
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 		nsdef_.AddIndex("int_data", "hash", "int", IndexOpts());
 		nsdef_.AddIndex("int_array_data", "hash", "int", IndexOpts().Array());
@@ -19,6 +21,8 @@ public:
 	reindexer::Error Initialize() override;
 
 private:
+	class FacetNotEmptyChecker;
+
 	reindexer::Item MakeItem(benchmark::State&) override;
 
 	template <size_t N>
@@ -30,3 +34,5 @@ private:
 	reindexer::WrSerializer wrSer_;
 	int id_ = 0;
 };
+
+}  // namespace reindexer_benchmarks
