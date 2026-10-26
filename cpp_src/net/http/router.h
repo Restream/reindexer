@@ -1,10 +1,8 @@
 #pragma once
 
 #include <algorithm>
-#include <climits>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <string_view>
 #include "estl/h_vector.h"
@@ -15,15 +13,14 @@
 
 namespace reindexer {
 class chunk;
-namespace net {
-namespace http {
+namespace net::http {
 
 // Thanks to windows.h include
 #ifdef DELETE
 #undef DELETE
 #endif
 
-enum HttpStatusCode {
+enum [[nodiscard]] HttpStatusCode {
 	StatusContinue = 100,
 	StatusOK = 200,
 	StatusCreated = 201,
@@ -49,7 +46,7 @@ enum HttpStatusCode {
 	StatusGatewayTimeout = 504,
 };
 
-enum HttpMethod : int {
+enum [[nodiscard]] HttpMethod : int {
 	kMethodUnknown = -1,
 	kMethodGET = 0,
 	kMethodPOST,
@@ -63,31 +60,31 @@ enum HttpMethod : int {
 
 typedef std::string_view UrlParam;
 
-struct HttpStatus {
+struct [[nodiscard]] HttpStatus {
 	HttpStatus() noexcept : code(StatusOK) {}
 	HttpStatus(HttpStatusCode httpcode, std::string httpwhat) : code(httpcode), what(std::move(httpwhat)) {}
-	explicit HttpStatus(const Error& err) : what(err.what()) { code = errCodeToHttpStatus(err.code()); }
+	explicit HttpStatus(const Error& err) : code(errCodeToHttpStatus(err.code())), what(err.whatStr()) {}
 
-	HttpStatusCode code;
-	std::string what;
+	const HttpStatusCode code;
+	const std::string what;
 
 	static HttpStatusCode errCodeToHttpStatus(int errCode);
 };
 
-struct Header {
+struct [[nodiscard]] Header {
 	std::string_view name;
 	std::string_view val;
 };
 
-struct Param {
+struct [[nodiscard]] Param {
 	Param() = default;
 	Param(std::string_view n, std::string_view v) noexcept : name(n), val(v) {}
 
-	std::string_view name;
-	std::string_view val;
+	const std::string_view name;
+	const std::string_view val;
 };
 
-class Headers : public h_vector<Header, 16> {
+class [[nodiscard]] Headers final : public h_vector<Header, 16> {
 public:
 	using h_vector::h_vector;
 	std::string_view Get(std::string_view name) noexcept {
@@ -96,7 +93,7 @@ public:
 	}
 };
 
-class Params : public h_vector<Param, 8> {
+class [[nodiscard]] Params final : public h_vector<Param, 8> {
 public:
 	using h_vector::h_vector;
 	std::string_view Get(std::string_view name, std::string_view defVal = std::string_view()) {
@@ -105,7 +102,7 @@ public:
 	}
 };
 
-struct Request {
+struct [[nodiscard]] Request {
 	std::string clientAddr;
 	std::string_view uri;
 	std::string_view path;
@@ -118,24 +115,23 @@ struct Request {
 	size_t size{0};
 };
 
-class Writer {
+class [[nodiscard]] Writer {
 public:
-	enum class WriteMode { Default = 0, PreChunkedBody = 1 };
-	virtual ssize_t Write(chunk&& ch, WriteMode mode = WriteMode::Default) = 0;
-	virtual ssize_t Write(std::string_view data) = 0;
+	enum class [[nodiscard]] WriteMode { Default = 0, PreChunkedBody = 1 };
+	virtual void Write(chunk&& ch, WriteMode mode = WriteMode::Default) = 0;
+	virtual void Write(std::string_view data) = 0;
 	virtual chunk GetChunk() = 0;
 
-	virtual bool SetHeader(const Header& hdr) = 0;
-	virtual bool SetRespCode(int code) = 0;
-	virtual bool SetContentLength(size_t len) = 0;
-	virtual bool SetConnectionClose() = 0;
+	virtual void SetHeader(const Header& hdr) = 0;
+	virtual void SetRespCode(int code) = 0;
+	virtual void SetContentLength(size_t len) = 0;
 
 	virtual int RespCode() = 0;
 	virtual ssize_t Written() = 0;
 	virtual ~Writer() = default;
 };
 
-class Reader {
+class [[nodiscard]] Reader {
 public:
 	virtual ssize_t Read(void* buf, size_t size) = 0;
 	virtual std::string Read(size_t size = INT_MAX) = 0;
@@ -143,26 +139,28 @@ public:
 	virtual ~Reader() = default;
 };
 
-struct ClientData {
+struct [[nodiscard]] ClientData {
 	virtual ~ClientData() = default;
 };
 
 static constexpr std::string_view kGzSuffix(".gz");
 
-struct Context {
-	int JSON(int code, std::string_view slice);
-	int JSON(int code, chunk&& chunk);
-	int CSV(int code, chunk&& chunk);
-	int MSGPACK(int code, chunk&& chunk);
-	int Protobuf(int code, chunk&& chunk);
-	int String(int code, std::string_view slice);
-	int String(int code, chunk&& chunk);
-	int File(int code, std::string_view path, std::string_view data, bool isGzip, bool withCache);
-	int Redirect(std::string_view url);
+struct [[nodiscard]] Context {
+	int JSON(int code, std::string_view slice) const;
+	int JSON(int code, chunk&& chunk) const;
+	int CSV(int code, chunk&& chunk) const;
+	void MSGPACK(int code, std::string_view slice) const;
+	int MSGPACK(int code, chunk&& chunk) const;
+	void Protobuf(int code, std::string_view slice) const;
+	int Protobuf(int code, chunk&& chunk) const;
+	int String(int code, std::string_view slice) const;
+	int String(int code, chunk&& chunk) const;
+	int File(int code, std::string_view path, std::string_view data, bool isGzip, bool withCache) const;
+	int Redirect(std::string_view url) const;
 
-	Request* request;
-	Writer* writer;
-	Reader* body;
+	Request* request{nullptr};
+	Writer* writer{nullptr};
+	Reader* body{nullptr};
 	std::unique_ptr<ClientData> clientData;
 
 	Stat stat;
@@ -171,7 +169,7 @@ struct Context {
 class ServerConnection;
 
 /// Http router implementation.
-class Router {
+class [[nodiscard]] Router final {
 	friend class ServerConnection;
 
 public:
@@ -279,19 +277,19 @@ protected:
 		return (static_cast<K*>(obj)->*func)(ctx);
 	}
 
-	struct Handler {
+	struct [[nodiscard]] Handler {
 		using FuncT = std::function<int(void* obj, Context& ctx)>;
 		Handler(FuncT&& f, void* o) noexcept : func(std::move(f)), object(o) {}
 
 		FuncT func;
-		void* object;
+		void* object{nullptr};
 	};
 
-	struct Route {
+	struct [[nodiscard]] Route {
 		Route(std::string&& p, Handler&& _h) : path(std::move(p)), h(std::move(_h)) {}
 
-		std::string path;
-		Handler h;
+		const std::string path;
+		const Handler h;
 	};
 
 	std::vector<Route> routes_[kMaxMethod];
@@ -301,6 +299,5 @@ protected:
 	std::function<void(Context& ctx)> logger_;
 	std::function<void(Context& ctx)> onResponse_;
 };
-}  // namespace http
-}  // namespace net
+}  // namespace net::http
 }  // namespace reindexer

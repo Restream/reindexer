@@ -7,7 +7,7 @@
 
 namespace reindexer::sharding {
 template <typename T>
-struct Segment {
+struct [[nodiscard]] Segment {
 	explicit Segment(T e) : left(std::move(e)), right(left) {}
 	explicit Segment(T e1, T e2) : left(std::move(e1)), right(std::move(e2)) {
 		if (left > right) {

@@ -25,6 +25,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+#endif
+
 #include <climits>
 #include <cmath>
 #include <locale>
@@ -962,7 +967,23 @@ parsing_done:
     }
 
     ASSERT(buffer_pos < kBufferSize);
+#if !defined(__clang__) && defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+
+#if __GNUC__ >= 12
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow="
+#endif // __GNUC__ >= 12
+#endif
     buffer[buffer_pos] = '\0';
+#if !defined(__clang__) && defined(__GNUC__)
+#pragma GCC diagnostic pop
+
+#if __GNUC__ >= 12
+#pragma GCC diagnostic pop
+#endif // __GNUC__ >= 12
+#endif
 
     double converted;
     if (read_as_double) {
@@ -991,3 +1012,7 @@ float StringToDoubleConverter::StringToFloat(const uc16* buffer, int length, int
 }
 
 }  // namespace double_conversion
+
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif

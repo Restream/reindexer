@@ -1,11 +1,12 @@
 package cproto
 
 import (
+	"context"
 	"fmt"
 	"unsafe"
 
-	"github.com/restream/reindexer/v4/bindings"
-	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v5/bindings"
+	"github.com/restream/reindexer/v5/cjson"
 	"github.com/golang/snappy"
 )
 
@@ -80,7 +81,19 @@ func (r *rpcEncoder) boolArg(v bool) {
 func (r *rpcEncoder) int32ArrArg(v []int32) {
 	r.ser.PutVarUInt(uint64(bindings.ValueString))
 
-	aser := cjson.Serializer{}
+	// Fast path: stack [96]byte fits up to 8 worst-case int32 varints (1 + 8*10 bytes).
+	if len(v) <= 8 {
+		var stackBuf [96]byte
+		buf := cjson.AppendVarUInt(stackBuf[:0], uint64(len(v)))
+		for _, e := range v {
+			buf = cjson.AppendVarUInt(buf, uint64(int(e)))
+		}
+		r.ser.PutVBytes(buf)
+		r.update()
+		return
+	}
+
+	aser := cjson.NewSerializer(make([]byte, 0, len(v)*2+10))
 	aser.PutVarCUInt(len(v))
 	for _, e := range v {
 		aser.PutVarCUInt(int(e))
@@ -96,17 +109,20 @@ func (r *rpcEncoder) int64Arg(v int64) {
 }
 
 func (r *rpcEncoder) update() {
-	r.ser.Bytes()[r.lastArgsChunckStart]++
-	*(*uint32)(unsafe.Pointer(&r.ser.Bytes()[8])) = uint32(len(r.ser.Bytes()) - cprotoHdrLen)
+	buf := r.ser.Bytes()
+	buf[r.lastArgsChunckStart]++
+	*(*uint32)(unsafe.Pointer(&buf[8])) = uint32(len(buf) - cprotoHdrLen)
 }
 
 func (r *rpcEncoder) bytes() []byte {
 	if r.enableSnappy {
-		out := snappy.Encode(nil, r.ser.Bytes()[cprotoHdrLen:])
+		buf := r.ser.Bytes()
+		out := snappy.Encode(nil, buf[cprotoHdrLen:])
 		r.ser.Truncate(cprotoHdrLen)
 		r.ser.Write(out)
-		*(*uint16)(unsafe.Pointer(&r.ser.Bytes()[4])) |= cprotoVersionCompressionFlag
-		*(*uint32)(unsafe.Pointer(&r.ser.Bytes()[8])) = uint32(len(r.ser.Bytes()) - cprotoHdrLen)
+		buf = r.ser.Bytes()
+		*(*uint16)(unsafe.Pointer(&buf[4])) |= cprotoVersionCompressionFlag
+		*(*uint32)(unsafe.Pointer(&buf[8])) = uint32(len(buf) - cprotoHdrLen)
 	}
 	return r.ser.Bytes()
 }
@@ -117,11 +133,19 @@ func newRPCDecoder(buf []byte) rpcDecoder {
 
 func (r *rpcDecoder) errCode() error {
 	code := r.ser.GetVarUInt()
-	str := r.ser.GetVString()
-	if code != 0 {
-		return bindings.NewError(str, int(code))
+	switch int(code) {
+	case 0:
+		r.ser.SkipVString()
+		return nil
+	case bindings.ErrTimeout:
+		r.ser.SkipVString()
+		return context.DeadlineExceeded
+	case bindings.ErrCanceled:
+		r.ser.SkipVString()
+		return context.Canceled
+	default:
+		return bindings.NewError(r.ser.GetVString(), int(code))
 	}
-	return nil
 }
 
 func (r *rpcDecoder) argsCount() int {
@@ -152,13 +176,13 @@ func (r *rpcDecoder) intArg() int {
 	return int(r.ser.GetVarInt())
 }
 
-func (r *rpcDecoder) intfArg() interface{} {
+func (r *rpcDecoder) intfArg() any {
 	t := r.ser.GetVarUInt()
 	switch int(t) {
 	case bindings.ValueInt:
 		return int(r.ser.GetVarInt())
 	case bindings.ValueBool:
-		return r.ser.GetVarInt() != 0
+		return r.ser.GetVarUInt() != 0
 	case bindings.ValueString:
 		return r.ser.GetVBytes()
 	case bindings.ValueInt64:

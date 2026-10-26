@@ -1,6 +1,8 @@
 #include "ttl_index_api.h"
 #include <vector>
 
+namespace reindexer_tests {
+
 TEST_F(TtlIndexApi, ItemsSimpleVanishing) {
 	std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 	size_t count = WaitForVanishing();
@@ -35,3 +37,5 @@ TEST_F(TtlIndexApi, ItemsVanishingAfterInsertRemove) {
 	count = WaitForVanishing();
 	ASSERT_EQ(count, 0);
 }
+
+}  // namespace reindexer_tests

@@ -5,9 +5,9 @@
 
 namespace reindexer {
 
-class QresExplainHolder {
+class [[nodiscard]] QresExplainHolder {
 public:
-	enum class ExplainEnabled : bool { Yes, No };
+	enum class [[nodiscard]] ExplainEnabled : bool { Yes, No };
 
 	QresExplainHolder(SelectIteratorContainer& current, ExplainEnabled explainEnabled) noexcept
 		: current_(current), explainEnabled_(explainEnabled) {}
@@ -20,7 +20,7 @@ public:
 			data_ = std::make_unique<Data>(current_);
 		}
 	}
-	SelectIteratorContainer& GetResultsRef() noexcept {
+	SelectIteratorContainer& GetResultsRef() {
 		if (!data_) {
 			return current_;
 		}
@@ -35,7 +35,7 @@ public:
 
 private:
 	SelectIteratorContainer& current_;
-	class Data {
+	class [[nodiscard]] Data {
 	public:
 		Data(const SelectIteratorContainer& c) : backup(c) {}
 
