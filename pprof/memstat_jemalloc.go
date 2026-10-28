@@ -1,4 +1,4 @@
-// +build pprof_jemalloc
+//go:build pprof_jemalloc
 
 package pprof
 

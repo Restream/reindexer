@@ -11,12 +11,12 @@ EventsListener::EventsListener(const std::string& dbName, size_t maxUpdatesQueue
 		using VecT = std::vector<std::string>;
 		VecT container;
 
-#ifndef __clang__
+#if !defined(__clang__) && !defined(_MSC_VER)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 		updatesQueue_.Init<VecT>(std::move(container), nullptr);  // TODO: Add some logger #1724
-#ifndef __clang__
+#if !defined(__clang__) && !defined(_MSC_VER)
 #pragma GCC diagnostic pop
 #endif
 	}
@@ -35,27 +35,15 @@ Error EventsListener::AddOrUpdate(IEventsObserver& observer, EventSubscriberConf
 		return Remove(observer);
 	}
 
-	std::lock_guard subUnsubLck(subUnsubMtx_);
-	std::lock_guard lck(mtx_);
+	lock_guard subUnsubLck(subUnsubMtx_);
+	lock_guard lck(mtx_);
 
-	auto it = subs_.find(&observer);
-	bool emplaced = false;
-	if (it == subs_.end()) {
-		if (subs_.size() == UpdatesQueueT::kMaxReplicas) {
-			return Error(errParams, "Subscribers limit was reached: %d", UpdatesQueueT::kMaxReplicas);
-		}
-		emplaced = true;
-		const auto uid = emptyUIDs_.empty() ? maxUID_++ : emptyUIDs_.back();
-		if (!emptyUIDs_.empty()) {
-			emptyUIDs_.pop_back();
-		}
-		it = subs_.emplace(&observer, uid).first;
-	}
-	it->second.cfg = std::move(cfg);
-	if (emplaced) {
+	if (auto it = subs_.find(&observer); it != subs_.end()) {
+		it->second.cfg = std::move(cfg);
+	} else {
+		subs_.emplace(&observer, ObserverInfo{.nextUpdateId = updatesQueue_.GetNextUpdateID(), .cfg = std::move(cfg)});
 		[[maybe_unused]] auto cnt = subsCount_.fetch_add(1, std::memory_order_release);
 		assertrx_dbg(cnt == 0 || eventsThread_.joinable());
-		it->second.startUpdateId = updatesQueue_.GetNextUpdateID();
 	}
 	rebuildCommonFilter();
 	if (!eventsThread_.joinable()) {
@@ -65,55 +53,25 @@ Error EventsListener::AddOrUpdate(IEventsObserver& observer, EventSubscriberConf
 }
 
 Error EventsListener::Remove(IEventsObserver& observer) {
-	std::lock_guard subUnsubLck(subUnsubMtx_);
-	std::unique_lock lck(mtx_);
-	if (auto found = subs_.find(&observer); found != subs_.end()) {
-		std::optional<uint64_t> updatesDropBoundry;
-		const auto removedNextUpdateId = found->second.nextUpdateId;
-		const auto removedUID = found->second.uid;
-		auto minNextUpdateId = removedNextUpdateId;
-		auto secondMinNextUpdateId = std::numeric_limits<uint64_t>::max();
-		const auto prevSubsCnt = subs_.size();
-		subs_.erase(found);
+	lock_guard subUnsubLck(subUnsubMtx_);
+	{
+		lock_guard lck(mtx_);
+		if (!subs_.erase(&observer)) {
+			return {};
+		}
 		rebuildCommonFilter();
 		subsCount_.fetch_sub(1, std::memory_order_release);
-		if (subs_.size() == 0) {
-			assertrx_dbg(eventsThread_.joinable());
-			updatesDropBoundry.emplace(updatesQueue_.GetNextUpdateID());
-		} else {
-			for (auto& sub : subs_) {
-				const auto& subInfo = sub.second;
-				if (subInfo.nextUpdateId <= minNextUpdateId) {
-					secondMinNextUpdateId = minNextUpdateId;
-					minNextUpdateId = subInfo.nextUpdateId;
-				} else if (subInfo.nextUpdateId < secondMinNextUpdateId) {
-					secondMinNextUpdateId = subInfo.nextUpdateId;
-				}
-			}
-			if (minNextUpdateId == removedNextUpdateId && secondMinNextUpdateId != std::numeric_limits<uint64_t>::max()) {
-				updatesDropBoundry.emplace(secondMinNextUpdateId);
-			}
+		if (!subs_.empty()) {
+			return {};
 		}
-
-		// Handle updates under subUnsubMtx_ only to avoid locking on the 'hot' path (SendUpdates(), etc)
-		lck.unlock();
-
-		if (prevSubsCnt == 1) {
-			stop();
-		}
-		if (updatesDropBoundry.has_value()) {
-			// Drop full nodes
-			eraseUpdatesOnUnsubscribe(removedUID, minNextUpdateId, *updatesDropBoundry, prevSubsCnt);
-		}
-
-		lck.lock();
-		emptyUIDs_.emplace_back(removedUID);
 	}
+	stop();
+	updatesQueue_.EraseUntil(std::numeric_limits<uint64_t>::max());
 	return {};
 }
 
 void EventsListener::Stop() {
-	std::lock_guard subUnsubLck(subUnsubMtx_);
+	lock_guard subUnsubLck(subUnsubMtx_);
 	stop();
 }
 
@@ -127,14 +85,18 @@ void EventsListener::stop() {
 }
 
 void EventsListener::rebuildCommonFilter() {
+#if !defined(__clang__) && !defined(_MSC_VER)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 	commonFilter_ = DBNamespaces();
+#if !defined(__clang__) && !defined(_MSC_VER)
+#pragma GCC diagnostic pop
+#endif
 	for (const auto& sub : subs_) {
 		auto& streams = sub.second.cfg.Streams();
 		for (auto& stream : streams) {
 			commonFilter_.withConfigNamespace = commonFilter_.withConfigNamespace || stream.withConfigNamespace;
-			if (!commonFilter_.nss.has_value()) {
-				commonFilter_.nss.emplace();
-			}
 			if (stream.nss.empty()) {
 				commonFilter_.nss = NSSetT();
 			} else if (!commonFilter_.nss.has_value()) {
@@ -163,105 +125,76 @@ void EventsListener::eventsLoop() noexcept {
 				loop_.run();
 			}
 		} catch (const Error& e) {
-			logPrintf(LogError, "[events_manager]: fatal error in the event loop: '%s'", e.what());
+			logFmt(LogError, "[events_manager]: fatal error in the event loop: '{}'", e.what());
 			assertrx_dbg(false);
 		} catch (std::exception& e) {
-			logPrintf(LogError, "[events_manager]: fatal error in the event loop: '%s'", e.what());
+			logFmt(LogError, "[events_manager]: fatal error in the event loop: '{}'", e.what());
 			assertrx_dbg(false);
 		} catch (...) {
-			logPrintf(LogError, "[events_manager]: fatal error in the event loop: <unknown>");
+			logFmt(LogError, "[events_manager]: fatal error in the event loop: <unknown>");
 			assertrx_dbg(false);
 		}
 	}
 }
 
-void EventsListener::handleUpdates() {
-	bool updatesSeen;
+void EventsListener::handleUpdates() noexcept {
+	bool hasProgress;
 	do {
-		updatesSeen = false;
-
-		shared_lock lck(mtx_);
-
-		for (auto& sub : subs_) {
-			auto& subInfo = sub.second;
-			auto& subIface = sub.first;
-			auto maxUpdates = subIface->AvailableEventsSpace();
-			if (!maxUpdates) {
-				continue;
-			}
-			auto updatePtr = updatesQueue_.Read(subInfo.nextUpdateId, std::nullopt);
-			if (!updatePtr) {
-				continue;
-			}
-			updatesSeen = true;
-			const auto opts = EventsSerializationOpts(kEventSerializationFormatVersion)
-								  .WithDBName(dbName_, subInfo.cfg.WithDBName())
-								  .WithData(subInfo.cfg.DataType())
-								  .WithShardID(shardID_.load(std::memory_order_relaxed), subInfo.cfg.WithShardID())
-								  .WithServerID(serverID_.load(std::memory_order_relaxed), subInfo.cfg.WithServerID())
-								  .WithLSN(subInfo.cfg.WithLSN())
-								  .WithTimestamp(subInfo.cfg.WithTimestamp());
-			if (updatePtr->IsUpdatesDropBlock) {
-				static EventRecord updatesLostEvent(updates::UpdateRecord::UpdatesDropT{});
-				updatesLostEvent.UpdateTimestamp();
-				const auto mask = buildStreamsMask(subInfo, updatesLostEvent);
-				assertrx_dbg(mask);
-				subIface->SendEvent(mask, opts, updatesLostEvent);
-				continue;
-			}
-
-			subInfo.nextUpdateId = updatePtr->ID() > subInfo.nextUpdateId ? updatePtr->ID() : subInfo.nextUpdateId;
-			for (uint16_t offset = subInfo.nextUpdateId - updatePtr->ID(); offset < updatePtr->Count(); ++offset) {
-				if (updatePtr->IsInvalidated()) {
-					break;
+		hasProgress = false;
+		auto minNextUpdateId = std::numeric_limits<uint64_t>::max();
+		{
+			shared_lock lck(mtx_);
+			for (auto& [observer, subInfo] : subs_) {
+				const auto prevNextUpdateId = subInfo.nextUpdateId;
+				try {
+					sendUpdates(*observer, subInfo);
+				} catch (std::exception& e) {
+					logFmt(LogError, "[events_manager]: unable to send update: '{}'", e.what());
+				} catch (...) {
+					logFmt(LogError, "[events_manager]: unable to send update: <unknown>");
 				}
-				maxUpdates = subIface->AvailableEventsSpace();
-				if (!maxUpdates) {
-					break;
-				}
-				if (subInfo.startUpdateId > subInfo.nextUpdateId++) {
-					updatePtr->OnUpdateHandledSimple(subInfo.uid, subs_.size(), offset);
-					continue;
-				}
-				auto& upd = updatePtr->GetUpdate(offset).Data();
-				const auto mask = buildStreamsMask(subInfo, upd);
-				if (mask) {
-					try {
-						subIface->SendEvent(mask, opts, upd);
-					} catch (const Error& e) {
-						--subInfo.nextUpdateId;
-						logPrintf(LogError, "[events_manager]: unable to send update: '%s'", e.what());
-						break;
-					} catch (std::exception& e) {
-						--subInfo.nextUpdateId;
-						logPrintf(LogError, "[events_manager]: unable to send update: '%s'", e.what());
-						break;
-					} catch (...) {
-						--subInfo.nextUpdateId;
-						logPrintf(LogError, "[events_manager]: unable to send update: <unknown>");
-						break;
-					}
-				}
-				updatePtr->OnUpdateHandledSimple(subInfo.uid, subs_.size(), offset);
+				hasProgress = hasProgress || subInfo.nextUpdateId != prevNextUpdateId;
+				minNextUpdateId = std::min(minNextUpdateId, subInfo.nextUpdateId);
 			}
 		}
-	} while (updatesSeen);
+		updatesQueue_.EraseUntil(minNextUpdateId);
+	} while (hasProgress);
 }
 
-void EventsListener::eraseUpdatesOnUnsubscribe(uint32_t uid, uint64_t from, uint64_t to, uint32_t replicas) {
-	assertrx_dbg(from <= to);
-	for (auto next = from; next < to;) {
-		for (auto updatePtr = updatesQueue_.Read(next, std::nullopt); updatePtr; updatePtr = updatesQueue_.Read(next, std::nullopt)) {
-			if (updatePtr->IsUpdatesDropBlock) {
-				continue;
-			}
-			next = updatePtr->ID() > next ? updatePtr->ID() : next;
-			for (uint16_t offset = next - updatePtr->ID(); offset < updatePtr->Count() && next < to; ++offset) {
-				++next;
-				updatePtr->OnUpdateHandledSimple(uid, replicas, offset);
-			}
-			assertrx_dbg(next >= to || updatePtr->IsFullyErased());
+void EventsListener::sendUpdates(IEventsObserver& observer, ObserverInfo& subInfo) {
+	if (!observer.AvailableEventsSpace()) {
+		return;
+	}
+	const auto updatePtr = updatesQueue_.Read(subInfo.nextUpdateId, std::nullopt);
+	if (!updatePtr) {
+		return;
+	}
+	const auto opts = EventsSerializationOpts(kEventSerializationFormatVersion)
+						  .WithDBName(dbName_, subInfo.cfg.WithDBName())
+						  .WithData(subInfo.cfg.DataType())
+						  .WithShardID(shardID_.load(std::memory_order_relaxed), subInfo.cfg.WithShardID())
+						  .WithServerID(serverID_.load(std::memory_order_relaxed), subInfo.cfg.WithServerID())
+						  .WithLSN(subInfo.cfg.WithLSN())
+						  .WithTimestamp(subInfo.cfg.WithTimestamp());
+	if (updatePtr->IsUpdatesDropBlock) {
+		const EventRecord updatesLostEvent(updates::UpdateRecord::UpdatesDropT{});
+		const auto mask = buildStreamsMask(subInfo, updatesLostEvent);
+		assertrx_dbg(mask);
+		observer.SendEvent(mask, opts, updatesLostEvent);
+		subInfo.nextUpdateId = updatePtr->ID() + 1;
+		return;
+	}
+
+	subInfo.nextUpdateId = std::max(subInfo.nextUpdateId, updatePtr->ID());
+	for (uint16_t offset = subInfo.nextUpdateId - updatePtr->ID(); offset < updatePtr->Count(); ++offset) {
+		if (updatePtr->IsInvalidated() || !observer.AvailableEventsSpace()) {
+			break;
 		}
+		const auto& upd = updatePtr->GetUpdate(offset).Data();
+		if (const auto mask = buildStreamsMask(subInfo, upd)) {
+			observer.SendEvent(mask, opts, upd);
+		}
+		++subInfo.nextUpdateId;
 	}
 }
 
@@ -272,22 +205,21 @@ uint32_t EventsListener::buildStreamsMask(const ObserverInfo& observer, const Ev
 	if (rec.IsEmptyRecord()) {
 		return 0;
 	}
-	if (!observer.cfg.Events().empty() && !observer.cfg.Events().count(rec.Type())) {
-		return 0;
-	}
 	uint32_t mask = 0;
-	if rx_likely (!rec.IsResyncOnUpdatesDropRecord()) {
+	if (rec.IsResyncOnUpdatesDropRecord()) [[unlikely]] {
+		// Updates drop affects the whole subscription, so it is not filtered
 		for (const auto& s : streams) {
-			if (s.Check(rec)) {
-				mask |= (1 << s.id);
-			}
+			mask |= (1 << s.id);
 		}
 		return mask;
 	}
-
-	// On updates drop
+	if (!observer.cfg.Events().empty() && !observer.cfg.Events().count(rec.Type())) {
+		return 0;
+	}
 	for (const auto& s : streams) {
-		mask |= (1 << s.id);
+		if (s.Check(rec)) {
+			mask |= (1 << s.id);
+		}
 	}
 	return mask;
 }

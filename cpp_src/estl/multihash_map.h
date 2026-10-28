@@ -5,7 +5,7 @@
 namespace reindexer {
 
 template <typename K, typename V, size_t N, typename H, typename C>
-class MultiHashMap : private MultiHashSetImpl<std::pair<K, V>, K, MultiHashMap<K, V, N, H, C>, N, H, C> {
+class [[nodiscard]] MultiHashMap : private MultiHashSetImpl<std::pair<K, V>, K, MultiHashMap<K, V, N, H, C>, N, H, C> {
 	using Base = MultiHashSetImpl<std::pair<K, V>, K, MultiHashMap<K, V, N, H, C>, N, H, C>;
 
 public:

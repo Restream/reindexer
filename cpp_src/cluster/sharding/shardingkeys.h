@@ -2,13 +2,10 @@
 
 #include <functional>
 #include <variant>
-#include <vector>
 #include "core/keyvalue/variant.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 #include "estl/overloaded.h"
-#include "ranges.h"
-#include "tools/assertrx.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -22,32 +19,32 @@ namespace sharding {
 constexpr size_t kHvectorConnStack = 9;
 using ShardIDsContainer = h_vector<int, kHvectorConnStack>;
 
-class ShardingKeys {
+class [[nodiscard]] ShardingKeys {
 public:
-	struct Variant4Segment : Variant {
+	struct [[nodiscard]] Variant4Segment : Variant {
 		bool isRightBound = false;
 	};
 
-	struct BaseCompare {
+	struct [[nodiscard]] BaseCompare {
 		bool IsInt(const Variant& lhs, const Variant& rhs) const noexcept {
 			return (lhs.Type().Is<KeyValueType::Int64>() && rhs.Type().Is<KeyValueType::Int>()) ||
 				   (lhs.Type().Is<KeyValueType::Int>() && rhs.Type().Is<KeyValueType::Int64>());
 		}
 		void ValidateTypes(const Variant& lhs, const Variant& rhs) const {
 			if (!lhs.Type().IsSame(rhs.Type())) {
-				throw Error(errLogic, "Comparator internal error. Different compared types. Left - %s. Right - %s", lhs.Type().Name(),
+				throw Error(errLogic, "Comparator internal error. Different compared types. Left - {}. Right - {}", lhs.Type().Name(),
 							rhs.Type().Name());
 			}
 		}
 	};
 
-	struct FastHashMapCompare : BaseCompare {
+	struct [[nodiscard]] FastHashMapCompare : BaseCompare {
 		bool operator()(const Variant& lhs, const Variant& rhs) const { return compare(lhs, rhs); }
 
 	private:
 		bool compare(const Variant& lhs, const Variant& rhs) const {
 			if (IsInt(lhs, rhs)) {
-				return lhs.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs) == ComparationResult::Eq;
+				return lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, NullsHandling::NotComparable>(rhs) == ComparationResult::Eq;
 			}
 
 			ValidateTypes(lhs, rhs);
@@ -55,7 +52,7 @@ public:
 		}
 	};
 
-	struct MapCompare : BaseCompare {
+	struct [[nodiscard]] MapCompare : BaseCompare {
 		using is_transparent = void;
 
 		bool operator()(const Variant4Segment& lhs, const Variant4Segment& rhs) const { return compare(lhs, rhs); }
@@ -65,7 +62,7 @@ public:
 	private:
 		bool compare(const Variant& lhs, const Variant& rhs) const {
 			if (IsInt(lhs, rhs)) {
-				return lhs.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs) == ComparationResult::Lt;
+				return lhs.RelaxCompare<WithString::Yes, NotComparable::Throw, NullsHandling::NotComparable>(rhs) == ComparationResult::Lt;
 			}
 
 			ValidateTypes(lhs, rhs);
@@ -78,7 +75,7 @@ public:
 
 	using ValuesData = std::variant<VariantHashMap, Variant4SegmentMap>;
 
-	struct ShardIndexWithValues {
+	struct [[nodiscard]] ShardIndexWithValues {
 		std::string_view name;
 		const ValuesData* values;
 	};
@@ -102,26 +99,28 @@ public:
 
 private:
 	using NsName = std::string_view;
-	struct NsData {
+	struct [[nodiscard]] NsData {
 		std::string_view indexName;
 		ValuesData keysToShard;
 		int defaultShard;
 
 		int GetShardId(const Variant& val) const {
-			return std::visit(overloaded{[&val, this](const VariantHashMap& values) {
-											 auto it = values.find(val);
-											 return (it == values.end()) ? defaultShard : it->second;
-										 },
-										 [&val, this](const Variant4SegmentMap& values) {
-											 auto it = values.lower_bound(val);
-											 if (it == values.end() ||
-												 (!it->first.isRightBound && it->first.RelaxCompare<WithString::Yes, NotComparable::Throw>(
-																				 val) != ComparationResult::Eq)) {
-												 return defaultShard;
-											 }
-											 return it->second;
-										 }},
-							  keysToShard);
+			return std::visit(
+				overloaded{[&val, this](const VariantHashMap& values) {
+							   auto it = values.find(val);
+							   return (it == values.end()) ? defaultShard : it->second;
+						   },
+						   [&val, this](const Variant4SegmentMap& values) {
+							   auto it = values.lower_bound(val);
+							   if (it == values.end() ||
+								   (!it->first.isRightBound &&
+									it->first.RelaxCompare<WithString::Yes, NotComparable::Throw, NullsHandling::NotComparable>(val) !=
+										ComparationResult::Eq)) {
+								   return defaultShard;
+							   }
+							   return it->second;
+						   }},
+				keysToShard);
 		}
 	};
 	fast_hash_set<int> getShardsIds(const NsData& ns) const;

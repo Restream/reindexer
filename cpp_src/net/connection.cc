@@ -1,5 +1,6 @@
 #include "connection.h"
 #include <errno.h>
+#include "estl/mutex.h"
 
 namespace reindexer {
 namespace net {
@@ -27,6 +28,7 @@ void Connection<Mutex>::restart(socket&& s) {
 	sock_ = std::move(s);
 	wrBuf_.clear();
 	rdBuf_.clear();
+	shrinkRdBufIfNeeded();
 	curEvents_ = 0;
 	closeConn_ = false;
 	if (stats_) {
@@ -77,7 +79,7 @@ void Connection<Mutex>::closeConn() {
 	io_.loop.break_loop();
 	if (sock_.valid()) {
 		io_.stop();
-		if rx_unlikely (sock_.close() != 0) {
+		if (sock_.close() != 0) [[unlikely]] {
 			perror("sock_.close() error");
 		}
 	}
@@ -87,6 +89,8 @@ void Connection<Mutex>::closeConn() {
 		stats_->stop();
 	}
 	onClose();
+	rdBuf_.clear();
+	shrinkRdBufIfNeeded();
 	closeConn_ = false;
 }
 
@@ -99,11 +103,11 @@ void Connection<Mutex>::callback(ev::io& /*watcher*/, int revents) {
 	++rwCounter_;
 
 	if (sock_.ssl) {
-		if (int ssl_events = openssl::ssl_handshake<&openssl::SSL_accept>(sock_.ssl); ssl_events < 0) {
+		if (int sslEvents = openssl::ssl_handshake<&openssl::SSL_accept>(sock_.ssl); sslEvents < 0) {
 			closeConn();
 			return;
-		} else if (ssl_events > 0) {
-			io_.start(sock_.fd(), ssl_events);
+		} else if (sslEvents > 0) {
+			update_cur_events(sslEvents);
 			return;
 		}
 	}
@@ -120,8 +124,11 @@ void Connection<Mutex>::callback(ev::io& /*watcher*/, int revents) {
 		write_cb();
 	}
 
-	int nevents = ev::READ | (wrBuf_.size() ? ev::WRITE : 0);
+	update_cur_events(ev::READ | (wrBuf_.size() ? ev::WRITE : 0));
+}
 
+template <typename Mutex>
+void Connection<Mutex>::update_cur_events(int nevents) noexcept {
 	if (curEvents_ != nevents && sock_.valid()) {
 		(curEvents_) ? io_.set(nevents) : io_.start(sock_.fd(), nevents);
 		curEvents_ = nevents;
@@ -220,7 +227,7 @@ void Connection<Mutex>::timeout_cb(ev::periodic& /*watcher*/, int /*time*/) {
 		return;
 	}
 
-	fprintf(stderr, "Dropping RPC-connection on the idle timeout\n");
+	fprintf(stderr, "reindexer: dropping RPC-connection on the idle timeout\n");
 	closeConn();
 }
 template <typename Mutex>
@@ -228,8 +235,8 @@ void Connection<Mutex>::async_cb(ev::async&) {
 	callback(io_, ev::WRITE);
 }
 
-template class Connection<reindexer::dummy_mutex>;
-template class Connection<std::mutex>;
+template class Connection<reindexer::DummyMutex>;
+template class Connection<reindexer::mutex>;
 
 }  // namespace net
 }  // namespace reindexer

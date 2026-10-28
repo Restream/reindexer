@@ -1,172 +1,177 @@
 #include "transactionimpl.h"
-#include "cluster/sharding/sharding.h"
+#include "core/queryresults/queryresults.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 
 namespace reindexer {
 
 const static Error kTxImplIsNotValid = Error(errNotValid, "Transaction is not initialized");
 
-Error TransactionImpl::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
-	std::lock_guard lck(mtx_);
+void TransactionImpl::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
+	lock_guard lck(mtx_);
 
-	if (!status_.ok()) {
-		return status_;
+	if (!status_.ok()) [[unlikely]] {
+		throw status_;
 	}
-	if (!item.impl_) {
+	if (!item.impl_) [[unlikely]] {
 		status_ = Error(errLogic, "Broken item in transaction");
-		return status_;
+		throw status_;
 	}
 
 	try {
 		lazyInit(item);
-	} catch (Error& err) {
+
+		data_->UpdateTagsMatcherIfNecessary(*item.impl_);
+		if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
+			(*proxiedTx)->Modify(std::move(item), mode, lsn);
+			return;
+		} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
+			(*localTx)->Modify(std::move(item), mode, lsn);
+			return;
+		}
+	} catch (std::exception& err) {
 		status_ = err;
-		return err;
+		throw;
 	}
 
-	data_->UpdateTagsMatcherIfNecessary(*item.impl_);
-	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
-		status_ = (*proxiedTx)->Modify(std::move(item), mode, lsn);
-		return status_;
-	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
-		(*localTx)->Modify(std::move(item), mode, lsn);
-		return Error();
-	}
-	return kTxImplIsNotValid;
+	throw kTxImplIsNotValid;
 }
 
-Error TransactionImpl::Modify(Query&& query, lsn_t lsn) {
-	std::lock_guard lck(mtx_);
+void TransactionImpl::Modify(Query&& query, lsn_t lsn) {
+	lock_guard lck(mtx_);
 
-	if (!status_.ok()) {
-		return status_;
+	if (!status_.ok()) [[unlikely]] {
+		throw status_;
 	}
 
 	try {
-		lazyInit(query);
-	} catch (Error& err) {
-		return err;
-	}
+		lazyInit(Impl(query));
 
-	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
-		status_ = (*proxiedTx)->Modify(std::move(query), lsn);
-		return status_;
-	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
-		(*localTx)->Modify(std::move(query), lsn);
-		return Error();
+		if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
+			(*proxiedTx)->Modify(std::move(query), lsn);
+			return;
+		} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
+			(*localTx)->Modify(std::move(query), lsn);
+			return;
+		}
+	} catch (std::exception& err) {
+		status_ = err;
+		throw;
 	}
-	return kTxImplIsNotValid;
+	throw kTxImplIsNotValid;
 }
 
-Error TransactionImpl::Nop(lsn_t lsn) {
-	std::lock_guard lck(mtx_);
-	if (!status_.ok()) {
-		return status_;
+void TransactionImpl::Nop(lsn_t lsn) {
+	lock_guard lck(mtx_);
+	if (!status_.ok()) [[unlikely]] {
+		throw status_;
 	}
 	try {
 		lazyInit();
-	} catch (Error& err) {
-		return err;
+		if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
+			throw Error(errLogic, "Nop() is not available for proxied transactions");
+		} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
+			(*localTx)->Nop(lsn);
+			return;
+		}
+	} catch (std::exception& err) {
+		status_ = err;
+		throw;
 	}
-	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
-		status_ = Error(errLogic, "Nop() is not available for proxied transactions");
-		return status_;
-	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
-		(*localTx)->Nop(lsn);
-		return Error();
-	}
-	return kTxImplIsNotValid;
+	throw kTxImplIsNotValid;
 }
 
-Error TransactionImpl::PutMeta(std::string_view key, std::string_view value, lsn_t lsn) {
-	if (key.empty()) {
-		throw Error(errLogic, "Empty meta key is not allowed in tx");
+void TransactionImpl::PutMeta(std::string_view key, std::string_view value, lsn_t lsn) {
+	lock_guard lck(mtx_);
+	if (!status_.ok()) [[unlikely]] {
+		throw status_;
 	}
 
-	std::lock_guard lck(mtx_);
-	if (!status_.ok()) {
-		return status_;
-	}
 	try {
+		if (key.empty()) [[unlikely]] {
+			throw Error(errLogic, "Empty meta key is not allowed in tx");
+		}
+
 		lazyInit();
-	} catch (Error& err) {
-		return err;
+		if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
+			(*proxiedTx)->PutMeta(key, value, lsn);
+			return;
+		} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
+			(*localTx)->PutMeta(key, value, lsn);
+			return;
+		}
+	} catch (std::exception& err) {
+		status_ = err;
+		throw;
 	}
-	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
-		status_ = (*proxiedTx)->PutMeta(key, value, lsn);
-		return status_;
-	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
-		(*localTx)->PutMeta(key, value, lsn);
-		return Error();
-	}
-	return kTxImplIsNotValid;
+	throw kTxImplIsNotValid;
 }
 
-Error TransactionImpl::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
-	if (lsn.isEmpty()) {
-		return Error(errLogic, "Unable to set tx tagsmatcher without lsn");
+void TransactionImpl::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
+	lock_guard lck(mtx_);
+	if (!status_.ok()) [[unlikely]] {
+		throw status_;
 	}
 
-	std::lock_guard lck(mtx_);
-	if (!status_.ok()) {
-		return status_;
-	}
 	try {
+		if (lsn.isEmpty()) [[unlikely]] {
+			throw Error(errLogic, "Unable to set tx tagsmatcher without lsn");
+		}
+
 		lazyInit();
-	} catch (Error& err) {
-		return err;
-	}
-
-	try {
 		auto tmCopy = tm;
 		data_->SetTagsMatcher(std::move(tmCopy));
-	} catch (Error& err) {
-		status_ = std::move(err);
-		return status_;
-	}
 
-	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
-		status_ = (*proxiedTx)->SetTagsMatcher(std::move(tm), lsn);
-		return status_;
-	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
-		(*localTx)->SetTagsMatcher(std::move(tm), lsn);
-		return Error();
+		if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
+			(*proxiedTx)->SetTagsMatcher(std::move(tm), lsn);
+			return;
+		} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
+			(*localTx)->SetTagsMatcher(std::move(tm), lsn);
+			return;
+		}
+	} catch (std::exception& err) {
+		status_ = std::move(err);
+		throw;
 	}
-	return kTxImplIsNotValid;
+	throw kTxImplIsNotValid;
 }
 
-Item TransactionImpl::NewItem() {
-	std::lock_guard lck(mtx_);
-	assertrx(data_);
-	Item item(new ItemImpl(data_->GetPayloadType(), data_->GetTagsMatcher(), data_->GetPKFileds(), data_->GetSchema()));
-	item.impl_->tagsMatcher().clearUpdated();
-	return item;
+Item TransactionImpl::NewItem() noexcept {
+	try {
+		lock_guard lck(mtx_);
+		assertrx(data_);
+		Item item(new ItemImpl(data_->GetPayloadType(), data_->GetTagsMatcher(), data_->GetPKFileds(), data_->GetSchema()));
+		item.impl_->tagsMatcher().clearUpdated();
+		return item;
+	} catch (std::exception& err) {
+		return Item(std::move(err));
+	}
 }
 
 Error TransactionImpl::Status() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return status_;
 }
 
 int TransactionImpl::GetShardID() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	return shardId_;
 }
 
 bool TransactionImpl::IsTagsUpdated() const noexcept {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	assertrx(data_);
 	return data_->IsTagsUpdated();
 }
 
 void TransactionImpl::SetShardingRouter(sharding::LocatorServiceAdapter shardingRouter) {
-	std::lock_guard lck(mtx_);
+	lock_guard lck(mtx_);
 	assertrx(!shardingRouter_);
 	shardingRouter_ = std::move(shardingRouter);
 }
 
-Error TransactionImpl::Rollback(int serverId, const RdxContext& ctx) {
-	std::lock_guard lck(mtx_);
+void TransactionImpl::Rollback(int serverId, const RdxContext& ctx) noexcept {
+	lock_guard lck(mtx_);
+
 	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
 		const auto ward = ctx.BeforeClusterProxy();
 		(*proxiedTx)->Rollback(serverId, ctx);
@@ -177,62 +182,73 @@ Error TransactionImpl::Rollback(int serverId, const RdxContext& ctx) {
 	tx_ = Empty{};
 	shardId_ = ShardingKeyType::NotSetShard;
 	status_ = Error(errNotValid, "Transaction was rolled back");
-	return Error();
 }
 
-Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& rx, QueryResults& result, const RdxContext& ctx) {
-	const static Error kErrCommited(errNotValid, "Tx is already commited");
+void TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl& rx, QueryResults& result, const RdxContext& ctx) {
+	const static Error kErrCommitted(errNotValid, "Tx is already committed");
 
-	std::lock_guard lck(mtx_);
-	if (!status_.ok()) {
-		return status_;
+	lock_guard lck(mtx_);
+	if (!status_.ok()) [[unlikely]] {
+		throw status_;
 	}
-	if (expectSharding && shardId_ == ShardingKeyType::NotSetShard) {
-		return Error(errLogic, "Error commiting transaction with sharding: shard ID is not set");
+	if (expectSharding && shardId_ == ShardingKeyType::NotSetShard) [[unlikely]] {
+		throw Error(errLogic, "Error committing transaction with sharding: shard ID is not set");
 	}
 
-	if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
-		const auto ward = ctx.BeforeClusterProxy();
-		auto res = (*proxiedTx)->Commit(serverId, result, ctx);
-		if (res.ok() && shardingRouter_) {
-			result.SetShardingConfigVersion(shardingRouter_.SourceId());
-		}
-		status_ = kErrCommited;
-		return res;
-	} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
-		try {
+	try {
+		if (auto* proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
+			const auto ward = ctx.BeforeClusterProxy();
+			(*proxiedTx)->Commit(serverId, result, ctx);
+			status_ = kErrCommitted;
+			if (shardingRouter_) {
+				result.SetShardingConfigVersion(shardingRouter_.SourceId());
+			}
+			return;
+		} else if (auto* localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 			if (shardingRouter_) {
 				result.AddQr(LocalQueryResults(), shardingRouter_.ActualShardId());
 				result.SetShardingConfigVersion(shardingRouter_.SourceId());
 			} else {
 				result.AddQr(LocalQueryResults(), shardingRouter_ ? shardingRouter_.ActualShardId() : ShardingKeyType::ProxyOff);
 			}
-			status_ = kErrCommited;
+
 			LocalTransaction ltx(std::move(data_), std::move(*localTx), Error());
 			tx_ = Empty{};
 			auto res = rx.CommitTransaction(ltx, result.ToLocalQr(false), ctx);
+			status_ = kErrCommitted;
 			data_ = std::move(ltx.data_);
-			return res;
-		} catch (Error& e) {
-			return e;
+			if (!res.ok()) [[unlikely]] {
+				throw res;
+			}
+			return;
+		} else if (std::holds_alternative<RxClientT>(tx_)) {
+			// Empty proxied transaction. Just skipping commit
+			return;
 		}
-	} else if (std::holds_alternative<RxClientT>(tx_)) {
-		// Empty proxied transaction. Just skipping commit
-		return Error();
+	} catch (std::exception& e) {
+		if (status_.ok()) {
+			status_ = e;
+		}
+		throw;
 	}
-	return kTxImplIsNotValid;
+	throw kTxImplIsNotValid;
 }
 
-LocalTransaction TransactionImpl::Transform(TransactionImpl& tx) {
-	std::lock_guard lck(tx.mtx_);
-	if (auto* localTx = std::get_if<TxStepsPtr>(&tx.tx_); localTx && *localTx) {
-		LocalTransaction l(std::move(tx.data_), std::move(*localTx), std::move(tx.status_));
-		tx.status_ = Error(errNotValid, "Transformed into local tx");
-		return l;
-	} else if (auto* empty = std::get_if<Empty>(&tx.tx_); empty && !tx.status_.ok()) {
-		LocalTransaction l(std::move(tx.data_), std::make_unique<TransactionSteps>(), std::move(tx.status_));
-		tx.status_ = Error(errNotValid, "Transformed into local tx");
-		return l;
+LocalTransaction TransactionImpl::Transform(TransactionImpl& tx) noexcept {
+	try {
+		lock_guard lck(tx.mtx_);
+		if (auto* localTx = std::get_if<TxStepsPtr>(&tx.tx_); localTx && *localTx) {
+			LocalTransaction l(std::move(tx.data_), std::move(*localTx), std::move(tx.status_));
+			tx.status_ = Error(errNotValid, "Transformed into local tx");
+			return l;
+		} else if (auto* empty = std::get_if<Empty>(&tx.tx_); empty && !tx.status_.ok()) {
+			auto steps = std::make_unique<TransactionSteps>(tx.data_->GetPayloadType());
+			LocalTransaction l(std::move(tx.data_), std::move(steps), std::move(tx.status_));
+			tx.status_ = Error(errNotValid, "Transformed into local tx");
+			return l;
+		}
+	} catch (std::exception& err) {
+		return LocalTransaction(std::move(err));
 	}
 	return LocalTransaction(Error(errNotValid, "Non-local transaction"));
 }
@@ -240,7 +256,7 @@ LocalTransaction TransactionImpl::Transform(TransactionImpl& tx) {
 void TransactionImpl::updateShardIdIfNecessary(int shardId, const Variant& curShardKey) {
 	if ((shardId_ != ShardingKeyType::NotSetShard) && (shardId != shardId_)) {
 		throw Error(errLogic,
-					"Transaction query to a different shard: %d (%d is expected); First tx shard key - %s, current tx shard key - %s",
+					"Transaction query to a different shard: {} ({} is expected); First tx shard key - {}, current tx shard key - {}",
 					shardId, shardId_, firstShardKey_.Dump(), curShardKey.Dump());
 	}
 	if (shardId_ == ShardingKeyType::NotSetShard) {
@@ -267,14 +283,14 @@ void TransactionImpl::updateShardIdIfNecessary(int shardId, const Variant& curSh
 	}
 }
 
-void TransactionImpl::lazyInit(const Query& q) {
+void TransactionImpl::lazyInit(ConstQueryImpl q) {
 	if (shardingRouter_) {
 		const auto [ids, shardKey] = shardingRouter_.GetShardIdKeyPair(q);
 		if (firstShardKey_.IsNullValue()) {
 			firstShardKey_ = shardKey;
 		}
 		if (ids.size() != 1) {
-			Error status(errLogic, "Transaction query must correspond to exactly one shard (%d corresponding shards found)", ids.size());
+			Error status(errLogic, "Transaction query must correspond to exactly one shard ({} corresponding shards found)", ids.size());
 			status_ = status;
 			throw status;
 		}
@@ -285,13 +301,10 @@ void TransactionImpl::lazyInit(const Query& q) {
 }
 
 void TransactionImpl::lazyInit() {
-	if (shardingRouter_ && std::holds_alternative<RxClientT>(tx_)) {
-		Error status(errLogic, "Transaction, proxied by Sharding Proxy, can not start with Nop() or Meta() steps");
-		status_ = status;
-		throw status;
-	} else {
-		initProxiedTxIfRequired();
+	if (shardingRouter_ && std::holds_alternative<RxClientT>(tx_)) [[unlikely]] {
+		throw Error(errLogic, "Transaction, proxied by Sharding Proxy, can not start with Nop() or Meta() steps");
 	}
+	initProxiedTxIfRequired();
 }
 
 void TransactionImpl::initProxiedTx(RxClientT* leader) {

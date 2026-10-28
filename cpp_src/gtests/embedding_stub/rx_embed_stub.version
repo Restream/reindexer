@@ -1,0 +1,7 @@
+# ELF version script for the test stub. Only the ABI entry point leaves the dynamic symbol table.
+{
+	global:
+ rx_embed_get_api_base;
+	local:
+		*;
+};

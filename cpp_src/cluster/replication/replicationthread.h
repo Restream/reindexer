@@ -1,6 +1,6 @@
 #pragma once
 
-#include <numeric>
+#include <span>
 #include "client/cororeindexer.h"
 #include "cluster/config.h"
 #include "cluster/logger.h"
@@ -8,7 +8,7 @@
 #include "core/dbconfig.h"
 #include "coroutine/tokens_pool.h"
 #include "net/ev/ev.h"
-#include "sharedsyncstate.h"
+#include "tools/assertrx.h"
 #include "updates/updaterecord.h"
 #include "updates/updatesqueue.h"
 
@@ -20,38 +20,12 @@ namespace cluster {
 
 constexpr size_t kUpdatesContainerOverhead = 48;
 
-struct ReplThreadConfig {
+class NamespacesSyncScheduler;
+
+struct [[nodiscard]] ReplThreadConfig {
 	ReplThreadConfig() = default;
-	ReplThreadConfig(const ReplicationConfigData& baseConfig, const AsyncReplConfigData& config) {
-		AppName = config.appName;
-		EnableCompression = config.enableCompression;
-		UpdatesTimeoutSec = config.onlineUpdatesTimeoutSec;
-		RetrySyncIntervalMSec = config.retrySyncIntervalMSec;
-		ParallelSyncsPerThreadCount = config.parallelSyncsPerThreadCount;
-		BatchingRoutinesCount = config.batchingRoutinesCount > 0 ? size_t(config.batchingRoutinesCount) : 100;
-		MaxWALDepthOnForceSync = config.maxWALDepthOnForceSync;
-		SyncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
-		ClusterID = baseConfig.clusterID;
-		if (config.onlineUpdatesDelayMSec > 0) {
-			OnlineUpdatesDelaySec = double(config.onlineUpdatesDelayMSec) / 1000.;
-		} else if (config.onlineUpdatesDelayMSec == 0) {
-			OnlineUpdatesDelaySec = 0;
-		} else {
-			OnlineUpdatesDelaySec = 0.1;
-		}
-	}
-	ReplThreadConfig(const ReplicationConfigData& baseConfig, const ClusterConfigData& config) {
-		AppName = config.appName;
-		EnableCompression = config.enableCompression;
-		UpdatesTimeoutSec = config.onlineUpdatesTimeoutSec;
-		RetrySyncIntervalMSec = config.retrySyncIntervalMSec;
-		ParallelSyncsPerThreadCount = config.parallelSyncsPerThreadCount;
-		ClusterID = baseConfig.clusterID;
-		MaxWALDepthOnForceSync = config.maxWALDepthOnForceSync;
-		SyncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
-		BatchingRoutinesCount = config.batchingRoutinesCount > 0 ? size_t(config.batchingRoutinesCount) : 100;
-		OnlineUpdatesDelaySec = 0;
-	}
+	ReplThreadConfig(const ReplicationConfigData& baseConfig, const AsyncReplConfigData& config);
+	ReplThreadConfig(const ReplicationConfigData& baseConfig, const ClusterConfigData& config);
 
 	std::string AppName = "rx_node";
 	int UpdatesTimeoutSec = 20;
@@ -61,12 +35,16 @@ struct ReplThreadConfig {
 	int ClusterID = 1;
 	size_t BatchingRoutinesCount = 100;
 	int64_t MaxWALDepthOnForceSync = 1000;
+	bool ForceSyncOnLogicError = false;
 	bool EnableCompression = true;
 	double OnlineUpdatesDelaySec = 0;
+	std::string LeaderReplToken;
 };
 
-struct UpdateApplyStatus {
+struct [[nodiscard]] UpdateApplyStatus {
 	UpdateApplyStatus(Error&& _err = Error(), updates::URType _type = updates::URType::None) noexcept : err(std::move(_err)), type(_type) {}
+	template <typename BehaviourParamT>
+	bool NeedsSingleNsResync() const noexcept;
 	template <typename BehaviourParamT>
 	bool IsHaveToResync() const noexcept;
 
@@ -74,86 +52,70 @@ struct UpdateApplyStatus {
 	updates::URType type;
 };
 
-template <typename BehaviourParamT>
-class ReplThread {
+namespace repl_thread_impl {
+class [[nodiscard]] NamespaceData {
 public:
-	using UpdatesQueueT = updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>;
+	void UpdateLsnOnRecord(const updates::UpdateRecord& rec);
+
+	ExtendedLsn latestLsn;
+	client::CoroTransaction tx;
+	bool requiresTmUpdate = true;
+	bool isClosed = false;
+	// Sampled at the start of a successful syncNamespace via UpdatesQueue::GetNextUpdateID().
+	// Records of this ns with eventId < syncedAtQueueId are already in the snapshot (0 = never synced).
+	uint64_t syncedAtQueueId = 0;
+};
+
+class [[nodiscard]] Node {
+public:
+	// This map should not invalidate references
+	using MapT = std::unordered_map<NamespaceName, NamespaceData, NamespaceNameHash, NamespaceNameEqual>;
 	using UpdatesChT = coroutine::channel<bool>;
 
-	class NamespaceData {
-	public:
-		void UpdateLsnOnRecord(const updates::UpdateRecord& rec) {
-			if (!rec.IsDbRecord()) {
-				// Updates with *Namespace types have fake lsn. Those updates should not be count in latestLsn
-				latestLsn = rec.ExtLSN();
-			} else if (rec.Type() == updates::URType::AddNamespace) {
-				if (latestLsn.NsVersion().isEmpty() || latestLsn.NsVersion().Counter() < rec.ExtLSN().NsVersion().Counter()) {
-					latestLsn = ExtendedLsn(rec.ExtLSN().NsVersion(), lsn_t());
-				}
-			} else if (rec.Type() == updates::URType::DropNamespace) {
-				latestLsn = ExtendedLsn();
-			}
-		}
+	Node(int _serverId, uint32_t _uid, const client::ReindexerConfig& config) : serverId(_serverId), uid(_uid), client(config) {}
+	void Reconnect(net::ev::dynamic_loop& loop, const ReplThreadConfig& config);
 
-		ExtendedLsn latestLsn;
-		client::CoroTransaction tx;
-		bool requiresTmUpdate = true;
-		bool isClosed = false;
-	};
+	NamespaceData& NsData(const NamespaceName& nsName) {
+		assertrx_dbg(!nsName.empty());
+		return namespaceData_[nsName];
+	}
+	void EraseNsData(const NamespaceName& nsName) {
+		assertrx_dbg(!nsName.empty());
+		namespaceData_.erase(nsName);
+	}
+	auto EraseNsData(const typename MapT::const_iterator& it) { return namespaceData_.erase(it); }
+	const MapT& NsData() const noexcept { return namespaceData_; }
 
-	struct Node {
-		Node(int _serverId, uint32_t _uid, const client::ReindexerConfig& config) noexcept
-			: serverId(_serverId), uid(_uid), client(config) {}
-		void Reconnect(net::ev::dynamic_loop& loop, const ReplThreadConfig& config) {
-			if (connObserverId.has_value()) {
-				auto err = client.RemoveConnectionStateObserver(*connObserverId);
-				(void)err;	// ignored
-				connObserverId.reset();
-			}
-			client.Stop();
-			client::ConnectOpts opts;
-			opts.CreateDBIfMissing().WithExpectedClusterID(config.ClusterID);
-			auto err = client.Connect(dsn, loop, opts);
-			(void)err;	// ignored; Error will be checked during the further requests
-		}
+	int serverId;
+	uint32_t uid;
+	DSN dsn;
+	client::CoroReindexer client;
+	std::unique_ptr<UpdatesChT> updateNotifier = std::make_unique<UpdatesChT>();
+	uint64_t nextUpdateId = 0;
+	bool requireResync = false;
+	std::optional<int64_t> connObserverId;
 
-		int serverId;
-		uint32_t uid;
-		DSN dsn;
-		client::CoroReindexer client;
-		std::unique_ptr<UpdatesChT> updateNotifier = std::make_unique<UpdatesChT>();
-		std::unordered_map<NamespaceName, NamespaceData, NamespaceNameHash, NamespaceNameEqual>
-			namespaceData;	// This map should not invalidate references
-		uint64_t nextUpdateId = 0;
-		bool requireResync = false;
-		std::optional<int64_t> connObserverId;
-	};
+private:
+	MapT namespaceData_;
+};
+}  // namespace repl_thread_impl
 
-	ReplThread(int serverId_, ReindexerImpl& thisNode, std::shared_ptr<UpdatesQueueT>, BehaviourParamT&&, ReplicationStatsCollector,
-			   const Logger&);
+template <typename BehaviourParamT>
+class [[nodiscard]] ReplThread {
+public:
+	using UpdatesQueueT = updates::UpdatesQueue<updates::UpdateRecord, ReplicationStatsCollector, Logger>;
+	using Node = repl_thread_impl::Node;
+	using NamespaceData = repl_thread_impl::NamespaceData;
+
+	ReplThread(int serverId_, ReindexerImpl& thisNode, std::shared_ptr<UpdatesQueueT>, std::shared_ptr<NamespacesSyncScheduler>,
+			   BehaviourParamT&&, ReplicationStatsCollector, const Logger&);
 
 	template <typename NodeConfigT>
 	void Run(ReplThreadConfig, const std::vector<std::pair<uint32_t, NodeConfigT>>& nodesList, size_t consensusCnt,
 			 size_t requiredReplicas);
 	void SetTerminate(bool val) noexcept;
 	bool Terminated() const noexcept { return terminate_; }
-	void DisconnectNodes() {
-		coroutine::wait_group swg;
-		for (auto& node : nodes) {
-			loop.spawn(
-				swg,
-				[&node]() noexcept {
-					if (node.connObserverId.has_value()) {
-						auto err = node.client.RemoveConnectionStateObserver(*node.connObserverId);
-						(void)err;	// ignore
-						node.connObserverId.reset();
-					}
-					node.client.Stop();
-				},
-				k16kCoroStack);
-		}
-		swg.wait();
-	}
+	void DisconnectNodes();
 	void SetNodesRequireResync() {
 		for (auto& node : nodes) {
 			node.requireResync = true;
@@ -167,23 +129,32 @@ public:
 	ReindexerImpl& thisNode;
 
 private:
+	enum class [[nodiscard]] SyncMode { FullSync, OnlineSingleNs };
+
 	constexpr static bool isClusterReplThread() noexcept;
 	void updateNodeStatus(size_t uid, NodeStats::Status st);
 	void nodeReplicationRoutine(Node& node);
-	Error nodeReplicationImpl(Node& node);
+	Error namespacesSyncImpl(Node& node, std::span<const NamespaceDef> nsList, SyncMode syncMode);
+	Error nodeReplicationImpl(Node& node, const std::vector<NamespaceDef>& nsList);
+	Expected<std::vector<NamespaceDef>> generateSyncNssList(const Node& node) const noexcept;
 	void updatesNotifier() noexcept;
 	void terminateNotifier() noexcept;
 	std::tuple<bool, UpdateApplyStatus> handleNetworkCheckRecord(Node& node, UpdatesQueueT::UpdatePtr& updPtr, uint16_t offset,
 																 bool currentlyOnline, const updates::UpdateRecord& rec) noexcept;
 
-	Error syncNamespace(Node&, const NamespaceName&, const ReplicationStateV2& followerState);
-	[[nodiscard]] Error syncShardingConfig(Node& node) noexcept;
+	Error syncNamespace(Node&, const NamespaceName&, const ReplicationStateV2& followerState, SyncMode syncMode);
+	Error handleMissingLeaderNs(Node& node, client::CoroReindexer& client, const NamespaceName& nsName, std::string_view stage,
+								bool& retrySync, ReplicationStateV2& retryLeaderState, bool allowOpenRetry = true);
+	Error resyncSingleNamespace(Node& node, const NamespaceName& nsName) noexcept;
+	void rollbackNamespaceTx(Node& node, const NamespaceName& nsName) { rollbackNamespaceTx(node, node.NsData(nsName)); }
+	void rollbackNamespaceTx(Node& node, NamespaceData& nsData);
+	Error syncShardingConfig(Node& node) noexcept;
 	UpdateApplyStatus nodeUpdatesHandlingLoop(Node& node) noexcept;
 	bool handleUpdatesWithError(Node& node, const Error& err);
 	Error checkIfReplicationAllowed(Node& node, LogLevel& logLevel);
 
 	UpdateApplyStatus applyUpdate(const updates::UpdateRecord& rec, Node& node, NamespaceData& nsData) noexcept;
-	static bool isNetworkError(const Error& err) noexcept { return err.code() == errNetwork; }
+	static bool isNetworkError(const Error& err) noexcept { return err.code() == errNetwork || err.code() == errConnectSSL; }
 	static bool isTimeoutError(const Error& err) noexcept { return err.code() == errTimeout || err.code() == errCanceled; }
 	static bool isLeaderChangedError(const Error& err) noexcept { return err.code() == errWrongReplicationData; }
 	static bool isTxCopyError(const Error& err) noexcept { return err.code() == errTxDoesNotExist; }
@@ -195,11 +166,13 @@ private:
 			return "replicator:async_t"sv;
 		}
 	}
+	bool needForceSyncOnLogicError(const Error&) const noexcept;
 
 	const int serverId_ = -1;
 	uint32_t consensusCnt_ = 0;
 	uint32_t requiredReplicas_ = 0;
 	std::unique_ptr<coroutine::tokens_pool<bool>> nsSyncTokens_;
+	std::shared_ptr<NamespacesSyncScheduler> nssSyncScheduler_;
 	net::ev::async updatesAsync_;
 	net::ev::timer updatesTimer_;
 	bool notificationInProgress_ = false;

@@ -4,16 +4,20 @@
 #include "core/query/query.h"
 #include "gtests/tests/gtest_cout.h"
 
-struct QueryWatcher {
+namespace reindexer_tests {
+
+class [[nodiscard]] QueryWatcher {
+public:
+	QueryWatcher(const reindexer::Query& q) noexcept : q_{q} {}
+
 	~QueryWatcher() {
 		if (::testing::Test::HasFailure()) {
-			reindexer::WrSerializer ser;
-			q.GetSQL(ser);
-			TEST_COUT << "Failed query dest: " << ser.Slice() << std::endl;
+			TEST_COUT << "Failed query dest: " << q_.GetSQL() << std::endl;
 		}
 	}
 
-	const reindexer::Query& q;
+private:
+	const reindexer::Query& q_;
 };
 
 template <typename ItemType>
@@ -37,3 +41,5 @@ std::string PrintItem(const ItemType& item) {
 	}
 	return out.str();
 }
+
+}  // namespace reindexer_tests

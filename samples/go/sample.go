@@ -5,11 +5,12 @@ import "C"
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
-	"github.com/restream/reindexer/v4"
-	_ "github.com/restream/reindexer/v4/bindings/builtinserver"
-	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v5"
+	_ "github.com/restream/reindexer/v5/bindings/builtinserver"
+	"github.com/restream/reindexer/v5/bindings/builtinserver/config"
 )
 
 type TestItem struct {
@@ -26,15 +27,15 @@ func main() {
 	cfg := config.DefaultServerConfig()
 	cfg.Storage.Path = "path/to/rx_storage"
 	// Initialize reindexer binding in builtinserver mode
-	db := reindexer.NewReindex("builtinserver://rdx_test_db", reindexer.WithServerConfig(time.Second*100, cfg))
+	db, err := reindexer.NewReindex("builtinserver://rdx_test_db", reindexer.WithServerConfig(time.Second*100, cfg))
 	// Check if DB was initialized correctly
-	if db.Status().Err != nil {
-		panic(db.Status().Err)
+	if err != nil {
+		panic(err)
 	}
 	defer db.Close()
 
 	// Create or open namespace with indexes and schema from struct TestItem
-	err := db.OpenNamespace(NsName, reindexer.DefaultNamespaceOptions(), TestItem{})
+	err = db.OpenNamespace(NsName, reindexer.DefaultNamespaceOptions(), TestItem{})
 	if err != nil {
 		panic(err)
 	}
@@ -43,8 +44,8 @@ func main() {
 	err = db.Upsert(NsName, &TestItem{
 		ID:       int(rand.Int() % 100),
 		Genre:    int64(rand.Int() % 100),
-		Name:     "SomeName " + string(rand.Int()%100),
-		Location: "SomeLocation " + string(rand.Int()%100),
+		Name:     "SomeName " + strconv.Itoa(rand.Int()%100),
+		Location: "SomeLocation " + strconv.Itoa(rand.Int()%100),
 		Amount:   rand.Int() % 200}, "id=serial()")
 	if err != nil {
 		panic(err)

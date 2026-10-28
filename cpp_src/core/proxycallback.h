@@ -10,12 +10,12 @@ class RdxContext;
 
 namespace reindexer::proxycb {
 
-enum class Type {
+enum class [[nodiscard]] Type {
 	kSharding,
 	kCluster,
 };
 
-enum class ActionType {
+enum class [[nodiscard]] ActionType {
 	kApplyShardingConfig,
 	kNone,
 };
