@@ -63,7 +63,7 @@ else()
   option(LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "5.17.0")
+set (REINDEXER_VERSION_DEFAULT "5.18.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -160,13 +160,17 @@ endif()
 
 if(WITH_ASAN)
   set(EXTRA_FLAGS "-fsanitize=address")
-  add_definitions(-DREINDEX_WITH_ASAN)
+  add_definitions(-DREINDEX_WITH_ASAN=1)
+  add_definitions(-DREINDEX_WITH_STRHOLDER_CHECKS=1)
 elseif(WITH_TSAN)
   set(EXTRA_FLAGS "-fsanitize=thread")
   add_definitions(-DREINDEX_WITH_TSAN)
+  # No strings check for tsan: it may be too heavy
+  # add_definitions(-DREINDEX_WITH_STRHOLDER_CHECKS=1)
 elseif(WITH_UBSAN)
   set(EXTRA_FLAGS "-fsanitize=undefined,float-divide-by-zero")
   add_definitions(-DREINDEX_WITH_UBSAN)
+  add_definitions(-DREINDEX_WITH_STRHOLDER_CHECKS=1)
 endif()
 if(WITH_GCOV)
   set(EXTRA_FLAGS "-fprofile-arcs -ftest-coverage")
@@ -175,6 +179,7 @@ endif()
 if(WITH_STDLIB_DEBUG)
   add_definitions(-DRX_WITH_STDLIB_DEBUG=1)
   add_definitions(-DTSL_DEBUG=1)
+  add_definitions(-DREINDEX_WITH_STRHOLDER_CHECKS=1)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_definitions(-D_GLIBCXX_DEBUG)
     add_definitions(-D_GLIBCXX_DEBUG_PEDANTIC)
@@ -775,11 +780,17 @@ add_subdirectory(cmd/reindexer_tool)
 add_subdirectory(cmd/reindexer_server)
 add_subdirectory(doc)
 
+# Registered unconditionally so that `embedding_stubs` can be built by name without gtest. The targets are EXCLUDE_FROM_ALL, so this does
+# not build them.
+add_subdirectory(gtests/embedding_stub)
+
 # Tests and benchmarks
 find_package(GTest)
 if(GTEST_FOUND)
     add_definitions(-DRX_SRC="${REINDEXER_SOURCE_PATH}")
     add_subdirectory(gtests/tests)
+    # Needs no gtest, but it registers CTest tests, so it follows the same switch as the rest of them.
+    add_subdirectory(gtests/embedding_scenarios)
 endif()
 
 find_package(benchmark)

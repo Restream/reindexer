@@ -33,7 +33,7 @@ const FieldsSet& TargetState::FieldsAt(int pos) const& noexcept {
 	return slot.fields ? *slot.fields : At(pos).Fields();
 }
 
-bool TargetState::TryGetScalarIndexByName(std::string_view name, int& pos) const noexcept {
+bool TargetState::TryGetNonCompositeIndexPos(std::string_view name, int& pos) const noexcept {
 	const auto it = names_.find(name);
 	if (it == names_.end() || it->second >= FirstCompositePos()) {
 		return false;

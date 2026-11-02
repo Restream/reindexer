@@ -521,6 +521,7 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 		nsCreationLock.UnlockIfOwns();
 
 		if (!isTemporary) {
+			const auto replWard = ctx.BeforeSimpleState(Activity::WaitReplication);
 			err = observers_.SendUpdate(
 				{dropStorage ? updates::URType::DropNamespace : updates::URType::CloseNamespace, ns->GetName(RdxContext()), lsn_t(0, 0),
 				 lsn_t(0, 0), ctx.EmitterServerId()},
@@ -549,6 +550,7 @@ Error ReindexerImpl::openNamespace(std::string_view name, IsDBInitCall isDBInitC
 		lock.unlock();
 		nsCreationLock.UnlockIfOwns();
 		if (rdxCtx.HasEmitterServer()) {
+			const auto replWard = rdxCtx.BeforeSimpleState(Activity::WaitReplication);
 			return observers_.SendUpdate(UpdateRecord{updates::URType::EmptyUpdate, ns->GetName(rdxCtx), rdxCtx.EmitterServerId()},
 										 std::function<void()>(), rdxCtx);
 		}
@@ -612,6 +614,7 @@ Error ReindexerImpl::openNamespace(std::string_view name, IsDBInitCall isDBInitC
 			// Unlock, when all storage and namespace map operations are done
 			nsCreationLock.UnlockIfOwns();
 
+			const auto replWard = rdxCtx.BeforeSimpleState(Activity::WaitReplication);
 			auto err = observers_.SendUpdate(
 				{updates::URType::AddNamespace, nsIt.value()->GetName(RdxContext()), version, rdxCtx.EmitterServerId(), std::move(nsDef),
 				 stateToken},
@@ -784,6 +787,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 		} else if (!skipResync) {
 			replicateCb = [this, &dstNsName, &rdxCtx, &replicationError](const std::function<void()>&) noexcept {
 				try {
+					const auto replWard = rdxCtx.BeforeSimpleState(Activity::WaitReplication);
 					replicationError = observers_.SendAsyncUpdate({updates::URType::ResyncNamespaceGeneric, NamespaceName(dstNsName),
 																   lsn_t(0, 0), lsn_t(0, 0), rdxCtx.EmitterServerId()},
 																  rdxCtx);
@@ -1327,7 +1331,7 @@ void ReindexerImpl::maskingAsyncConfig(LocalQueryResults& result) const {
 				throw err;
 			}
 			it.GetItemRef().Value() = item.Value();
-			result.SaveRawData(std::move(item));
+			result.SaveItemData(std::move(item));
 		};
 
 		for (auto& it : result) {
@@ -2896,6 +2900,7 @@ Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 				NamespaceDef def;
 				def.name = nsDef.name;
 				def.storage = nsDef.storage;  // Indexes and schema will be replicated later
+				const auto replWard = rdxCtx.BeforeSimpleState(Activity::WaitReplication);
 				auto err = observers_.SendUpdate(
 					{updates::URType::AddNamespace, it.value()->GetName(RdxContext()), version, rdxCtx.EmitterServerId(), std::move(def),
 					 stateToken},
@@ -2969,6 +2974,7 @@ Error ReindexerImpl::shardingConfigReplAction(const RdxContext& ctx, const PreRe
 			return Error();
 		}
 
+		const auto replWard = ctx.BeforeSimpleState(Activity::WaitReplication);
 		return observers_.SendUpdate(
 			std::apply([](auto&&... args) { return UpdateRecord{std::forward<decltype(args)>(args)...}; },
 					   func(std::forward<Args>(args)...)),

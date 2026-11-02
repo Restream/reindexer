@@ -6,7 +6,6 @@
 #include "reindexer_version.h"
 #include "tools/clock.h"
 #include "tools/semversion.h"
-#include "tools/stringstools.h"
 
 namespace reindexer_tests {
 
@@ -144,11 +143,21 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		std::string curActivity = clientsStats["current_activity"].As<std::string>();
 		EXPECT_TRUE(curActivity == "SELECT * FROM #clientsstats") << "curActivity = [" << curActivity << "]";
 		std::string curIP = clientsStats["ip"].As<std::string>();
-		std::vector<std::string> addrParts;
-		std::ignore = reindexer::split(curIP, ":", false, addrParts);
-		EXPECT_EQ(addrParts.size(), 2);
-		EXPECT_EQ(addrParts[0], kipaddress) << curIP;
-		int port = std::atoi(addrParts[1].c_str());	 // NOLINT(bugprone-unchecked-string-to-number-conversion)
+		std::string host;
+		std::string portStr;
+		if (!curIP.empty() && curIP.front() == '[') {
+			const auto end = curIP.find("]:");
+			ASSERT_NE(end, std::string::npos) << curIP;
+			host = curIP.substr(1, end - 1);
+			portStr = curIP.substr(end + 2);
+		} else {
+			const auto colon = curIP.rfind(':');
+			ASSERT_NE(colon, std::string::npos) << curIP;
+			host = curIP.substr(0, colon);
+			portStr = curIP.substr(colon + 1);
+		}
+		EXPECT_EQ(host, kipaddress) << curIP;
+		int port = std::atoi(portStr.c_str());	// NOLINT(bugprone-unchecked-string-to-number-conversion)
 		EXPECT_GT(port, 0) << curIP;
 		EXPECT_NE(port, kPortI) << curIP;
 		int64_t sentBytes = clientsStats["sent_bytes"].As<int64_t>();

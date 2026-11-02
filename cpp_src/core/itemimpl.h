@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <vector>
 
 #include "core/cjson/tagsmatcher.h"
@@ -16,6 +17,7 @@ class RdxContext;
 class Recoder;
 class Schema;
 class FloatVectorsGetter;
+struct FloatVectorsIndexesValues;
 
 class [[nodiscard]] ItemImpl : public ItemImplRawData {
 	friend class Item;
@@ -99,13 +101,14 @@ public:
 	 * If item is marked 'unsafe', then resulting payload value will contain view, pointing into index structures directly
 	 * and any modification of those indexes may break the references.
 	 */
-	void CopyIndexedVectorsValuesFrom(FloatVectorsGetter&& floatVectorsGettter);
+	void CopyIndexedVectorsValuesFrom(const FloatVectorsGetter& floatVectorsGettter);
+	void CopyIndexedVectorsValuesFrom(FloatVectorsIndexesValues data);
 
 	void Embed(const RdxContext& ctx);
 	const ScalarIndexesSetT& GetScalarIndexMask() const noexcept { return objectScalarIndexes_; }
 
 private:
-	ItemImpl(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
+	ItemImpl(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, std::shared_ptr<const FieldsFilter>);
 
 	void initTupleFrom(Payload&&, WrSerializer&, Shrink);
 	std::string_view createSafeDataCopy(std::string_view slice);
@@ -121,7 +124,7 @@ private:
 
 	bool unsafe_ = false;
 	std::weak_ptr<Namespace> ns_;
-	const FieldsFilter* fieldsFilter_{nullptr};
+	std::shared_ptr<const FieldsFilter> fieldsFilter_;
 	// The mask will not be updated in some cases when calling SetObject
 	ScalarIndexesSetT objectScalarIndexes_;
 };

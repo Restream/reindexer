@@ -13,8 +13,7 @@
 %lex-param { reindexer::ExprParseContext& ctx }
 
 %code top {
-	#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 15
-	// GCC 15 reports false-positive maybe-uninitialized warnings in Bison 3.8.2's variant symbol move/destruction code.
+	#if defined(__GNUC__) && !defined(__clang__)
 	#pragma GCC diagnostic push
 	#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 	#endif

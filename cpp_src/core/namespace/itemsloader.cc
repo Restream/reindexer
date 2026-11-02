@@ -56,7 +56,10 @@ void ItemsLoader::prepareANNData() {
 	if (pkIdx && !annIndexes.empty()) {
 		annCacheReader_ = std::make_unique<ann_storage_cache::Reader>(
 			ns_.name_, std::chrono::nanoseconds(ns_.lastUpdateTimeNano()), pkField, ns_.storage_,
-			[this](std::string_view name) { return ns_.getIndexByName(name); },
+			[this](std::string_view name) noexcept {
+				int pos = -1;
+				return ns_.tryGetIndexByName(name, pos) ? pos : -1;
+			},
 			[this](size_t field) { return ns_.getIndexDefinition(field); });
 	}
 }
@@ -322,7 +325,6 @@ void ItemsLoader::loadCachedANNIndexesFallback(const std::vector<unsigned>& inde
 	VariantArray krefs, skrefs;
 	for (auto field : indexes) {
 		auto& idxPtr = ns_.indexes()[field];
-		krefs.clear<false>();
 		auto vectorsDataIt = vectorsData_.find(field);
 		assertrx(vectorsDataIt != vectorsData_.end());
 		auto& vectorsData = vectorsDataIt->second;
@@ -385,7 +387,6 @@ void ItemsLoader::doInsertField(const NamespaceImpl::IndexesStorage& indexes, un
 
 	if (!annCache || !annCache->HasCacheFor(field)) {
 		// Put value to index
-		krefs.resize(0);
 		bool needClearCache{false};
 		index.Upsert(krefs, skrefs, id, needClearCache);
 	} else {

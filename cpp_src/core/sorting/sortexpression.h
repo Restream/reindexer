@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include "core/expressiontree.h"
 #include "core/id_type.h"
 #include "core/keyvalue/geometry.h"
@@ -20,6 +21,14 @@ class NamespaceResults;
 
 namespace SortExprFuncs {
 
+// A resolved index number is the field. The column text is only the name or json path written in the query.
+inline bool sameSortColumn(int index, const std::string& column, int otherIndex, const std::string& otherColumn) noexcept {
+	if (index >= 0 && index == otherIndex) {
+		return true;
+	}
+	return index == otherIndex && column == otherColumn;
+}
+
 struct [[nodiscard]] Value {
 	Value(double v) noexcept : value{v} {}
 	bool operator==(const Value& other) const noexcept { return fp::ExactlyEqual(value, other.value); }
@@ -30,7 +39,7 @@ struct [[nodiscard]] Value {
 struct [[nodiscard]] Index {
 	Index(std::string c) : column{std::move(c)}, index{IndexValueType::NotSet} {}
 	double GetValue(ConstPayload, const TagsMatcher&) const;
-	bool operator==(const Index& other) const noexcept { return column == other.column && index == other.index; }
+	bool operator==(const Index& other) const noexcept { return sameSortColumn(index, column, other.index, other.column); }
 
 	std::string column;
 	int index = IndexValueType::NotSet;
@@ -48,7 +57,7 @@ struct [[nodiscard]] JoinedIndex {
 	JoinedIndex(size_t nsInd, std::string c) : nsIdx{nsInd}, column{std::move(c)}, index{IndexValueType::NotSet} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, std::span<const joins::ItemsProcessor>) const;
 	bool operator==(const JoinedIndex& other) const noexcept {
-		return nsIdx == other.nsIdx && column == other.column && index == other.index;
+		return nsIdx == other.nsIdx && sameSortColumn(index, column, other.index, other.column);
 	}
 
 	size_t nsIdx;
@@ -61,12 +70,24 @@ struct [[nodiscard]] Rank {
 	constexpr bool operator==(const Rank&) const noexcept { return true; }
 };
 
+// merged_query_id()
+struct [[nodiscard]] MergedQueryId {
+	constexpr MergedQueryId() noexcept = default;
+	// id_ is filled from the query after parsing and is not part of the expression.
+	constexpr bool operator==(const MergedQueryId&) const noexcept { return true; }
+	constexpr uint8_t Id() const noexcept { return id_; }
+	void SetId(uint8_t id) noexcept { id_ = id; }
+
+private:
+	uint8_t id_ = 0;
+};
+
 class [[nodiscard]] RankNamed {
 public:
 	explicit RankNamed(std::string fieldName, double defaultValue) noexcept
 		: fieldName_{std::move(fieldName)}, defaultValue_{defaultValue} {}
 	bool operator==(const RankNamed& o) const noexcept {
-		return fieldName_ == o.fieldName_ && indexNo_ == o.indexNo_ && fp::ExactlyEqual(defaultValue_, o.defaultValue_);
+		return sameSortColumn(indexNo_, fieldName_, o.indexNo_, o.fieldName_) && fp::ExactlyEqual(defaultValue_, o.defaultValue_);
 	}
 	const std::string& IndexName() const& noexcept { return fieldName_; }
 	std::string& IndexName() & noexcept { return fieldName_; }
@@ -111,7 +132,7 @@ struct [[nodiscard]] DistanceFromPoint {
 	DistanceFromPoint(std::string c, Point p) : column{std::move(c)}, index{IndexValueType::NotSet}, point{p} {}
 	double GetValue(ConstPayload, const TagsMatcher&) const;
 	bool operator==(const DistanceFromPoint& other) const noexcept {
-		return column == other.column && index == other.index && point == other.point;
+		return sameSortColumn(index, column, other.index, other.column) && point == other.point;
 	}
 
 	std::string column;
@@ -133,7 +154,7 @@ struct [[nodiscard]] DistanceJoinedIndexFromPoint {
 		: nsIdx{nsInd}, column{std::move(c)}, index{IndexValueType::NotSet}, point{p} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, std::span<const joins::ItemsProcessor>) const;
 	bool operator==(const DistanceJoinedIndexFromPoint& other) const noexcept {
-		return nsIdx == other.nsIdx && column == other.column && index == other.index && point == other.point;
+		return nsIdx == other.nsIdx && sameSortColumn(index, column, other.index, other.column) && point == other.point;
 	}
 
 	size_t nsIdx;
@@ -147,7 +168,7 @@ struct [[nodiscard]] DistanceBetweenIndexes {
 		: column1{std::move(c1)}, index1{IndexValueType::NotSet}, column2{std::move(c2)}, index2{IndexValueType::NotSet} {}
 	double GetValue(ConstPayload, const TagsMatcher&) const;
 	bool operator==(const DistanceBetweenIndexes& other) const noexcept {
-		return column1 == other.column1 && index1 == other.index1 && column2 == other.column2 && index2 == other.index2;
+		return sameSortColumn(index1, column1, other.index1, other.column1) && sameSortColumn(index2, column2, other.index2, other.column2);
 	}
 
 	std::string column1;
@@ -171,8 +192,8 @@ struct [[nodiscard]] DistanceBetweenIndexAndJoinedIndex {
 	double GetValue(ConstPayload, const TagsMatcher&, IdType rowId, const joins::NamespaceResults&,
 					std::span<const joins::ItemsProcessor>) const;
 	bool operator==(const DistanceBetweenIndexAndJoinedIndex& other) const noexcept {
-		return column == other.column && index == other.index && jNsIdx == other.jNsIdx && jColumn == other.jColumn &&
-			   jIndex == other.jIndex;
+		return sameSortColumn(index, column, other.index, other.column) && jNsIdx == other.jNsIdx &&
+			   sameSortColumn(jIndex, jColumn, other.jIndex, other.jColumn);
 	}
 
 	std::string column;
@@ -192,8 +213,8 @@ struct [[nodiscard]] DistanceBetweenJoinedIndexes {
 		  index2{IndexValueType::NotSet} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, std::span<const joins::ItemsProcessor>) const;
 	bool operator==(const DistanceBetweenJoinedIndexes& other) const noexcept {
-		return nsIdx1 == other.nsIdx1 && column1 == other.column1 && index1 == other.index1 && nsIdx2 == other.nsIdx2 &&
-			   column2 == other.column2 && index2 == other.index2;
+		return nsIdx1 == other.nsIdx1 && sameSortColumn(index1, column1, other.index1, other.column1) && nsIdx2 == other.nsIdx2 &&
+			   sameSortColumn(index2, column2, other.index2, other.column2);
 	}
 
 	size_t nsIdx1;
@@ -209,8 +230,8 @@ struct [[nodiscard]] DistanceBetweenJoinedIndexesSameNs {
 		: nsIdx{nsInd}, column1{std::move(c1)}, index1{IndexValueType::NotSet}, column2{std::move(c2)}, index2{IndexValueType::NotSet} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, std::span<const joins::ItemsProcessor>) const;
 	bool operator==(const DistanceBetweenJoinedIndexesSameNs& other) const noexcept {
-		return nsIdx == other.nsIdx && column1 == other.column1 && index1 == other.index1 && column2 == other.column2 &&
-			   index2 == other.index2;
+		return nsIdx == other.nsIdx && sameSortColumn(index1, column1, other.index1, other.column1) &&
+			   sameSortColumn(index2, column2, other.index2, other.column2);
 	}
 
 	size_t nsIdx;
@@ -250,12 +271,14 @@ class [[nodiscard]] SortExpression
 							SortExprFuncs::JoinedIndex, SortExprFuncs::Rank, SortExprFuncs::RankNamed, SortExprFuncs::Rrf,
 							SortExprFuncs::SortHash, SortExprFuncs::DistanceFromPoint, SortExprFuncs::DistanceJoinedIndexFromPoint,
 							SortExprFuncs::DistanceBetweenIndexes, SortExprFuncs::DistanceBetweenIndexAndJoinedIndex,
-							SortExprFuncs::DistanceBetweenJoinedIndexes, SortExprFuncs::DistanceBetweenJoinedIndexesSameNs> {
+							SortExprFuncs::DistanceBetweenJoinedIndexes, SortExprFuncs::DistanceBetweenJoinedIndexesSameNs,
+							SortExprFuncs::MergedQueryId> {
 	using Base = ExpressionTree<SortExpressionOperation, SortExpressionBracket, 2, SortExprFuncs::Value, SortExprFuncs::Index,
 								SortExprFuncs::JoinedIndex, SortExprFuncs::Rank, SortExprFuncs::RankNamed, SortExprFuncs::Rrf,
 								SortExprFuncs::SortHash, SortExprFuncs::DistanceFromPoint, SortExprFuncs::DistanceJoinedIndexFromPoint,
 								SortExprFuncs::DistanceBetweenIndexes, SortExprFuncs::DistanceBetweenIndexAndJoinedIndex,
-								SortExprFuncs::DistanceBetweenJoinedIndexes, SortExprFuncs::DistanceBetweenJoinedIndexesSameNs>;
+								SortExprFuncs::DistanceBetweenJoinedIndexes, SortExprFuncs::DistanceBetweenJoinedIndexesSameNs,
+								SortExprFuncs::MergedQueryId>;
 	class Merger;
 	class ConstantsMultiplier;
 	class ConstantsSummer;
@@ -270,6 +293,7 @@ public:
 	}
 	bool ByField() const noexcept;
 	bool ByJoinedField() const noexcept;
+	bool ByMergedQueryId() const noexcept;
 	SortExprFuncs::JoinedIndex& GetJoinedIndex();
 	void PrepareIndexes(const NamespaceImpl&);
 	static void PrepareSortIndex(std::string& column, int& index, const NamespaceImpl&, IsRanked);
@@ -317,10 +341,12 @@ private:
 };
 std::ostream& operator<<(std::ostream&, const SortExpression&);
 
+using SortExpressions = h_vector<SortExpression, 1>;
+
 class [[nodiscard]] ProxiedSortExpression
 	: public ExpressionTree<SortExpressionOperation, SortExpressionBracket, 2, SortExprFuncs::Value, SortExprFuncs::ProxiedField,
 							SortExprFuncs::Rank, SortExprFuncs::RankNamed, SortExprFuncs::SortHash, SortExprFuncs::ProxiedDistanceFromPoint,
-							SortExprFuncs::ProxiedDistanceBetweenFields> {
+							SortExprFuncs::ProxiedDistanceBetweenFields, SortExprFuncs::MergedQueryId> {
 public:
 	ProxiedSortExpression(const SortExpression& se, const NamespaceImpl& ns) { fill(se.cbegin(), se.cend(), ns); }
 	double Calculate(IdType rowId, ConstPayload pv, RankT rank, const TagsMatcher& tagsMatcher, uint32_t shardIdHash) const {

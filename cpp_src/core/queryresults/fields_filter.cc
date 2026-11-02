@@ -8,6 +8,35 @@
 
 namespace reindexer {
 
+const FieldsFilter& FieldsFilter::AllFields() {
+	static const FieldsFilter filter{true, true};
+	return filter;
+}
+
+std::shared_ptr<const FieldsFilter> FieldsFilter::AllFieldsPtr() {
+	return std::shared_ptr<const FieldsFilter>{std::shared_ptr<const FieldsFilter>{}, &AllFields()};
+}
+
+const FieldsFilter& FieldsFilter::Empty() noexcept {
+	static const FieldsFilter filter;
+	return filter;
+}
+
+const std::shared_ptr<const FieldsFilter>& FieldsFilter::EmptyPtr() noexcept {
+	static const std::shared_ptr<const FieldsFilter> empty{std::shared_ptr<const FieldsFilter>{}, &FieldsFilter::Empty()};
+	return empty;
+}
+
+std::shared_ptr<const FieldsFilter> FieldsFilter::Create(const FieldsNamesFilter& filter, const NamespaceImpl& ns) {
+	if (filter.OnlyAllRegularFields()) {
+		return EmptyPtr();
+	} else if (filter.AllRegularFields() && filter.AllVectorFields()) {
+		return AllFieldsPtr();
+	} else {
+		return std::make_shared<FieldsFilter>(filter, ns);
+	}
+}
+
 FieldsFilter::FieldsFilter(const FieldsNamesFilter& filter, const NamespaceImpl& ns)
 	: FieldsFilter{filter.AllRegularFields(), filter.AllVectorFields()} {
 	if (!filter.AllRegularFields() || !filter.AllVectorFields()) {

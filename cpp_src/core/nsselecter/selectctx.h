@@ -33,6 +33,10 @@ struct [[nodiscard]] SelectCtx {
 	bool contextCollectingMode = false;
 	bool inTransaction = false;
 	IsMergeQuery isMergeQuery = IsMergeQuery_False;
+	// 0 is the main query and every joined query. 1, 2, 3... numbers MERGE subqueries in order.
+	uint8_t mergedQueryId = 0;
+	// Sort trees parsed for this namespace, with this namespace's index numbers. Kept for the merge-wide sort.
+	SortExpressions parsedSortExpressions;
 	QueryRankType queryRankType = QueryRankType::NotSet;
 	QueryType crashReporterQueryType = QuerySelect;
 	unsigned offset = QueryEntry::kDefaultOffset;
@@ -44,7 +48,9 @@ struct [[nodiscard]] SelectCtx {
 	std::vector<SubQueryExplain> subQueriesExplains;
 	FloatVectorsHolderMap* floatVectorsHolder = nullptr;
 
-	RX_ALWAYS_INLINE bool isMergeQuerySubQuery() const noexcept { return isMergeQuery == IsMergeQuery_True && parentQuery; }
+	RX_ALWAYS_INLINE IsMergeQuery isMergeQuerySubQuery() const noexcept {
+		return IsMergeQuery{isMergeQuery == IsMergeQuery_True && parentQuery};
+	}
 };
 
 template <typename JoinPreSelCtx>

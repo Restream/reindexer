@@ -17,11 +17,9 @@
 namespace reindexer {
 
 class NamespaceImpl;
-class PayloadValue;
 class NsContext;
 class BuiltinFunction;
-template <typename T>
-class PayloadIface;
+class IItemValuesExtractor;
 
 namespace functions {
 class FunctionInvoker;
@@ -106,9 +104,10 @@ struct [[nodiscard]] ExprEvalContext {
 	std::string_view forField;
 	bool whereMode{false};
 	std::span<const ExprFieldBinding> fieldBindings;
+	std::span<int> updateIndexBindings;
 	const NowTimes* nowTimes{nullptr};
-	const PayloadIface<const PayloadValue>& payload;
 	VariantArray& fieldScratch;
+	IItemValuesExtractor& dataExtractor;
 };
 
 enum class [[nodiscard]] ExprBinOp : uint8_t { Add, Sub, Mul, Div, Concat };
@@ -160,7 +159,7 @@ private:
 	enum class [[nodiscard]] FieldAccess : uint8_t { Indexed, BindingFields, JsonPath };
 
 	FieldAccess resolveAccess(ExprEvalContext& ctx, int& fieldIdx, const ExprFieldBinding*& binding) const;
-	void getByJsonPath(const PayloadIface<const PayloadValue>& pv, const NamespaceImpl& ns, VariantArray& out) const;
+	void getByJsonPath(ExprEvalContext& ctx, VariantArray& out) const;
 	std::string_view jsonPathForEval(const NamespaceImpl& ns) const;
 };
 

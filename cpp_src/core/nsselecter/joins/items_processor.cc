@@ -393,7 +393,8 @@ ItemsProcessor ItemsProcessor::buildItemsProcessor(int nsid, ConstQueryImpl quer
 	const size_t rightNsCtxIndex{queryResultsContexts.size()};
 	FieldsFilter rightNsFilter{joinedQueryImpl.SelectFilters(), *jns};
 	if (!isModifyQuery) {
-		queryResultsContexts.emplace_back(jns->payloadType(), jns->tagsMatcher(), rightNsFilter, jns->schema_, jns->incarnationTag_);
+		queryResultsContexts.emplace_back(jns->payloadType(), jns->tagsMatcher(),
+										  FieldsFilter::Create(joinedQueryImpl.SelectFilters(), *jns), jns->schema_, jns->incarnationTag_);
 	}
 
 	ItemsProcessors childItemsProcessors;

@@ -106,7 +106,9 @@ class [[nodiscard]] LocalQueryResults {
 
 		operator IteratorImpl<std::add_const_t<QR>>() const&& = delete;
 
-		const FieldsFilter& GetFieldsFilter() const noexcept { return qr_->getFieldsFilter(qr_->items_.GetItemRef(idx_).Nsid()); }
+		const std::shared_ptr<const FieldsFilter>& GetFieldsFilter() const noexcept {
+			return qr_->getFieldsFilter(qr_->items_.GetItemRef(idx_).Nsid());
+		}
 
 	private:
 		QR* qr_{nullptr};
@@ -187,14 +189,14 @@ public:
 	using ContextsVector = h_vector<Context, 1, kSizeofContext, kAlignContext>;
 	ContextsVector ctxs;
 
-	void addNSContext(const PayloadType& type, const TagsMatcher& tagsMatcher, const FieldsFilter& fieldsFilter,
+	void addNSContext(const PayloadType& type, const TagsMatcher& tagsMatcher, std::shared_ptr<const FieldsFilter> fieldsFilter,
 					  std::shared_ptr<const Schema> schema, lsn_t nsIncarnationTag);
 	void addNSContext(const QueryResults& baseQr, size_t nsid, lsn_t nsIncarnationTag);
 	const TagsMatcher& getTagsMatcher(int nsid) const& noexcept;
 	auto getTagsMatcher(int nsid) const&& noexcept = delete;
 	const PayloadType& getPayloadType(int nsid) const& noexcept;
 	auto getPayloadType(int nsid) const&& noexcept = delete;
-	const FieldsFilter& getFieldsFilter(int nsid) const& noexcept;
+	const std::shared_ptr<const FieldsFilter>& getFieldsFilter(int nsid) const& noexcept;
 	auto getFieldsFilter(int nsid) const&& noexcept = delete;
 
 	TagsMatcher& getTagsMatcher(int nsid) & noexcept;
@@ -210,7 +212,7 @@ public:
 	auto Items() && = delete;
 	int GetJoinedNsCtxIndex(int nsid, int joinedField) const noexcept;
 
-	void SaveRawData(ItemImplRawData&&);
+	void SaveItemData(ItemImplRawData&&);
 
 	// Add owning ns pointer
 	// noLock has always to be 'true' (i.e. this method can only be called under Namespace's lock)
@@ -229,7 +231,7 @@ private:
 
 	void encodeJSON(int idx, WrSerializer& ser, ConstIterator::NsNamesCache&) const;
 	ItemRefVector items_;
-	std::vector<ItemImplRawData> rawDataHolder_;
+	std::vector<ItemImplRawData> itemDataHolder_;
 	friend class FtFunctionsHolder;
 
 	class [[nodiscard]] NsDataHolder {

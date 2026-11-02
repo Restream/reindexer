@@ -6,6 +6,7 @@
 #include "cpp-btree/btree_map.h"
 #include "estl/extendible_hash_map.h"
 #include "estl/sparse_hash_int.h"
+#include "estl/sparse_hash_prefix_bits.h"
 #include "sparse-map/sparse_map.h"
 #include "tools/stringstools.h"
 

@@ -157,7 +157,7 @@ void UpdateItems::ArrayLimit1000(State& state) { array(state, kCount1000); }
 
 void UpdateItems::array2Index(State& state, unsigned int limit) {
 	auto qGen = [&]() {
-		auto path = getPathIndex<2>(kFieldArraySub, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
+		auto path = getPathIndex(kFieldArraySub, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
 		auto val = randString(rand() % kStringLen + 1);
 		return reindexer::Query(nsdef_.name).Set(path, val).Limit(limit);
 	};
@@ -169,7 +169,7 @@ void UpdateItems::Array2IndexLimit1000(State& state) { array2Index(state, kCount
 
 void UpdateItems::array2IndexSparse(State& state, unsigned int limit) {
 	auto qGen = [&]() {
-		auto path = getPathIndex<2>(kFieldArraySubSparse, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
+		auto path = getPathIndex(kFieldArraySubSparse, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
 		auto val = randString(rand() % kStringLen + 1);
 		return reindexer::Query(nsdef_.name).Set(path, val).Limit(limit);
 	};
@@ -180,7 +180,7 @@ void UpdateItems::Array2IndexSparseLimit1000(State& state) { array2IndexSparse(s
 
 void UpdateItems::array2(State& state, unsigned int limit) {
 	auto qGen = [&]() {
-		auto path = getPathIndex<2>(kFieldArraySubNotIndex, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
+		auto path = getPathIndex(kFieldArraySubNotIndex, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
 		int val = rand() % 1000;
 		return reindexer::Query(nsdef_.name).Set(path, val).Limit(limit);
 	};
@@ -192,7 +192,7 @@ void UpdateItems::Array2Limit1000(State& state) { array2(state, kCount1000); }
 void UpdateItems::threeIndexField(State& state, unsigned int limit) {
 	auto qGen = [&]() {
 		auto array = RandStrLocal(rand() % kMaxArrayLen + 2, kStringLen);
-		auto path = getPathIndex<2>(kFieldArraySub, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
+		auto path = getPathIndex(kFieldArraySub, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
 		auto val = randString(rand() % kStringLen + 1);
 		return reindexer::Query(nsdef_.name).Set(kFieldScalar, randString(kStringLen)).Set(kFieldArray, array).Set(path, val).Limit(limit);
 	};
@@ -204,7 +204,7 @@ void UpdateItems::ThreeIndexFieldLimit1000(State& state) { threeIndexField(state
 void UpdateItems::threeIndexSparseField(State& state, unsigned int limit) {
 	auto qGen = [&]() {
 		auto array = RandStrLocal(rand() % kMaxArrayLen + 2, kStringLen);
-		auto path = getPathIndex<2>(kFieldArraySubSparse, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
+		auto path = getPathIndex(kFieldArraySubSparse, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
 		auto val = randString(rand() % kStringLen + 2);
 		return reindexer::Query(nsdef_.name)
 			.Set(kFieldScalarSparse, randString(kStringLen))
@@ -220,7 +220,7 @@ void UpdateItems::ThreeIndexSparseFieldLimit1000(State& state) { threeIndexSpars
 void UpdateItems::threeField(State& state, unsigned int limit) {
 	auto qGen = [&]() {
 		auto array = RandStrLocal(rand() % kMaxArrayLen + 2, kStringLen);
-		auto path = getPathIndex<2>(kFieldArraySubNotIndex, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
+		auto path = getPathIndex(kFieldArraySubNotIndex, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
 		auto val = randString(rand() % kStringLen + 2);
 		return reindexer::Query(nsdef_.name)
 			.Set(kFieldScalar, randString(kStringLen))
@@ -236,13 +236,13 @@ void UpdateItems::ThreeFieldLimit1000(State& state) { threeField(state, kCount10
 void UpdateItems::nineField(State& state, unsigned int limit) {
 	auto qGen = [&]() {
 		auto array1 = RandStrLocal(rand() % kMaxArrayLen + 2, kStringLen);
-		auto path1 = getPathIndex<2>(kFieldArraySubNotIndex, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
+		auto path1 = getPathIndex(kFieldArraySubNotIndex, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
 		auto val1 = randString(rand() % kStringLen + 2);
 		auto array2 = RandStrLocal(rand() % kMaxArrayLen + 2, kStringLen);
-		auto path2 = getPathIndex<2>(kFieldArraySubSparse, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
+		auto path2 = getPathIndex(kFieldArraySubSparse, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
 		auto val2 = randString(rand() % kStringLen + 2);
 		auto array3 = RandStrLocal(rand() % kMaxArrayLen + 2, kStringLen);
-		auto path3 = getPathIndex<2>(kFieldArraySub, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
+		auto path3 = getPathIndex(kFieldArraySub, std::array<int, 2>{int(rand() % kFirstArrayLen), -1});
 		auto val3 = randString(rand() % kStringLen + 2);
 
 		return reindexer::Query(nsdef_.name)

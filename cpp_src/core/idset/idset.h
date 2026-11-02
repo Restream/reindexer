@@ -63,6 +63,10 @@ public:
 		return 0;
 	}
 
+	/// @brief Searches for an ID in the set.
+	/// @return true if the ID is found.
+	bool Find(IdType id) const noexcept { return id_.IsValid() && id_ == id; }
+
 	/// @brief Does nothing for IdSetUnique, single ID is always sorted.
 	void Commit([[maybe_unused]] base_idset::size_type sortedIdxCount) const noexcept {}
 	constexpr static bool IsCommitted() noexcept { return true; }
@@ -154,11 +158,11 @@ public:
 	/// @brief Adds a new ID into the set while keeping it ordered.
 	/// Preserves the set in the committed (sorted) state.
 	bool Add(IdType id, base_idset::size_type sortedIdxCount) {
-		reserveForIdAndSortOrders(sortedIdxCount);
-
 		auto pos = std::lower_bound(base_idset::begin(), base_idset::end(), id);
 		if ((pos == base_idset::end() || *pos != id)) {
-			base_idset::insert(pos, id);
+			const auto offset = pos - base_idset::begin();
+			reserveForIdAndSortOrders(sortedIdxCount);
+			base_idset::insert(base_idset::begin() + offset, id);
 			return true;
 		}
 		return false;
@@ -177,6 +181,11 @@ public:
 		base_idset::erase(d.first, d.second);
 		return count;
 	}
+
+	/// @brief Searches for an ID in the set.
+	/// @note Assumes that the container is sorted (not filled through AddUnordered()).
+	/// @return true if the ID is found.
+	bool Find(IdType id) const noexcept { return std::binary_search(begin(), end(), id); }
 
 	/// @brief Does nothing for IdSetPlain, assumes that the container is already sorted.
 	void Commit([[maybe_unused]] base_idset::size_type sortedIdxCount) const noexcept {}
@@ -274,11 +283,11 @@ public:
 
 		if (!set) {
 			assertrx_dbg(size() <= kMaxPlainIdsetSize);
-			IdSetPlain::reserveForIdAndSortOrders(sortedIdxCount);
-
 			auto pos = std::lower_bound(base_idset::begin(), base_idset::end(), id);
 			if ((pos == base_idset::end() || *pos != id)) {
-				base_idset::insert(pos, id);
+				const auto offset = pos - base_idset::begin();
+				IdSetPlain::reserveForIdAndSortOrders(sortedIdxCount);
+				base_idset::insert(base_idset::begin() + offset, id);
 				return true;
 			}
 			return false;
@@ -301,16 +310,14 @@ public:
 		push_back(id);
 	}
 
-	/// @brief Выполняет поиск ID в set'е.
+	/// @brief Searches for an ID in the set.
 	/// @note Assumes that the container is sorted (not filled through AddUnordered()).
 	/// @return true if the ID is found.
 	bool Find(IdType id) const noexcept {
-		auto set = set_.Get(std::memory_order_relaxed).first;
-		if (!set) {
-			return (std::find(begin(), end(), id) != end());
+		if (auto btree = BTree(); btree) {
+			return btree->find(id) != btree->end();
 		}
-
-		return (set->find(id) != set->end());
+		return std::binary_search(IdSetPlain::begin(), IdSetPlain::end(), id);
 	}
 
 	/// @brief Removes an ID from the set.

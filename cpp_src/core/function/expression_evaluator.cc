@@ -1,8 +1,6 @@
 #include "expression_evaluator.h"
 
-#include "core/function/expression_ast.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/payload/payloadiface.h"
 
 namespace reindexer {
 
@@ -20,9 +18,8 @@ bool allowsArrayResult(const ExprNode* node) noexcept {
 }
 }  // namespace
 
-VariantArray ExpressionEvaluator::Evaluate(const ExpressionAst& ast, const PayloadValue& v, std::string_view forField,
-										   const NsContext& ctx) {
-	ConstPayload payload{ns_.payloadType(), v};
+VariantArray ExpressionEvaluator::Evaluate(const ExpressionAst& ast, IItemValuesExtractor& dataExtractor, std::string_view forField,
+										   const NsContext& ctx, std::span<int> updateIndexBindings) {
 	VariantArray fieldScratch;
 	ExprEvalContext evalCtx{
 		.ns = ns_,
@@ -31,9 +28,10 @@ VariantArray ExpressionEvaluator::Evaluate(const ExpressionAst& ast, const Paylo
 		.forField = forField,
 		.whereMode = false,
 		.fieldBindings = {},
+		.updateIndexBindings = updateIndexBindings,
 		.nowTimes = nullptr,
-		.payload = payload,
 		.fieldScratch = fieldScratch,
+		.dataExtractor = dataExtractor,
 	};
 	if (allowsArrayResult(ast.Root())) {
 		return ast.Evaluate(evalCtx);

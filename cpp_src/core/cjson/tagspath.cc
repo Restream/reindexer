@@ -24,7 +24,7 @@ bool Compare(IndexedTagsPathView lhs, const TagsPath& rhs) noexcept {
 	return true;
 }
 
-void Dump(auto& os, const TagsPath& path, TagsMatcher* tm) {
+void Dump(auto& os, const TagsPath& path, const TagsMatcher* tm) {
 	for (size_t i = 0; i < path.size(); ++i) {
 		if (i != 0) {
 			os << '.';
@@ -35,7 +35,7 @@ void Dump(auto& os, const TagsPath& path, TagsMatcher* tm) {
 		os << '<' << path[i].AsNumber() << '>';
 	}
 }
-template void Dump(std::ostream&, const TagsPath&, TagsMatcher*);
+template void Dump(std::ostream&, const TagsPath&, const TagsMatcher*);
 
 template <unsigned hvSize>
 void IndexedTagsPathImpl<hvSize>::Dump(auto& os, TagsMatcher* tm) const {
@@ -61,6 +61,7 @@ void IndexedTagsPathImpl<hvSize>::Dump(auto& os, TagsMatcher* tm) const {
 		}
 	}
 }
+
 template void IndexedTagsPathImpl<6>::Dump(std::ostream&, TagsMatcher*) const;
 template void IndexedTagsPathImpl<16>::Dump(std::ostream&, TagsMatcher*) const;
 

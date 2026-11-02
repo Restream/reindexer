@@ -47,6 +47,7 @@ This document describes the Go connector and its API. For information about the 
   - [Counting](#counting)
   - [Text pattern search with LIKE condition](#text-pattern-search-with-like-condition)
   - [Update queries](#update-queries)
+    - [Updating a missing indexed field](#updating-a-missing-indexed-field)
     - [Update queries with inner joins and subqueries](#update-queries-with-inner-joins-and-subqueries)
     - [Update field with object](#update-field-with-object)
     - [Remove field via update-query](#remove-field-via-update-query)
@@ -60,6 +61,9 @@ This document describes the Go connector and its API. For information about the 
     - [Async batch mode](#async-batch-mode)
     - [Transactions commit strategies](#transactions-commit-strategies)
     - [Implementation notes](#implementation-notes)
+  - [Merge](#merge)
+    - [Sorting](#sorting)
+    - [Deduplication](#deduplication)
   - [Join](#join)
     - [Nested Join](#nested-join)
     - [Anti-join](#anti-join)
@@ -598,7 +602,7 @@ To sort by non-indexed fields, all the values must be convertible to each other,
 Sort expressions can contain:
  - field and index names (including nested fields and fields of the joined namespaces) of `bool`, `int`, `int64`, `float`, or `string` types. All the values must be convertible to numbers ignoring leading and trailing spaces;
  - numbers;
- - functions `rank()`, `abs()` and `ST_Distance()`;
+ - functions `rank()`, `abs()`, `ST_Distance()` and `merged_query_id()`;
  - parenthesis;
  - arithmetic operations: `+`, `-` (unary and binary), `*` and `/`.
 
@@ -612,6 +616,8 @@ Fields of the joined namespaces must be written like this: `joined_namespace.fie
 `ST_Distance()` means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText('point(1 -3)')`
 
 `hash()` or `hash(seed)` returns a hash (`uint32`) from the record id. If `seed` is not specified, it is generated randomly. This function is useful to achieve randomized sort order.
+
+`merged_query_id()` returns the index of the current query in a `MERGE`. The main query and every joined query are `0`. Each query added with `MERGE` is `1`, `2`, `3`, ... in that order. A query without `MERGE` returns `0`.
 
 In SQL query sort expression must be quoted.
 
@@ -702,6 +708,8 @@ It's possible to force sorting order by pulling some specific keys on the top of
 query := db.Query("actors").Sort("id", false, 10, 15, 17) // Documents with IDs 10, 15, 17 will be on the top (if corresponding documents exist)
 ```
 
+Sorting, tie-break and deduplication of merged queries are described in [Merge](#merge).
+
 ### Counting
 
 Reindexer supports two versions of counting aggregation:
@@ -786,7 +794,7 @@ SELECT * FROM users WHERE flat_array_len(phone_numbers) >= 1
 -- Filter objects nested in arrays (returns count of occurrences)
 SELECT * FROM orders WHERE flat_array_len(items.product_id) = 2
 
--- Update field value with flat_array_len function 
+-- Update field value with flat_array_len function
 UPDATE items SET size = flat_array_len(comments) where id = 100;
 ```
 
@@ -913,6 +921,21 @@ db.Query("items").Where("id", reindexer.EQ, 40).Set("field1", value1).Set("field
 ```
 - there can be multiple `.Set` expressions - one for a field. Also, it is possible to combine several `Set...` expressions of different types in one query, like this: `Set().SetExpression().SetObject()...`
 
+#### Updating a missing indexed field
+
+`UPDATE` can set an indexed field that was absent from a document. The field is added at the index's JSON path, appears in the updated document, and can be found through the index. When the namespace uses persistent storage, the new value is preserved after a restart.
+
+For example, suppose index `idx` has `json_paths: ["field"]` and a document contains `{"id": 0, "data": "12345"}`:
+
+```sql
+UPDATE ns SET field = 10 WHERE id = 0
+SELECT * FROM ns WHERE idx = 10
+```
+
+The updated document is `{"id": 0, "data": "12345", "field": 10}`, and the `SELECT` query returns it. If the index name differs from its JSON path, the `SET` clause can use either name or JSON path.
+
+For an index with multiple JSON paths, specify the path to update instead of the index name. For example, if `idx` has `json_paths: ["field1", "field2"]`, use `SET field1 = 10` or `SET field2 = 10`. Updating `idx` by name is ambiguous and returns an error.
+
 #### Update queries with inner joins and subqueries
 
 Inner join and subquery may also be used as WHERE conditions. Inner joins don't actually join items, but are applied as filtering conditions.
@@ -970,13 +993,67 @@ UPDATE clients SET client_data = {"Name":"John Doe","Age":40,"Address":"Fifth Av
 
 #### Remove field via update-query
 
-UPDATE SQL syntax for queries that drop existing non-indexed fields:
+`UPDATE DROP` removes fields or array elements from the items matched by the query. It changes item data, but does not remove index definitions or alter the namespace schema.
+
+Complete fields can be dropped if they are non-indexed or belong to sparse indexes. Dropping a non-sparse indexed field is not supported.
+
+SQL syntax:
 
 ```sql
 UPDATE nsName
 DROP field1, field2, ..
 WHERE condition;
 ```
+
+Nested JSON paths and array indexes are supported:
+
+```sql
+-- Remove a field
+UPDATE items DROP obsolete WHERE id = 100;
+
+-- Remove a nested field
+UPDATE items DROP metadata.legacy WHERE id = 100;
+
+-- Remove the element at the zero-based index 2
+UPDATE items DROP tags[2] WHERE id = 100;
+
+-- Remove all existing array elements, leaving an empty array
+UPDATE items DROP tags[*] WHERE id = 100;
+```
+
+Paths are resolved independently for each matched item and for each array branch. A path may legitimately exist only in some branches of a heterogeneous array. Branches where the path is missing are skipped without an error, while the operation is applied to every node that was found. An array index outside the array bounds is also treated as a missing target and produces no change.
+
+For example, the following query removes the first `tags` element from the first and third branches and skips the second branch:
+
+```json
+{
+  "items": [
+    {"tags": [1, 2]},
+    {"name": "item"},
+    {"tags": [3, 4]}
+  ]
+}
+```
+
+```sql
+UPDATE nsName DROP items[*].tags[0];
+```
+
+DSL syntax:
+
+```json
+{
+  "namespace": "items",
+  "type": "update",
+  "drop_fields": [
+    "obsolete",
+    "metadata.legacy",
+    "tags[2]"
+  ]
+}
+```
+
+Go API:
 
 ```go
 db.Query("items").Where("id", reindexer.EQ, 40).Drop("field1").Drop("field2").Update()
@@ -1031,11 +1108,40 @@ Index array-fields support values that can be converted to an index type only. W
 UPDATE NS SET prices_idx = [11, '2', 3]
 ```
 
-To remove item by index you should do the following:
+An array on the right-hand side replaces the entire value selected on the left-hand side; it does not append elements. This also works for indexed array fields and nested arrays. For example, given `idx = [[1, 2], [3, 4]]`, each of the following statements produces the shown value of `idx` (run each statement independently):
+
+| UPDATE statement | Resulting `idx` |
+| --- | --- |
+| `UPDATE NS SET idx = [[5, 6], [7, 8]] WHERE id = 9` | `[[5, 6], [7, 8]]` |
+| `UPDATE NS SET idx[0] = [5, 6] WHERE id = 9` | `[[5, 6], [3, 4]]` |
+| `UPDATE NS SET idx[*] = [5, 6] WHERE id = 9` | `[[5, 6], [5, 6]]` |
+| `UPDATE NS SET idx[0][0] = [5, 6] WHERE id = 9` | `[[[5, 6], 2], [3, 4]]` |
+| `UPDATE NS SET idx[0][*] = [5, 6] WHERE id = 9` | `[[[5, 6], [5, 6]], [3, 4]]` |
+| `UPDATE NS SET idx[*][0] = [5, 6] WHERE id = 9` | `[[[5, 6], 2], [[5, 6], 4]]` |
+| `UPDATE NS SET idx[*][*] = [5, 6] WHERE id = 9` | `[[[5, 6], [5, 6]], [[5, 6], [5, 6]]]` |
+
+`[*]` selects every existing element at that level and assigns the right-hand value to each one. It does not create new elements. The selected element can itself be replaced with an array, even if it previously held a scalar. Indexed array fields still require every resulting scalar value to be convertible to the index type.
+
+The same syntax applies to arrays of objects and objects containing arrays. Given `nested = [{"values": [1]}, {"values": [2]}]`:
 
 ```sql
-UPDATE NS DROP array[5]
+UPDATE NS SET nested[*].values = [3, 4] WHERE id = 9
 ```
+
+This produces `nested = [{"values": [3, 4]}, {"values": [3, 4]}]`. To replace an entire object in the array, use a path such as `nested[0]` and an object value:
+
+```sql
+UPDATE NS SET nested[0] = {"values": [5, 6]} WHERE id = 9
+```
+
+For a point field, an array of two coordinates replaces the whole point, for example `UPDATE NS SET location = [10.5, 20.5] WHERE id = 9`. A float vector field likewise accepts a complete vector with the dimension configured for its index, such as `UPDATE NS SET vec_idx = [0.1, 0.2, 0.3] WHERE id = 9`. If the vector index is configured as an array, use an array of vectors to replace the whole field, or select one vector to replace:
+
+```sql
+UPDATE NS SET vec_idx = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]] WHERE id = 9
+UPDATE NS SET vec_idx[0] = [0.7, 0.8, 0.9] WHERE id = 9
+```
+
+Vector coordinates cannot be updated through nested array indexes such as `vec_idx[0][0]`; replace the vector instead.
 
 #### Concatenate arrays
 
@@ -1121,7 +1227,7 @@ Go syntax for delete queries:
 DB.Query(ns).Where("id", reindexer.EQ, 1).
 	OpenBracket().
 		InnerJoin(
-			DB.Query(join_ns).Where("DEVICE", reindexer.EQ, "android"), 
+			DB.Query(join_ns).Where("DEVICE", reindexer.EQ, "android"),
 			"some random name").
 		On("PRICE_ID", reindexer.SET, "ID")
 	CloseBracket().
@@ -1214,6 +1320,79 @@ In some cases this heuristic may increase selects latency, so it may be disabled
 3. It is safe to call Rollback after Commit;
 4. It is possible to call Query from transaction by call `tx.Query("ns").Exec() ...`;
 5. Only serializable isolation is available, i.e. each transaction takes exclusive lock over the target namespace until all the steps of the transaction committed.
+
+### Merge
+
+`MERGE` appends the rows of one or more queries to the main query. The queries may read different namespaces. `Limit` and `Offset` belong to the main query and are applied to the merged result; an inner query cannot set its own limit or offset. Joins inside a merged query are described in [Join](#join). Aggregations of the main query apply to every merged subquery; see [Aggregations](#aggregations).
+
+```sql
+SELECT * FROM books WHERE year > 2000
+MERGE (SELECT * FROM archived_books WHERE year > 1990)
+```
+
+```go
+it := db.Query("books").
+	Where("year", reindexer.GT, 2000).
+	Merge(db.Query("archived_books").Where("year", reindexer.GT, 1990)).
+	Exec()
+```
+
+Without `Sort()` / `ORDER BY`, rows of the main query come first, then each merged query in the order it was written. Within one query the smaller row id comes first.
+
+#### Sorting
+
+`Sort()` / `ORDER BY` belongs to the main query. `ORDER BY` inside `MERGE (...)` is rejected, except for a hybrid reranker ([Hybrid search](hybrid.md#merging-queries-results)). The sort is applied in every merged namespace and then to the concatenated rows. The same field name is resolved separately in each namespace. A field missing from one of the namespaces is checked with that query's strict mode.
+
+When the sort keys are equal, the tie-break follows the direction of the first entry. `ASC` puts the smaller row id and the earlier merged query first. `DESC` puts the larger row id and the later merged query first.
+
+A joined field (`joined_namespace.field`) is resolved in each merged query's own join. Every merged query must join that namespace; the joined row must be unique, the same as for a query without `MERGE`. An expression may mix the main document's fields with joined fields.
+
+A merge of ranked fulltext or KNN queries without an explicit sort is ordered by rank. Fulltext, inner-product KNN and cosine KNN put the higher rank first; L2 KNN puts the smaller distance first. Equal ranks use the same tie-break as that direction. `rank()` is allowed in an explicit sort expression when every merged query is ranked. See [Full-text search](fulltext.md#merging-queries-results) and [Hybrid search](hybrid.md#merging-queries-results).
+
+```sql
+SELECT * FROM books ORDER BY year ASC, id DESC
+MERGE (SELECT * FROM archived_books WHERE year > 1990)
+```
+
+```go
+it := db.Query("books").
+	Merge(db.Query("archived_books").Where("year", reindexer.GT, 1990)).
+	Sort("year", false).
+	Sort("id", true).
+	Exec()
+```
+
+`merged_query_id()` in a sort expression is `0` for a row of the main query and `1`, `2`, `3`, ... for each following merged query. Joined queries stay `0`. With `ASC` the main query's rows come first:
+
+```sql
+SELECT * FROM books
+MERGE (SELECT * FROM archived_books)
+ORDER BY 'merged_query_id()', id
+```
+
+```go
+it = db.Query("books").
+	Merge(db.Query("archived_books")).
+	Sort("merged_query_id()", false).
+	Sort("id", false).
+	Exec()
+```
+
+#### Deduplication
+
+If several merged queries read the same namespace, with the same field list, and return the same document, one copy is kept: the one that comes first after sorting. A different `SELECT` list is a different projection, so both copies stay. Rows from different namespaces are not deduplicated.
+
+```sql
+SELECT * FROM books WHERE year > 2000
+MERGE (SELECT * FROM books WHERE year < 2010)
+```
+
+```sql
+SELECT * FROM books WHERE year > 2000
+MERGE (SELECT id, title FROM books WHERE year < 2010)
+```
+
+In the first query a document that matches both conditions is returned once. In the second query the field lists differ, so that document is returned twice.
 
 ### Join
 
@@ -1774,7 +1953,7 @@ A table row is considered unique if
 - Scalar `v1+v2+..` is unique
 - Arrays are padded with empty values up to the same length. Scalars are represented as arrays of maximum length with the same value. It turns out to be a rectangular table. Each row of the `v1[i]+v2[i]+...` table is taken, and it checks whether there is such a value in the list of unique values.
  If at least one of these values is unique, then the string is considered unique.
-The aggregation result adds up all the unique values `v1[i]+v2[i]+...`. 
+The aggregation result adds up all the unique values `v1[i]+v2[i]+...`.
 
 ### Search in array fields
 
@@ -1877,7 +2056,7 @@ SELECT * FROM Namespace WHERE f1 >= 5 AND (f2 = 100 AND f3 = 3 AND f4 < 4 EQUAL_
 Both index names and JSON paths can be used in conditions and `EQUAL_POSITION`.
 The following combinations are allowed:
 
-Index (index) built on a single JSON path (json_path) 
+Index (index) built on a single JSON path (json_path)
 
 | Condition | Equal_position | Allowed |
 |-----------|----------------|---------|
@@ -1903,7 +2082,7 @@ Index (index) built on two JSON paths (json_path1, json_path2)
 #### Search in array fields with matching indexes using grouping
 
 For nested arrays, grouping logic is supported.
-To get the values, you need to specify the path considering all intermediate arrays. 
+To get the values, you need to specify the path considering all intermediate arrays.
 For an array, use `[*]`, for the array by whose indices the grouping will be performed, use `[#]`.
 
 It should be noted that in this case, only the JSON path is used because the index name does not reflect the document's structure.

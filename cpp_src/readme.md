@@ -115,6 +115,7 @@ Available distros: `p11`.
 
 ```bash
 brew tap restream/reindexer
+brew trust restream/reindexer
 brew install reindexer
 ```
 
@@ -216,7 +217,7 @@ Some of the metrics also require:
 - `reindexer_embed_last_sec_avg_latency_us` - average autoembed time (last second)
 - `reindexer_embed_conn_in_use` - current number of embedder connections in use
 - `reindexer_embed_last_sec_avg_embed_latency_us` - average auto-embedding latency for cache misses (last second)
-- `reindexer_embed_input_traffic_total_bytes` - the total amount of data received from the embedding service over the network 
+- `reindexer_embed_input_traffic_total_bytes` - the total amount of data received from the embedding service over the network
 - `reindexer_embed_output_traffic_total_bytes` - the total amount of data sent to the embedding service over the network
 
 
@@ -316,7 +317,7 @@ In dedicated mode server creates one thread per connection. This approach may be
 
 ### TLS support
 
-Reindexer has TLS support for HTTP/1 (HTTPS) and CPROTO (RPCS). To run Reindexer with TLS support, the `openssl` and `libssl` libraries must be installed on the system. 
+Reindexer has TLS support for HTTP/1 (HTTPS) and CPROTO (RPCS). To run Reindexer with TLS support, the `openssl` and `libssl` libraries must be installed on the system.
 Reindexer will detect those libraries on startup if it was built with openssl support option (by default). Upon successful loading of `libssl` library symbols, a corresponding entry or error information should appear in the log.
 
 Paths to files with ssl-certificate (`ssl_cert`) and ssl private key (`ssl_key`) in `PEM`-format must be specified in `reindexer.conf` in `net`-section:
@@ -383,7 +384,7 @@ Parameter values in the `users.yml` file:
     * `sharding` — the same as `db_admin`, but with restrictions on usage across different protocols and additional context checks for sharding. This role should be used for inter-shard communication instead of `db_admin` and `owner`;
     * `owner` — the user has all privileges related to database access, including creating and deleting a database with the specified name.
 
-Along with the `MD5` algorithm, the `SHA256`-based `SHA512`-based password hashing algorithm can also be used for authentication. To use them, it is necessary that `openssl` and the `libcrypto` library are installed in the system, which is connected dynamically if the Reindexer is built with the `openssl` support option (by default). 
+Along with the `MD5` algorithm, the `SHA256`-based `SHA512`-based password hashing algorithm can also be used for authentication. To use them, it is necessary that `openssl` and the `libcrypto` library are installed in the system, which is connected dynamically if the Reindexer is built with the `openssl` support option (by default).
 
 Upon successful loading of `libcrypto` library symbols, a corresponding entry or error information should appear in the log.
 

@@ -30,6 +30,8 @@ public:
 
 	RX_ALWAYS_INLINE void Reserve(Ctx& ctx, size_t capacity, IsRanked isRanked) {
 		if constexpr (std::same_as<Result, LocalQueryResults>) {
+			// haveRank is cleared when a field-sorted merge mixes ranked and not ranked rows.
+			isRanked = IsRanked{bool(isRanked) && result_.haveRank};
 			if constexpr (IsJoinPreSelectResult) {
 				if (auto* values = std::get_if<joins::PreSelect::Values>(&ctx.preSelect.Result().payload); values) {
 					values->Reserve(capacity);

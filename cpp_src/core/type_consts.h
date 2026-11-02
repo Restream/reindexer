@@ -265,8 +265,6 @@ enum REINDEX_CPP_NODISCARD FieldModifyMode {
 	FieldModeSet = 0,
 	FieldModeDrop = 1,
 	FieldModeSetJson = 2,
-	FieldModeArrayPushBack = 3,
-	FieldModeArrayPushFront = 4,
 };
 
 enum REINDEX_CPP_NODISCARD ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };

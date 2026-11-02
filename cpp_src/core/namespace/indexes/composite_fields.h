@@ -12,17 +12,17 @@ namespace reindexer::ns_indexes {
  * state, or their own throwaway copy: registering a JSON-path is irreversible, a tag is never removed from the tags
  * matcher.
  * @param tm - tags matcher to register the new JSON-paths in.
- * @param tryGetScalarIndexByName - resolves a JSON-path already covered by a non-composite index into that field's
- * number, so the composite index refers to the field instead of the JSON-path.
+ * @param lookupNonComposite - resolves a component by non-composite index name into its field number.
+ * Components not resolved by name are treated as JSON-paths.
  * @return the fields set describing the composite index.
  */
-template <typename ScalarIndexLookup>
+template <typename NonCompositeIndexLookup>
 [[nodiscard]] FieldsSet CreateFieldsSetFromJsonPaths(const IndexDef& indexDef, TagsMatcher& tm,
-													 ScalarIndexLookup&& tryGetScalarIndexByName) {
+													 NonCompositeIndexLookup&& lookupNonComposite) {
 	FieldsSet fields;
 	for (const auto& jsonPath : indexDef.JsonPaths()) {
 		int idx = IndexValueType::SetByJsonPath;
-		if (!tryGetScalarIndexByName(jsonPath, idx)) {
+		if (!lookupNonComposite(jsonPath, idx)) {
 			TagsPath tagsPath = tm.path2tag(jsonPath, CanAddField_True);
 			if (tagsPath.empty()) {
 				throw Error(errLogic, "Unable to get or create json-path '{}' for composite index '{}'", jsonPath, indexDef.Name());

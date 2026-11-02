@@ -9,8 +9,8 @@ class Schema;
 
 struct [[nodiscard]] QueryResultsContext {
 	QueryResultsContext() = default;
-	QueryResultsContext(PayloadType type, TagsMatcher tagsMatcher, FieldsFilter fieldsFilter, std::shared_ptr<const Schema> schema,
-						lsn_t nsIncarnationTag)
+	QueryResultsContext(PayloadType type, TagsMatcher tagsMatcher, std::shared_ptr<const FieldsFilter> fieldsFilter,
+						std::shared_ptr<const Schema> schema, lsn_t nsIncarnationTag)
 		: type_(std::move(type)),
 		  tagsMatcher_(std::move(tagsMatcher)),
 		  fieldsFilter_(std::move(fieldsFilter)),
@@ -19,7 +19,7 @@ struct [[nodiscard]] QueryResultsContext {
 
 	PayloadType type_;
 	TagsMatcher tagsMatcher_;
-	FieldsFilter fieldsFilter_;
+	std::shared_ptr<const FieldsFilter> fieldsFilter_;
 	std::shared_ptr<const Schema> schema_;
 	lsn_t nsIncarnationTag_;
 };

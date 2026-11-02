@@ -56,7 +56,7 @@ protected:
 	static It applyForcedSortImpl(NamespaceImpl&, It begin, It end, const ItemComparator&, const VariantArray& forcedSortOrder,
 								  const std::string& fieldName, const ValueGetter&);
 	template <typename It>
-	void applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator&, const SelectCtx& ctx);
+	void applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator&);
 
 	template <bool aggregationsOnly, typename ResultType, typename SelectCtxT>
 	void addSelectResult(SelectCtxT& ctx, ResultHandler<ResultType, SelectCtxT>& resultHandler, RankT, IdType rowId, IdType properRowId,
@@ -67,8 +67,9 @@ protected:
 
 	h_vector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry>& aggEntrys, StrictMode strictMode) const;
 	void setLimitAndOffset(ItemRefVector& result, size_t offset, size_t limit);
-	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType, int rankedIndexNo,
-							   bool availableSelectBySortIndex) const;
+	// installSort is false when the expressions are stored for a later merge and this pass must not sort by them.
+	void prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType, int rankedIndexNo, bool availableSelectBySortIndex,
+							   bool installSort) const;
 	static void prepareSortIndex(const NamespaceImpl&, std::string& column, int& index, StrictMode, IsRanked);
 	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int& index, std::span<const joins::ItemsProcessor>,
 									   StrictMode);

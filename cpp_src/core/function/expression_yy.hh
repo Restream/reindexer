@@ -46,7 +46,7 @@
 #ifndef YY_YY_EXPRESSION_YY_HH_INCLUDED
 # define YY_YY_EXPRESSION_YY_HH_INCLUDED
 // "%code requires" blocks.
-#line 23 "expression.y"
+#line 22 "expression.y"
 
 	#include <memory>
 	#include <string>

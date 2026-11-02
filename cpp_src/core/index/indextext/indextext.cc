@@ -131,6 +131,7 @@ IndexText<StoreType>::IndexText(const IndexText<StoreType>& other, IndexCloneKin
 	  unindexedVdocs_(other.unindexedVdocs_),
 	  sumWordsCount_(other.sumWordsCount_),
 	  deletedDocsSinceOptimization_(other.deletedDocsSinceOptimization_),
+	  numDeletedDocs_(other.numDeletedDocs_),
 	  vdocSet_(other.vdocSet_.begin(), other.vdocSet_.end(), other.vdocSet_.bucket_count(), hash_vdoc(payloadType_, fields_, vdocs_),
 			   equal_vdoc(payloadType_, fields_, vdocs_)) {
 	cache_ft_.CopyInternalPerfStatsFrom(other.cache_ft_);
@@ -141,6 +142,9 @@ IndexText<StoreType>::IndexText(const IndexText<StoreType>& other, IndexCloneKin
 	for (const auto& vd : vdocs_) {
 		vdocsHeapSize_ += vd.heap_size();
 		stringsHeapSize_ += vd.strings_heap_size();
+	}
+	for (const auto& mergeInfo : vdocMergeInfo_) {
+		vdocMergeInfoHeapSize_ += mergeInfo.heap_size();
 	}
 }
 
@@ -266,8 +270,8 @@ void IndexText<StoreType>::Clean(const index::ICancelable& cancelable, bool enab
 	};
 	const CleanCancel cleanCancel(cancelable, cancelCleanCnt_);
 
-	const DeletedScanStat stat =
-		holder_->OptimizeDeleted([this](uint32_t vdocId, VDocVersion version) { return this->IsDeleted(vdocId, version); }, cleanCancel);
+	const DeletedScanStat stat = holder_->OptimizeDeleted(
+		[this](uint32_t vdocId, VDocVersion version) { return this->IsDeleted(vdocId, version); }, NumDeletedDocs(), cleanCancel);
 	if (stat.canceled) {
 		calc.Disable();
 		return;
@@ -283,31 +287,29 @@ IndexMemStat IndexText<StoreType>::GetMemStat(const RdxContext& ctx) const {
 	contexted_shared_lock lck(this->mtx_, ctx);
 	IndexMemStat ret;
 	ret.name = name_;
-	ret.indexingStructSize = this->holder_->GetMemStat();
-	ret.indexingStructSize += rowId2VdocId_.capacity() * sizeof(uint32_t);
-	ret.indexingStructSize += freeVdocIds_.capacity() * sizeof(uint32_t);
-	ret.indexingStructSize += unindexedVdocs_.capacity() * sizeof(VDocPosting);
+	auto holderStats = this->holder_->GetMemStat();
+	auto& stats = holderStats.text;
+	auto& mem = ret.indexingStructDetails.emplace(std::move(holderStats.memory));
+	mem.vdocIdMapSize = rowId2VdocId_.capacity() * sizeof(uint32_t);
+	mem.freeVdocIdsSize = freeVdocIds_.capacity() * sizeof(uint32_t);
+	mem.pendingVdocsSize = unindexedVdocs_.capacity() * sizeof(VDocPosting);
 	ret.idsetCache = this->cache_ft_.GetMemStat();
 	ret.isBuilt = this->isBuilt_;
 
-	size_t vdocMergeInfoHeap = 0;
-	for (const auto& mergeInfo : vdocMergeInfo_) {
-		vdocMergeInfoHeap += mergeInfo.heap_size();
-	}
-	ret.indexingStructSize += vdocsHeapSize_ + vdocs_.capacity() * sizeof(VDoc<StoreType>) +
-							  vdocMergeInfo_.capacity() * sizeof(VDocMergeInfo) + vdocMergeInfoHeap;
-	ret.indexingStructSize += sumWordsCount_.capacity() * sizeof(uint64_t);
-	ret.indexingStructSize += vdocSet_.size() * sizeof(uint32_t);
+	mem.vdocMergeInfoSize = vdocMergeInfo_.capacity() * sizeof(VDocMergeInfo) + vdocMergeInfoHeapSize_;
+	mem.vdocsSize = vdocsHeapSize_ + vdocs_.capacity() * sizeof(VDoc<StoreType>);
+	mem.auxiliarySize += sumWordsCount_.capacity() * sizeof(uint64_t);
+	mem.vdocSetSize = vdocSet_.size() * sizeof(uint32_t);
+	ret.indexingStructSize = mem.TotalSize();
 	ret.dataSize += stringsHeapSize_;
 	const size_t allocatedVdocs = vdocs_.empty() ? 0 : (vdocs_.size() - 1);	 // exclude sentinel slot 0
 	const size_t liveVdocs = vdocSet_.size();
 	const size_t removedVdocs = freeVdocIds_.size();
 	assertrx_dbg(allocatedVdocs >= liveVdocs + removedVdocs);
-	ret.textIndexStats = TextIndexStats{
-		.totalVdocs = liveVdocs,
-		.removedVdocs = removedVdocs,
-		.deadVdocs = allocatedVdocs - liveVdocs - removedVdocs,
-	};
+	stats.totalVdocs = liveVdocs;
+	stats.removedVdocs = removedVdocs;
+	stats.deadVdocs = allocatedVdocs - liveVdocs - removedVdocs;
+	ret.textIndexStats = std::move(stats);
 
 	return ret;
 }
@@ -402,12 +404,15 @@ Variant IndexText<StoreType>::Upsert(const Variant& key, IdType id, bool& clearC
 
 template <>
 void IndexText<key_string>::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
+	result.Clear();
+
 	if (rowId2VdocId_.size() <= static_cast<size_t>(id.ToNumber())) {
 		rowId2VdocId_.resize(static_cast<size_t>(id.ToNumber()) + 1, kEmptyVDocId);
 	}
 
 	const bool hasNonNulls = std::ranges::any_of(keys, [](const auto& key) noexcept { return !key.IsNullValue(); });
 	if (!hasNonNulls) [[unlikely]] {
+		result = keys;
 		return;
 	}
 
@@ -442,6 +447,8 @@ void IndexText<key_string>::Upsert(VariantArray& result, const VariantArray& key
 
 template <>
 void IndexText<PayloadValue>::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
+	result.Clear();
+
 	assertrx_dbg(keys.size() == 1 && !keys[0].Type().Is<KeyValueType::Null>());
 
 	if (rowId2VdocId_.size() <= static_cast<size_t>(id.ToNumber())) {
@@ -477,6 +484,21 @@ bool IndexText<PayloadValue>::RefreshCompositeKey(const Variant& key, IdType id)
 	cache_ft_.Clear();
 	return true;
 }
+
+#if REINDEX_WITH_STRHOLDER_CHECKS
+template <typename StoreType>
+void IndexText<StoreType>::CollectOwnedStringPtrs(OwnedStringPtrCollector& collector) const {
+	if constexpr (std::is_same_v<StoreType, key_string>) {
+		for (const auto& vd : vdocs_) {
+			for (const auto& st : vd.datas_) {
+				collector.Add(st.get());
+			}
+		}
+	} else {
+		(void)collector;
+	}
+}
+#endif	// REINDEX_WITH_STRHOLDER_CHECKS
 
 template <typename StoreType>
 void IndexText<StoreType>::Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder& strHolder, bool& clearCache) {
@@ -944,14 +966,17 @@ void IndexText<StoreType>::commitFulltextImpl() {
 		auto tm1 = system_clock_w::now();
 
 		std::vector<VDocWordCounts> vdocsWordsCountsByFields;
-		holder_->Process(vdocsTexts, vdocsToIndex, vdocs_.size(), Fields().size(), vdocsWordsCountsByFields, !*this->opts_.IsDense());
+		holder_->Process(vdocsTexts, vdocsToIndex, vdocs_.size(), NumDeletedDocs(), Fields().size(), vdocsWordsCountsByFields,
+						 !*this->opts_.IsDense());
 		for (size_t idx = 0; idx < vdocsToIndex.size(); ++idx) {
 			const uint32_t vdocId = vdocsToIndex[idx].vdocId;
 			assertrx_dbg(vdocId != kEmptyVDocId);
 			assertrx_dbg(vdocMergeInfo_[vdocId].version_ == vdocsToIndex[idx].version);
 			auto& wordCounts = vdocMergeInfo_[vdocId].wordCounts_;
 			subFromWordCountSum(wordCounts);
-			wordCounts = vdocsWordsCountsByFields[idx];
+			vdocMergeInfoHeapSize_ -= wordCounts.heap_size();
+			wordCounts = std::move(vdocsWordsCountsByFields[idx]);
+			vdocMergeInfoHeapSize_ += wordCounts.heap_size();
 			addToWordCountSum(wordCounts);
 		}
 		unindexedVdocs_.clear();

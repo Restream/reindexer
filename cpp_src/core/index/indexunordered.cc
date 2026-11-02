@@ -318,6 +318,24 @@ bool IndexUnordered<T>::RefreshCompositeKey(const Variant& key, IdType /*id*/) n
 	return false;
 }
 
+#if REINDEX_WITH_STRHOLDER_CHECKS
+template <typename IdSetT>
+bool ownedStringIdSetContains(const void* ids, IdType id) noexcept {
+	return static_cast<const IdSetT*>(ids)->Find(id);
+}
+
+template <typename T>
+void IndexUnordered<T>::CollectOwnedStringPtrs(Index::OwnedStringPtrCollector& collector) const {
+	if constexpr (is_str_map_v<T>) {
+		using IdSetT = typename T::mapped_type::IdSetType;
+		for (auto it = idx_map.begin(), end = idx_map.end(); it != end; ++it) {
+			collector.Add(it->first.get(), &it->second.Unsorted(), &ownedStringIdSetContains<IdSetT>);
+		}
+	}
+	Base::CollectOwnedStringPtrs(collector);
+}
+#endif	// REINDEX_WITH_STRHOLDER_CHECKS
+
 // WARNING: 'keys' is a key for LRUCache and in some cases (for ordered indexes, for example) can contain values,
 // which are not correspond to the initial values from queries conditions
 template <typename T>

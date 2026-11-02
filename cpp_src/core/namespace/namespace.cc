@@ -84,6 +84,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				hasCopy_.store(false, std::memory_order_release);
 				if (!ns_->isTemporary() && !nsCtx.IsInSnapshot()) {
 					// If commit happens in ns copy, then the copier have to handle replication
+					const auto replWard = ctx.rdxContext.BeforeSimpleState(Activity::WaitReplication);
 					auto err = ns_->observers_.SendUpdate(
 						updates::UpdateRecord{updates::URType::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
 											  ctx.EmitterServerId()},

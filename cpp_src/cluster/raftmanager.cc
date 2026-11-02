@@ -152,12 +152,18 @@ std::optional<RaftInfo::Role> RaftManager::RunElectionsRound() noexcept {
 					} else {
 						logInfo("{}: Failed to end elections with chosen role: leader", serverId_);
 					}
-				} else if (result == RaftInfo::Role::Follower) {
-					if (endElections(term, roundBeg, result)) {
-						logInfo("{}: end elections with role: {}({})", serverId_, RaftInfo::RoleToStr(result), GetLeaderId());
-						roundResult = result;
+				}
+				// Commit failed or this round lost because a higher term adopted another leader.
+				// Publish Follower and wait for that leader's committed ping. Starting a new term here
+				// drops the vote and lets this node win a disjoint majority, so two nodes stay leaders.
+				if (!roundResult && (result == RaftInfo::Role::Follower || GetLeaderId() != serverId_)) {
+					if (endElections(term, roundBeg, RaftInfo::Role::Follower)) {
+						logInfo("{}: end elections with role: {}({})", serverId_, RaftInfo::RoleToStr(RaftInfo::Role::Follower),
+								GetLeaderId());
+						roundResult = RaftInfo::Role::Follower;
 					} else {
-						logInfo("{}: Failed to end elections with chosen role: {}", serverId_, RaftInfo::RoleToStr(result));
+						logInfo("{}: Failed to end elections with chosen role: {}", serverId_,
+								RaftInfo::RoleToStr(RaftInfo::Role::Follower));
 					}
 				}
 			}

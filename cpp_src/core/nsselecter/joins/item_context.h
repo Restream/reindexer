@@ -6,6 +6,8 @@
 #include "estl/h_vector.h"
 #include "iterators.h"
 
+#include <memory>
+
 namespace reindexer {
 
 class FieldsFilter;
@@ -28,11 +30,12 @@ struct [[nodiscard]] JoinedItemContext {
 	JoinedItemContext(ItemIterator&& it, const joins::Results* res, const LocalQueryResults& qr);
 
 	struct [[nodiscard]] NamespaceContext {
-		NamespaceContext(PayloadType pt_, TagsMatcher tm_, FieldsFilter filter_, std::shared_ptr<const Schema> schema_)
+		NamespaceContext(PayloadType pt_, TagsMatcher tm_, std::shared_ptr<const FieldsFilter> filter_,
+						 std::shared_ptr<const Schema> schema_)
 			: pt{std::move(pt_)}, tm{std::move(tm_)}, filter{std::move(filter_)}, schema{std::move(schema_)} {}
 		PayloadType pt;
 		TagsMatcher tm;
-		FieldsFilter filter;
+		std::shared_ptr<const FieldsFilter> filter;
 		std::shared_ptr<const Schema> schema;
 	};
 

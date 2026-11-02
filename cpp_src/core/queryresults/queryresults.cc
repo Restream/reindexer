@@ -640,18 +640,18 @@ void QueryResults::Iterator::packJoinedItem(const QrMetaData<client::QueryResult
 	itemimpl.FromCJSON(itemParams.data);
 
 	if (qrJoined.haveRank) {
-		qrJoined.AddItemRef(itemParams.rank, itemParams.id, itemimpl.Value(), joinedNsId, true);
+		qrJoined.AddItemRef(itemParams.rank, itemParams.id, itemimpl.Value(), joinedNsId);
 	} else {
-		qrJoined.AddItemRef(itemParams.id, itemimpl.Value(), joinedNsId, true);
+		qrJoined.AddItemRef(itemParams.id, itemimpl.Value(), joinedNsId);
 	}
 
 	if (!storage) {
 		rqr.NsJoinRes()->data.joinedRawData.emplace_back(std::move(itemimpl));
 	} else {
 		if (qrJoined.haveRank) {
-			storage->emplace_back(itemParams.id, RankT{}, joinedNsId, std::move(itemimpl), true);
+			storage->emplace_back(itemParams.id, RankT{}, joinedNsId, std::move(itemimpl), false);
 		} else {
-			storage->emplace_back(itemParams.id, joinedNsId, std::move(itemimpl), true);
+			storage->emplace_back(itemParams.id, joinedNsId, std::move(itemimpl), false);
 		}
 	}
 }
@@ -1427,13 +1427,13 @@ Item QueryResults::Iterator::getItem(QrItT& it, std::unique_ptr<ItemImpl>&& item
 }
 
 template <typename QrItT>
-Item QueryResults::Iterator::getItem(QrItT& it, std::unique_ptr<ItemImpl>&& itemImpl, const FieldsFilter& fieldsFilter,
+Item QueryResults::Iterator::getItem(QrItT& it, std::unique_ptr<ItemImpl>&& itemImpl, std::shared_ptr<const FieldsFilter> fieldsFilter,
 									 bool convertViaJSON) {
 	auto err = fillItemImpl(it, *itemImpl, convertViaJSON);
 	if (!err.ok()) {
 		return Item(err);
 	}
-	return Item(itemImpl.release(), fieldsFilter);
+	return Item(itemImpl.release(), std::move(fieldsFilter));
 }
 
 template <typename QrItT>

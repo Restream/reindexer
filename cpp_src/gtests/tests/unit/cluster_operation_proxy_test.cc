@@ -988,7 +988,7 @@ static void CheckSQL(ClusterOperationApi::Cluster& cluster, int followerId, int 
 		auto it = qresSelect.begin();
 		auto itm = it.GetItem();
 		std::string itemString = itemData(pk, "up_name", "");
-		ASSERT_TRUE(itm.GetJSON() == itemString) << itm.GetJSON();
+		ASSERT_EQ(itm.GetJSON(), itemString);
 	}
 
 	// delete item

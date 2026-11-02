@@ -10,6 +10,7 @@
 #include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/config/ftconfig.h"
+#include "core/namespace/check_string_refs.h"
 #include "core/system_ns_names.h"
 #include "tools/errors.h"
 
@@ -1086,6 +1087,8 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::State& state) {
 	using namespace std::string_literals;
 	assert(!values_.empty());
+	// Query UPDATE rewrites -tuple; full string-ref audit over 100k items dominates this fixture under ASAN/stdlib_debug.
+	const auto disableStringRefsChecksGrd = reindexer::debug::DisableStringRefsChecks();
 	const int i = RndIndexOf(values_);
 	ser.Reset();
 	reindexer::JsonBuilder bld(ser);

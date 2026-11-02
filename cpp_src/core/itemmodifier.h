@@ -1,17 +1,60 @@
 #pragma once
 
 #include <optional>
+#include <utility>
+#include "core/id_type.h"
+#include "core/item_tree/intermediate_indexes_data.h"
+#include "core/item_tree/item_tree.h"
+#include "core/keyvalue/variant.h"
+#include "core/namespace/namespaceimpl.h"
 #include "core/payload/payloadiface.h"
 #include "function/expression_ast.h"
 #include "function/precomputed_values.h"
-#include "keyvalue/float_vectors_holder.h"
+#include "tools/serilize/wrserializer.h"
 #include "updates/updaterecord.h"
 
 namespace reindexer {
 
 class NsContext;
-class NamespaceImpl;
 class UpdateEntry;
+
+enum class [[nodiscard]] IndexUpdateState { Unchanged, OldValueDeleted, NewValueInserted };
+
+class [[nodiscard]] IndexRollBack {
+public:
+	IndexRollBack(int indexCount) : data_(indexCount), insertedKeys_(indexCount) {}
+	void Reset(const PayloadValue& pv);
+	void SetOldValueDeleted(size_t index, IsPk isPk) noexcept {
+		assertrx_dbg(index < data_.size());
+		assertrx_dbg(data_[index] == IndexUpdateState::Unchanged || data_[index] == IndexUpdateState::NewValueInserted);
+		data_[index] = IndexUpdateState::OldValueDeleted;
+		pkModified_ = pkModified_ || isPk;
+	}
+	void SetNewValueInserted(size_t index, IsPk isPk) noexcept {
+		assertrx_dbg(index < data_.size());
+		assertrx_dbg(data_[index] == IndexUpdateState::OldValueDeleted);
+		data_[index] = IndexUpdateState::NewValueInserted;
+		pkModified_ = pkModified_ || isPk;
+	}
+	void SetNewValueInserted(size_t index, IsPk isPk, VariantArray&& insertedKeys) noexcept {
+		assertrx_dbg(index < insertedKeys_.size());
+		insertedKeys_[index] = std::move(insertedKeys);
+		SetNewValueInserted(index, isPk);
+	}
+	PayloadValue& GetPayloadValueBackup() noexcept { return pvSave_; }
+	const std::vector<IndexUpdateState>& IndexStatus() const noexcept { return data_; }
+	const VariantArray& InsertedKeys(size_t index) const noexcept {
+		assertrx_dbg(index < insertedKeys_.size());
+		return insertedKeys_[index];
+	}
+	bool IsPkModified() const noexcept { return pkModified_; }
+
+private:
+	std::vector<IndexUpdateState> data_;
+	std::vector<VariantArray> insertedKeys_;
+	PayloadValue pvSave_;
+	bool pkModified_ = false;
+};
 
 class [[nodiscard]] ItemModifier {
 public:
@@ -24,11 +67,19 @@ public:
 
 	bool Modify(IdType itemId, const NsContext& ctx, UpdatesContainer& pendedRepl);
 	PayloadValue& GetPayloadValueBackup() { return rollBackIndexData_.GetPayloadValueBackup(); }
+	FloatVectorsIndexesValues TakeVectorsBeforePkChange() {
+		return rollBackIndexData_.IsPkModified() ? std::move(vectorsBeforePkChange_) : FloatVectorsIndexesValues{};
+	}
 
 private:
 	using CompositeFlags = h_vector<bool, 32>;
 	class [[nodiscard]] FieldData {
 	public:
+		struct [[nodiscard]] BoundExpression {
+			ExpressionAst ast;
+			std::vector<int> indexBindings;
+		};
+
 		FieldData(const UpdateEntry& entry, NamespaceImpl& ns, CompositeFlags& affectedComposites);
 		const UpdateEntry& Details() const noexcept { return entry_; }
 		const IndexedTagsPath& Tagspath() const noexcept { return tagsPath_; }
@@ -39,9 +90,8 @@ private:
 		int Index() const noexcept { return fieldIndex_; }
 		bool IsIndex() const noexcept { return isIndex_; }
 		bool IsUpdateArrayPart() const noexcept { return isUpdateArrayPart_; }
-		bool IsForAllItems() const noexcept { return isForAllItems_; }
 		std::string_view Name() const noexcept;
-		const ExpressionAst& Expression();
+		BoundExpression& Expression(const NamespaceImpl& ns);
 
 	private:
 		struct [[nodiscard]] PathData {
@@ -61,14 +111,13 @@ private:
 		void appendAffectedIndexes(const NamespaceImpl& ns, CompositeFlags& affectedComposites) const;
 
 		const UpdateEntry& entry_;
-		std::optional<ExpressionAst> expression_;
+		std::optional<BoundExpression> expression_;
 		IndexedTagsPath tagsPath_;
 		std::optional<IndexedTagsPath> tagsPathWithLastIndex_;
 		int fieldIndex_{IndexValueType::SetByJsonPath};
 		std::optional<TagIndex> arrayIndex_;
 		bool isIndex_{false};
 		bool isUpdateArrayPart_{false};
-		bool isForAllItems_{false};
 	};
 
 	struct [[nodiscard]] VectorIndex {
@@ -101,7 +150,6 @@ private:
 		}
 		bool TestSkipVectorIndex(int vectorIndex) const noexcept { return skipVectorIndexes_.test(vectorIndex); }
 		const h_vector<int, 4>& GetVectorIndexesToModify() const noexcept { return vectorIndexesToModify_; }
-		void RecalcVectorIndexesToModify(const Payload& pl, const ConstPayload& plOld);
 		void AddVectorIndexToModify(const h_vector<int, 2>& indexes) {
 			for (const auto ii : indexes) {
 				if (std::find(vectorIndexesToModify_.begin(), vectorIndexesToModify_.end(), ii) == vectorIndexesToModify_.end()) {
@@ -147,16 +195,35 @@ private:
 		NamespaceImpl& ns_;
 	};
 
-	void modifyField(IdType itemId, FieldData& field, Payload& pl, VariantArray& values);
-	void modifyCJSON(IdType itemId, FieldData& field, VariantArray& values, UpdatesContainer& pendedRepl, const NsContext&);
-	void modifyIndexValues(IdType itemId, const FieldData& field, VariantArray& values, Payload& pl);
-
 	void deleteItemFromComposite(IdType itemId, auto& indexesCacheCleaner);
 	void insertItemIntoComposite(IdType itemId, auto& indexesCacheCleaner);
 
-	void getEmbeddingData(const Payload& pl, const UpsertEmbedder& embedder, std::vector<VariantArray>& data) const;
-	std::vector<std::pair<int, std::vector<VariantArray>>> getEmbeddersSourceData(const Payload& pl) const;
-	void updateEmbedding(IdType itemId, const RdxContext& rdxContext, Payload& pl);
+	void updateEmbedding(IdType itemId, const RdxContext& rdxContext, TreeNode& root, ConstPayload& oldPayload,
+						 NamespaceImpl::IndexesCacheCleaner& indexesCacheCleaner, StringsHolder& strHolder);
+
+	bool isPayloadModify(Payload& pl);
+	void directPayloadModify(Payload& pl, IdType itemId, NamespaceImpl::IndexesCacheCleaner& indexesCacheCleaner, StringsHolder& strHolder);
+	void cjsonTreeModify(Payload& pl, IdType itemId, NamespaceImpl::IndexesCacheCleaner& indexesCacheCleaner, StringsHolder& strHolder,
+						 UpdatesContainer& replUpdates, const NsContext& ctx);
+	void processFieldModeSet(TreeNode& root, FieldData& field, ConstPayload& cpl, VariantArray& values, IdType itemId);
+	void processFieldModeSetJson(TreeNode& root, FieldData& field, ConstPayload& cpl, const VariantArray& values, IdType itemId);
+	void processFieldModeDrop(TreeNode& root, FieldData& field, ConstPayload& cpl, IdType itemId);
+	void materializeFloatVectorIndex(TreeNode& root, ConstPayload& cpl, IdType itemId, int index);
+	void materializeAffectedFloatVectorNodes(TreeNode& root, const FieldData& field, ConstPayload& cpl, IdType itemId);
+	void materializeChangedFloatVectorNodes(TreeNode& root, ConstPayload& cpl, IdType itemId);
+	void materializeChangedFloatVectorIndexes(ConstPayload& cpl, IdType itemId);
+
+	void processNodeSet(TreeNode& node, TreeNode& root, VariantArray& values, ConstPayload& cpl, IdType itemId);
+
+	void updateIndexes(TreeNode& root, ConstPayload& cpl, IdType itemId, NamespaceImpl::IndexesCacheCleaner& indexesCacheCleaner,
+					   StringsHolder& strHolder);
+	void updateIndex(IdType itemId, int index, const VariantArray& oldKeys, const VariantArray& newKeys, VariantArray& res,
+					 NamespaceImpl::IndexesCacheCleaner& indexesCacheCleaner, StringsHolder& strHolder);
+	void saveUpdatedFloatVector(int index, const VariantArray& values);
+	void saveVectorsBeforePkChange(IdType itemId);
+
+	void updatePayload(Payload& pl, TreeNode& root, IdType itemId, NamespaceImpl::IndexesCacheCleaner& indexesCacheCleaner,
+					   StringsHolder& strHolder, Variant cjsonV);
 
 	NamespaceImpl& ns_;
 	const std::vector<UpdateEntry>& updateEntries_;
@@ -164,30 +231,21 @@ private:
 
 	class RollBack_ModifiedPayload;
 
-	class [[nodiscard]] IndexRollBack {
-	public:
-		IndexRollBack(int indexCount) { data_.resize(indexCount); }
-		void Reset(const NamespaceImpl& ns, IdType itemId, const PayloadValue& pv);
-		void IndexChanged(size_t index, IsPk isPk) noexcept {
-			data_[index] = true;
-			pkModified_ = pkModified_ || isPk;
-		}
-		PayloadValue& GetPayloadValueBackup() noexcept { return pvSave_; }
-		const std::vector<bool>& IndexStatus() const noexcept { return data_; }
-		bool IsPkModified() const noexcept { return pkModified_; }
-
-	private:
-		std::vector<bool> data_;
-		PayloadValue pvSave_;
-		FloatVectorsHolderVector floatVectorsHolder_;
-		bool pkModified_ = false;
-	};
-
 	IndexRollBack rollBackIndexData_;
 	CompositeFlags affectedComposites_;
+	bool affectedCompositePK_ = false;
+	int nonCompositePKIndex_ = -1;
+	FloatVectorsIndexesValues vectorsBeforePkChange_;
 
 	EmbedderHelper embedderHelper_;
+
+	IntermediateIndexesData indexData_;
 	const functions::PrecomputedValues& precomputedValues_;
+
+	NodeFactory creator_;
+	std::array<IndexedArrayData, kMaxIndexes> arrayBuf_{};	//{} - init to false
+	ItemsTreeContext ci_;
+	WrSerializer wrser_;
 };
 
 }  // namespace reindexer

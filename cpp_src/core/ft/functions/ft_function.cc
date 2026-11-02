@@ -40,7 +40,7 @@ bool FtFunction::Empty() const noexcept {
 					   [](const auto& fn) noexcept { return std::holds_alternative<FuncNone>(fn.second.func); });
 }
 
-FtFunction::Ptr FtFunctionsHolder::AddNamespace(ConstQueryImpl q, const NamespaceImpl& nm, uint32_t nsid, bool force) {
+FtFunction::Ptr FtFunctionsHolder::AddNamespace(ConstQueryImpl q, NsFtFuncInterface nm, uint32_t nsid, bool force) {
 	if (q.SelectFunctions().empty() && !force) {
 		return nullptr;
 	} else if (!q.SelectFunctions().empty()) {
@@ -50,7 +50,7 @@ FtFunction::Ptr FtFunctionsHolder::AddNamespace(ConstQueryImpl q, const Namespac
 	if (queries_.size() <= nsid) {
 		queries_.resize(nsid + 1);
 	}
-	queries_[nsid] = make_intrusive<FtFunction>(q, NsFtFuncInterface(nm));
+	queries_[nsid] = make_intrusive<FtFunction>(q, nm);
 	return queries_[nsid];
 }
 

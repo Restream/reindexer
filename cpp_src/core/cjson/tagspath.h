@@ -14,7 +14,7 @@ namespace reindexer {
 class TagsMatcher;
 
 using TagsPath = h_vector<TagName, 16>;
-void Dump(auto& os, const TagsPath&, TagsMatcher* = nullptr);
+void Dump(auto& os, const TagsPath&, const TagsMatcher* = nullptr);
 
 enum [[nodiscard]] IndexedTagsPathCompareType { IgnoreAllOmittedIndexes, NotIgnoreLeftTrailingIndexes, NotIgnoreTrailingIndexes };
 
@@ -72,6 +72,16 @@ public:
 		}
 	}
 	bool Compare(const TagsPath& other) const noexcept { return reindexer::Compare(*this, other); }
+	TagsPath GetTagsPath() const {
+		TagsPath p;
+		p.reserve(this->size());
+		for (const auto& v : *this) {
+			if (v.IsTagName()) {
+				p.emplace_back(v.GetTagName());
+			}
+		}
+		return p;
+	}
 	bool IsNestedOrEqualTo(const TagsPath& other) const noexcept {
 		const size_t ourSize = this->size();
 		if (ourSize > other.size()) {

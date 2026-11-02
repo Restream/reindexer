@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/function/expression_ast.h"
-#include "core/type_consts.h"
 
 #include <string>
 #include <string_view>
@@ -32,6 +31,10 @@ private:
 	std::string source_;
 	bool usesNow_{false};
 };
+
+inline expressions::ArithmeticExpression operator""_expr(const char* str, size_t len) {
+	return expressions::ArithmeticExpression(std::string_view(str, len));
+}
 
 }  // namespace expressions
 }  // namespace reindexer

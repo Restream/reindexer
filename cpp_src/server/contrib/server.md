@@ -119,6 +119,7 @@
   * [NamespaceMemStats](#namespacememstats)
   * [IndexMemStat](#indexmemstat)
   * [TextIndexStats](#textindexstats)
+  * [TextIndexMemoryStats](#textindexmemorystats)
   * [EmbedderStatus](#embedderstatus)
   * [EmbedderLastError](#embedderlasterror)
   * [EmbeddersCacheMemStat](#embedderscachememstat)
@@ -161,7 +162,7 @@
 
 <!-- tocstop -->
 
-> Version 5.17.0
+> Version 5.18.0
 
 ## Overview
 
@@ -293,6 +294,7 @@ Reindexer is compact, fast and it does not have heavy dependencies.
 | NamespaceMemStats | [NamespaceMemStats](#namespacememstats) |  |
 | IndexMemStat | [IndexMemStat](#indexmemstat) |  |
 | TextIndexStats | [TextIndexStats](#textindexstats) |  |
+| TextIndexMemoryStats | [TextIndexMemoryStats](#textindexmemorystats) | Memory estimates in bytes. All fields except postings_capacity_size and packed_data_size add up to indexing_struct_size. Source strings and query cache are reported separately. Allocator overhead and old posting lists temporarily retained by concurrent readers are excluded |
 | EmbedderStatus | [EmbedderStatus](#embedderstatus) |  |
 | EmbedderLastError | [EmbedderLastError](#embedderlasterror) |  |
 | EmbeddersCacheMemStat | [EmbeddersCacheMemStat](#embedderscachememstat) |  |
@@ -6642,7 +6644,7 @@ This operation will return detailed information about current activity of all co
     // Query start time
     query_start: string
     // Current operation state
-    state: enum[in_progress, wait_lock, sending, indexes_lookup, select_loop, proxied_via_cluster_proxy, proxied_via_sharding_proxy]
+    state: enum[in_progress, wait_lock, sending, indexes_lookup, select_loop, proxied_via_cluster_proxy, proxied_via_sharding_proxy, items_deletion, items_modification, wait_replication]
     lock_description?: string
   }[]
 }
@@ -7095,8 +7097,41 @@ This operation will return detailed information about database memory consumptio
       sort_orders_size?: integer
       // Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
       idset_cache?: CacheMemStats
-      // Total memory consumption (in bytes) of the main indexing structures (fulltext, ANN, etc.)
+      // Accounted memory (in bytes) of the main indexing structures (fulltext, ANN, etc.)
       indexing_struct_size?: integer
+      // Memory estimates in bytes. All fields except postings_capacity_size and packed_data_size add up to indexing_struct_size. Source strings and query cache are reported separately. Allocator overhead and old posting lists temporarily retained by concurrent readers are excluded
+      indexing_struct_details: {
+        // UTF-16 word storage, including metadata and reserved capacity
+        words_size?: integer
+        // Word hash table and its UTF-8 strings
+        words_map_size?: integer
+        // Reserved word ID array
+        word_ids_size?: integer
+        // Suffix trees and their container
+        suffixes_size?: integer
+        // Typo tables, key group buffers and their container, including reserved capacity
+        typos_size?: integer
+        // Current posting lists, their buffers, containers and publication locks. Excludes shared_ptr control blocks
+        postings_size?: integer
+        // Subset of postings_size: allocated posting buffers. In CPU mode includes heap allocations for positions
+        postings_capacity_size?: integer
+        // Subset of postings_capacity_size: used packed bytes, including stale postings. Present only in Memory mode. The difference is unused buffer capacity
+        packed_data_size?: integer
+        // Virtual document array and its row/data-reference buffers. Excludes source strings
+        vdocs_size?: integer
+        // Virtual document versions and per-field word counts
+        vdoc_merge_info_size?: integer
+        // Reserved row ID to virtual document ID mapping
+        vdoc_id_map_size?: integer
+        // Reserved free virtual document ID array
+        free_vdoc_ids_size?: integer
+        // Reserved pending indexing queue, including unused capacity after fulltext index builds
+        pending_vdocs_size?: integer
+        // Estimated deduplication set key bytes; excludes hash table overhead
+        vdoc_set_size?: integer
+        // Accounted term boosts, synonym dictionaries and variant helpers, stemmer language strings and field word-count sums
+        auxiliary_size?: integer
+      }
       // Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)
       vectors_keeper_size?: integer
       // Total memory consumption (in bytes) of documents's data, held by index
@@ -7118,6 +7153,12 @@ This operation will return detailed information about database memory consumptio
         removed_vdocs?: integer
         // Number of permanently retired virtual-document slots that cannot be reused
         dead_vdocs?: integer
+        // Dictionary words, including words with only stale postings or empty lists. Pending documents are not included until the index is built
+        words_count?: integer
+        // Distinct typo variants, including variants without skipped characters. Counts persist until dictionary rebuild
+        typos_groups_count?: integer
+        // Sum of key counts across all typo groups, including variants without skipped characters. Multiple references to the same word are counted separately. Counts persist until dictionary rebuild
+        typos_keys_count?: integer
       }
       // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
       is_quantized?: boolean
@@ -8419,7 +8460,7 @@ type: enum[namespaces, replication, async_replication, profiling, embedders] //d
     // Query start time
     query_start: string
     // Current operation state
-    state: enum[in_progress, wait_lock, sending, indexes_lookup, select_loop, proxied_via_cluster_proxy, proxied_via_sharding_proxy]
+    state: enum[in_progress, wait_lock, sending, indexes_lookup, select_loop, proxied_via_cluster_proxy, proxied_via_sharding_proxy, items_deletion, items_modification, wait_replication]
     lock_description?: string
   }[]
 }
@@ -10360,8 +10401,41 @@ string[]
       sort_orders_size?: integer
       // Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
       idset_cache?: CacheMemStats
-      // Total memory consumption (in bytes) of the main indexing structures (fulltext, ANN, etc.)
+      // Accounted memory (in bytes) of the main indexing structures (fulltext, ANN, etc.)
       indexing_struct_size?: integer
+      // Memory estimates in bytes. All fields except postings_capacity_size and packed_data_size add up to indexing_struct_size. Source strings and query cache are reported separately. Allocator overhead and old posting lists temporarily retained by concurrent readers are excluded
+      indexing_struct_details: {
+        // UTF-16 word storage, including metadata and reserved capacity
+        words_size?: integer
+        // Word hash table and its UTF-8 strings
+        words_map_size?: integer
+        // Reserved word ID array
+        word_ids_size?: integer
+        // Suffix trees and their container
+        suffixes_size?: integer
+        // Typo tables, key group buffers and their container, including reserved capacity
+        typos_size?: integer
+        // Current posting lists, their buffers, containers and publication locks. Excludes shared_ptr control blocks
+        postings_size?: integer
+        // Subset of postings_size: allocated posting buffers. In CPU mode includes heap allocations for positions
+        postings_capacity_size?: integer
+        // Subset of postings_capacity_size: used packed bytes, including stale postings. Present only in Memory mode. The difference is unused buffer capacity
+        packed_data_size?: integer
+        // Virtual document array and its row/data-reference buffers. Excludes source strings
+        vdocs_size?: integer
+        // Virtual document versions and per-field word counts
+        vdoc_merge_info_size?: integer
+        // Reserved row ID to virtual document ID mapping
+        vdoc_id_map_size?: integer
+        // Reserved free virtual document ID array
+        free_vdoc_ids_size?: integer
+        // Reserved pending indexing queue, including unused capacity after fulltext index builds
+        pending_vdocs_size?: integer
+        // Estimated deduplication set key bytes; excludes hash table overhead
+        vdoc_set_size?: integer
+        // Accounted term boosts, synonym dictionaries and variant helpers, stemmer language strings and field word-count sums
+        auxiliary_size?: integer
+      }
       // Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)
       vectors_keeper_size?: integer
       // Total memory consumption (in bytes) of documents's data, held by index
@@ -10383,6 +10457,12 @@ string[]
         removed_vdocs?: integer
         // Number of permanently retired virtual-document slots that cannot be reused
         dead_vdocs?: integer
+        // Dictionary words, including words with only stale postings or empty lists. Pending documents are not included until the index is built
+        words_count?: integer
+        // Distinct typo variants, including variants without skipped characters. Counts persist until dictionary rebuild
+        typos_groups_count?: integer
+        // Sum of key counts across all typo groups, including variants without skipped characters. Multiple references to the same word are counted separately. Counts persist until dictionary rebuild
+        typos_keys_count?: integer
       }
       // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
       is_quantized?: boolean
@@ -10536,8 +10616,41 @@ string[]
     sort_orders_size?: integer
     // Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
     idset_cache?: CacheMemStats
-    // Total memory consumption (in bytes) of the main indexing structures (fulltext, ANN, etc.)
+    // Accounted memory (in bytes) of the main indexing structures (fulltext, ANN, etc.)
     indexing_struct_size?: integer
+    // Memory estimates in bytes. All fields except postings_capacity_size and packed_data_size add up to indexing_struct_size. Source strings and query cache are reported separately. Allocator overhead and old posting lists temporarily retained by concurrent readers are excluded
+    indexing_struct_details: {
+      // UTF-16 word storage, including metadata and reserved capacity
+      words_size?: integer
+      // Word hash table and its UTF-8 strings
+      words_map_size?: integer
+      // Reserved word ID array
+      word_ids_size?: integer
+      // Suffix trees and their container
+      suffixes_size?: integer
+      // Typo tables, key group buffers and their container, including reserved capacity
+      typos_size?: integer
+      // Current posting lists, their buffers, containers and publication locks. Excludes shared_ptr control blocks
+      postings_size?: integer
+      // Subset of postings_size: allocated posting buffers. In CPU mode includes heap allocations for positions
+      postings_capacity_size?: integer
+      // Subset of postings_capacity_size: used packed bytes, including stale postings. Present only in Memory mode. The difference is unused buffer capacity
+      packed_data_size?: integer
+      // Virtual document array and its row/data-reference buffers. Excludes source strings
+      vdocs_size?: integer
+      // Virtual document versions and per-field word counts
+      vdoc_merge_info_size?: integer
+      // Reserved row ID to virtual document ID mapping
+      vdoc_id_map_size?: integer
+      // Reserved free virtual document ID array
+      free_vdoc_ids_size?: integer
+      // Reserved pending indexing queue, including unused capacity after fulltext index builds
+      pending_vdocs_size?: integer
+      // Estimated deduplication set key bytes; excludes hash table overhead
+      vdoc_set_size?: integer
+      // Accounted term boosts, synonym dictionaries and variant helpers, stemmer language strings and field word-count sums
+      auxiliary_size?: integer
+    }
     // Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)
     vectors_keeper_size?: integer
     // Total memory consumption (in bytes) of documents's data, held by index
@@ -10559,6 +10672,12 @@ string[]
       removed_vdocs?: integer
       // Number of permanently retired virtual-document slots that cannot be reused
       dead_vdocs?: integer
+      // Dictionary words, including words with only stale postings or empty lists. Pending documents are not included until the index is built
+      words_count?: integer
+      // Distinct typo variants, including variants without skipped characters. Counts persist until dictionary rebuild
+      typos_groups_count?: integer
+      // Sum of key counts across all typo groups, including variants without skipped characters. Multiple references to the same word are counted separately. Counts persist until dictionary rebuild
+      typos_keys_count?: integer
     }
     // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
     is_quantized?: boolean
@@ -10628,8 +10747,41 @@ string[]
   sort_orders_size?: integer
   // Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
   idset_cache?: CacheMemStats
-  // Total memory consumption (in bytes) of the main indexing structures (fulltext, ANN, etc.)
+  // Accounted memory (in bytes) of the main indexing structures (fulltext, ANN, etc.)
   indexing_struct_size?: integer
+  // Memory estimates in bytes. All fields except postings_capacity_size and packed_data_size add up to indexing_struct_size. Source strings and query cache are reported separately. Allocator overhead and old posting lists temporarily retained by concurrent readers are excluded
+  indexing_struct_details: {
+    // UTF-16 word storage, including metadata and reserved capacity
+    words_size?: integer
+    // Word hash table and its UTF-8 strings
+    words_map_size?: integer
+    // Reserved word ID array
+    word_ids_size?: integer
+    // Suffix trees and their container
+    suffixes_size?: integer
+    // Typo tables, key group buffers and their container, including reserved capacity
+    typos_size?: integer
+    // Current posting lists, their buffers, containers and publication locks. Excludes shared_ptr control blocks
+    postings_size?: integer
+    // Subset of postings_size: allocated posting buffers. In CPU mode includes heap allocations for positions
+    postings_capacity_size?: integer
+    // Subset of postings_capacity_size: used packed bytes, including stale postings. Present only in Memory mode. The difference is unused buffer capacity
+    packed_data_size?: integer
+    // Virtual document array and its row/data-reference buffers. Excludes source strings
+    vdocs_size?: integer
+    // Virtual document versions and per-field word counts
+    vdoc_merge_info_size?: integer
+    // Reserved row ID to virtual document ID mapping
+    vdoc_id_map_size?: integer
+    // Reserved free virtual document ID array
+    free_vdoc_ids_size?: integer
+    // Reserved pending indexing queue, including unused capacity after fulltext index builds
+    pending_vdocs_size?: integer
+    // Estimated deduplication set key bytes; excludes hash table overhead
+    vdoc_set_size?: integer
+    // Accounted term boosts, synonym dictionaries and variant helpers, stemmer language strings and field word-count sums
+    auxiliary_size?: integer
+  }
   // Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)
   vectors_keeper_size?: integer
   // Total memory consumption (in bytes) of documents's data, held by index
@@ -10651,6 +10803,12 @@ string[]
     removed_vdocs?: integer
     // Number of permanently retired virtual-document slots that cannot be reused
     dead_vdocs?: integer
+    // Dictionary words, including words with only stale postings or empty lists. Pending documents are not included until the index is built
+    words_count?: integer
+    // Distinct typo variants, including variants without skipped characters. Counts persist until dictionary rebuild
+    typos_groups_count?: integer
+    // Sum of key counts across all typo groups, including variants without skipped characters. Multiple references to the same word are counted separately. Counts persist until dictionary rebuild
+    typos_keys_count?: integer
   }
   // Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
   is_quantized?: boolean
@@ -10678,6 +10836,50 @@ string[]
   removed_vdocs?: integer
   // Number of permanently retired virtual-document slots that cannot be reused
   dead_vdocs?: integer
+  // Dictionary words, including words with only stale postings or empty lists. Pending documents are not included until the index is built
+  words_count?: integer
+  // Distinct typo variants, including variants without skipped characters. Counts persist until dictionary rebuild
+  typos_groups_count?: integer
+  // Sum of key counts across all typo groups, including variants without skipped characters. Multiple references to the same word are counted separately. Counts persist until dictionary rebuild
+  typos_keys_count?: integer
+}
+```
+
+### TextIndexMemoryStats
+
+```ts
+// Memory estimates in bytes. All fields except postings_capacity_size and packed_data_size add up to indexing_struct_size. Source strings and query cache are reported separately. Allocator overhead and old posting lists temporarily retained by concurrent readers are excluded
+{
+  // UTF-16 word storage, including metadata and reserved capacity
+  words_size?: integer
+  // Word hash table and its UTF-8 strings
+  words_map_size?: integer
+  // Reserved word ID array
+  word_ids_size?: integer
+  // Suffix trees and their container
+  suffixes_size?: integer
+  // Typo tables, key group buffers and their container, including reserved capacity
+  typos_size?: integer
+  // Current posting lists, their buffers, containers and publication locks. Excludes shared_ptr control blocks
+  postings_size?: integer
+  // Subset of postings_size: allocated posting buffers. In CPU mode includes heap allocations for positions
+  postings_capacity_size?: integer
+  // Subset of postings_capacity_size: used packed bytes, including stale postings. Present only in Memory mode. The difference is unused buffer capacity
+  packed_data_size?: integer
+  // Virtual document array and its row/data-reference buffers. Excludes source strings
+  vdocs_size?: integer
+  // Virtual document versions and per-field word counts
+  vdoc_merge_info_size?: integer
+  // Reserved row ID to virtual document ID mapping
+  vdoc_id_map_size?: integer
+  // Reserved free virtual document ID array
+  free_vdoc_ids_size?: integer
+  // Reserved pending indexing queue, including unused capacity after fulltext index builds
+  pending_vdocs_size?: integer
+  // Estimated deduplication set key bytes; excludes hash table overhead
+  vdoc_set_size?: integer
+  // Accounted term boosts, synonym dictionaries and variant helpers, stemmer language strings and field word-count sums
+  auxiliary_size?: integer
 }
 ```
 

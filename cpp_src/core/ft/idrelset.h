@@ -4,19 +4,21 @@
 #include <cstdint>
 #include <limits>
 #include <tuple>
+#include <vector>
 #include "estl/h_vector.h"
 #include "sort/pdqsort.hpp"
 #include "tools/assertrx.h"
 
 namespace reindexer {
 
+using VDocId = uint32_t;
 using VDocVersion = uint32_t;
 inline constexpr VDocVersion kEmptyVDocVersion = 0;
 inline constexpr VDocVersion kMaxVDocVersion = std::numeric_limits<VDocVersion>::max();
-inline constexpr uint32_t kEmptyVDocId = 0;	 // sentinel vdocs_[0]; stale postings also resolve to this
+inline constexpr VDocId kEmptyVDocId = 0;  // sentinel vdocs_[0]; stale postings also resolve to this
 
 struct [[nodiscard]] VDocPosting {
-	uint32_t vdocId = kEmptyVDocId;
+	VDocId vdocId = kEmptyVDocId;
 	VDocVersion version = kEmptyVDocVersion;
 };
 
@@ -28,10 +30,10 @@ public:
 	PosType(uint64_t pos, uint64_t field, uint64_t arrayIdx) noexcept
 		: fpos_(pos | (arrayIdx << posBits) | (field << (posBits + arrayIdxBits))) {}
 	uint32_t field() const noexcept { return fpos_ >> (posBits + arrayIdxBits); }
-	uint32_t fullField() const noexcept { return fpos_ >> posBits; }
+	uint64_t fullField() const noexcept { return fpos_ >> posBits; }
 	uint32_t arrayIdx() const noexcept { return (fpos_ >> posBits) & ((1 << arrayIdxBits) - 1); }
 	uint32_t pos() const noexcept { return fpos_ & ((1 << posBits) - 1); }
-	uint32_t fullPos() const noexcept { return fpos_; }
+	uint64_t fullPos() const noexcept { return fpos_; }
 	bool operator<(PosType other) const noexcept { return fpos_ < other.fpos_; }
 	bool operator==(PosType other) const noexcept { return fpos_ == other.fpos_; }
 
@@ -71,15 +73,15 @@ struct [[nodiscard]] PosTypeDebug : public PosType {
 // CPU / build-time posting: always materialized positions (no lazy packed state).
 class [[nodiscard]] IdRelType {
 public:
-	explicit IdRelType(uint32_t vdocId = kEmptyVDocId, VDocVersion version = kEmptyVDocVersion) noexcept
+	explicit IdRelType(VDocId vdocId = kEmptyVDocId, VDocVersion version = kEmptyVDocVersion) noexcept
 		: vdocId_(vdocId), version_(version) {}
 
-	uint32_t VdocId() const noexcept { return vdocId_; }
+	VDocId VdocId() const noexcept { return vdocId_; }
 	VDocVersion VdocVersion() const noexcept { return version_; }
 
 	// Encode into PackedIdRelVec blob (from materialized Pos()).
 	// storeArrayIdx: when false, arrayIdx is implied 0 and not stored.
-	size_t pack(uint8_t* buf, uint32_t previousVdocId, unsigned fieldBits, bool storeArrayIdx) const;
+	size_t pack(uint8_t* buf, VDocId previousVdocId, unsigned fieldBits, bool storeArrayIdx) const;
 
 	size_t maxpackedsize() const noexcept {
 		// control + id + version + optional arrayIdx + count + payloadLen(+4) + hits
@@ -140,14 +142,14 @@ public:
 
 private:
 	PositionsVector pos_;
-	uint32_t vdocId_ = kEmptyVDocId;
+	VDocId vdocId_ = kEmptyVDocId;
 	VDocVersion version_ = kEmptyVDocVersion;
 };
 
 // Memory-optimized posting view used by PackedIdRelVec::iterator (lazy position unpack).
 class [[nodiscard]] IdRelTypePacked {
 public:
-	explicit IdRelTypePacked(uint32_t vdocId = kEmptyVDocId, VDocVersion version = kEmptyVDocVersion) noexcept
+	explicit IdRelTypePacked(VDocId vdocId = kEmptyVDocId, VDocVersion version = kEmptyVDocVersion) noexcept
 		: vdocId_(vdocId), version_(version) {}
 	IdRelTypePacked(const IdRelTypePacked& other) = default;
 	IdRelTypePacked(IdRelTypePacked&& other) noexcept
@@ -194,11 +196,11 @@ public:
 		return *this;
 	}
 
-	uint32_t VdocId() const noexcept { return vdocId_; }
+	VDocId VdocId() const noexcept { return vdocId_; }
 	VDocVersion VdocVersion() const noexcept { return version_; }
 
 	// Decodes vdocId/version and measures full record size without materializing positions.
-	size_t unpackIdentity(const uint8_t* buf, uint32_t len, uint32_t previousVdocId, unsigned fieldBits, bool storeArrayIdx);
+	size_t unpackIdentity(const uint8_t* buf, uint32_t len, VDocId previousVdocId, unsigned fieldBits, bool storeArrayIdx);
 
 	void reserve(int s) {
 		ensurePositionsUnpacked();
@@ -301,7 +303,7 @@ private:
 	void unpackPositionsFromPacked();
 
 	PositionsVector pos_;
-	uint32_t vdocId_ = kEmptyVDocId;
+	VDocId vdocId_ = kEmptyVDocId;
 	VDocVersion version_ = kEmptyVDocVersion;
 
 	const uint8_t* packedPos_ = nullptr;
@@ -314,7 +316,7 @@ private:
 
 class [[nodiscard]] IdRelSet : public std::vector<IdRelType> {
 public:
-	void Add(uint32_t vdocId, VDocVersion version, unsigned pos, unsigned field, unsigned arrayIdx) {
+	void Add(VDocId vdocId, VDocVersion version, unsigned pos, unsigned field, unsigned arrayIdx) {
 		auto& last = (empty() || back().VdocId() != vdocId || back().VdocVersion() != version) ? emplace_back(vdocId, version) : back();
 		last.Add(pos, field, arrayIdx);
 	}
@@ -336,6 +338,8 @@ public:
 
 	using store_container = std::vector<uint8_t>;
 
+	class AppendBuffer;
+
 	static unsigned NumBitsForFields(size_t numFields) noexcept {
 		if (numFields <= 1) {
 			return 0;
@@ -355,7 +359,7 @@ public:
 
 	struct [[nodiscard]] state {
 		size_type size = 0;
-		uint32_t lastVdocId = kEmptyVDocId;
+		VDocId lastVdocId = kEmptyVDocId;
 		VDocVersion lastVersion = kEmptyVDocVersion;
 	};
 
@@ -413,14 +417,19 @@ public:
 
 	template <typename InputIterator>
 	void insert_back(InputIterator from, InputIterator to) {
-		data_.reserve((to - from) / 2);
-		int i = 0;
-		size_type p = data_.size();
+		const size_t count = size_t(to - from);
+		assertrx_throw(count <= std::numeric_limits<size_type>::max() - st_.size);
+		[[maybe_unused]] const size_t maxSize = std::min<size_t>(data_.max_size(), std::numeric_limits<size_type>::max());
+		data_.reserve(count / 2);
+		size_t i = 0;
+		size_t p = data_.size();
 		for (auto it = from; it != to; ++it, ++i) {
 			if (!(i % 128)) {
-				size_type sz = 0, j = 0;
+				size_t sz = 0, j = 0;
 				for (auto iit = it; j < 128 && iit != to; iit++, j++) {
-					sz += iit->maxpackedsize();
+					const size_t packedBound = iit->maxpackedsize();
+					assertrx_throw(packedBound <= maxSize - p - sz);
+					sz += packedBound;
 				}
 				data_.resize(p + sz);
 			}
@@ -437,13 +446,13 @@ public:
 			assertrx(p <= data_.size());
 		}
 		data_.resize(p);
-		st_.size += (to - from);
+		st_.size += size_type(count);
 	}
 
 	void shrink_to_fit() { data_.shrink_to_fit(); }
-	size_type heap_size() noexcept { return data_.capacity(); }
+	size_t heap_size() const noexcept { return data_.capacity(); }
 	void clear() noexcept {
-		data_.clear();
+		data_.resize(0);
 		st_ = state();
 		arrayFoundPos_ = std::numeric_limits<size_t>::max();
 	}
@@ -472,6 +481,43 @@ private:
 	state st_;
 	unsigned fieldBits_ = 0;
 	size_t arrayFoundPos_ = std::numeric_limits<size_t>::max();
+};
+
+// Reusable packed continuation of one word. The destination must stay unchanged until Commit().
+// Reset() switches to another word after committing; oversized storage is released by Commit().
+class [[nodiscard]] PackedIdRelVec::AppendBuffer {
+public:
+	static constexpr size_t kMaxRetainedCapacity = 64 * 1024;
+
+	AppendBuffer() noexcept = default;
+	explicit AppendBuffer(PackedIdRelVec& dst) noexcept : dst_(&dst) { initTailState(); }
+	AppendBuffer(const AppendBuffer&) = delete;
+	AppendBuffer& operator=(const AppendBuffer&) = delete;
+
+	template <typename InputIterator>
+	void Append(InputIterator from, InputIterator to) {
+		assertrx_throw(dst_);
+		tail_.insert_back(from, to);
+	}
+	void Reset(PackedIdRelVec& dst) {
+		assertrx_throw(tail_.empty());
+		dst_ = &dst;
+		tail_.clear();
+		initTailState();
+	}
+	void Commit();
+	size_t HeapSize() const noexcept { return tail_.heap_size(); }
+
+private:
+	void initTailState() noexcept {
+		tail_.fieldBits_ = dst_->fieldBits_;
+		tail_.st_.lastVdocId = dst_->st_.lastVdocId;
+		tail_.st_.lastVersion = dst_->st_.lastVersion;
+		tail_.arrayFoundPos_ = dst_->arrayFoundPos_ == std::numeric_limits<size_t>::max() ? std::numeric_limits<size_t>::max() : 0;
+	}
+
+	PackedIdRelVec* dst_ = nullptr;
+	PackedIdRelVec tail_;
 };
 
 class [[nodiscard]] IdRelVec : public std::vector<IdRelType> {

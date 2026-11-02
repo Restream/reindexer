@@ -99,9 +99,8 @@ private:
 		}
 		return path;
 	}
-	template <int N>
+	template <size_t N>
 	std::string getPathIndex(const std::array<std::string_view, N>& data, const std::array<int, N>& index) {
-		assert(data.size() == index.size());
 		std::string path;
 		bool isFirst = true;
 

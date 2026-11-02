@@ -234,6 +234,111 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 	}
 }
 
+TEST_F(NsApi, SerialFallsBackToPre511FieldName) {
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, reindexer::IndexDef{idIdxName, "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, reindexer::IndexDef{"serial_idx", reindexer::JsonPaths{"legacy_serial"}, "hash", "int64", IndexOpts()});
+
+	const std::string legacyKey = std::string(kSerialPrefix) + "legacy_serial";
+	const std::string canonicalKey = std::string(kSerialPrefix) + "serial_idx";
+	auto err = rt.reindexer->PutMeta(default_namespace, legacyKey, "7");
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	Item item = NewItem(default_namespace);
+	item[idIdxName] = idNum;
+	item.SetPrecepts({"legacy_serial=serial()"});
+	rt.Upsert(default_namespace, item);
+	ASSERT_EQ(item["serial_idx"].Get<int64_t>(), 8);
+
+	std::string data;
+	err = rt.reindexer->GetMeta(default_namespace, canonicalKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(data, "8");
+	err = rt.reindexer->GetMeta(default_namespace, legacyKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(data, "7");
+
+	// Canonical is 8, legacy is raised to 20: the next value follows the larger counter.
+	err = rt.reindexer->PutMeta(default_namespace, legacyKey, "20");
+	ASSERT_TRUE(err.ok()) << err.what();
+	item = NewItem(default_namespace);
+	item[idIdxName] = idNum + 1;
+	item.SetPrecepts({"legacy_serial=serial()"});
+	rt.Upsert(default_namespace, item);
+	ASSERT_EQ(item["serial_idx"].Get<int64_t>(), 21);
+	err = rt.reindexer->GetMeta(default_namespace, canonicalKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(data, "21");
+	err = rt.reindexer->GetMeta(default_namespace, legacyKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(data, "20");
+
+	// Legacy is 20, canonical is raised to 40: the next value follows the larger counter.
+	err = rt.reindexer->PutMeta(default_namespace, canonicalKey, "40");
+	ASSERT_TRUE(err.ok()) << err.what();
+	item = NewItem(default_namespace);
+	item[idIdxName] = idNum + 2;
+	item.SetPrecepts({"legacy_serial=serial()"});
+	rt.Upsert(default_namespace, item);
+	ASSERT_EQ(item["serial_idx"].Get<int64_t>(), 41);
+	err = rt.reindexer->GetMeta(default_namespace, canonicalKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(data, "41");
+	err = rt.reindexer->GetMeta(default_namespace, legacyKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(data, "20");
+
+	// Canonical meta is removed: the counter is recreated from the legacy value.
+	err = rt.reindexer->DeleteMeta(default_namespace, canonicalKey);
+	ASSERT_TRUE(err.ok()) << err.what();
+	item = NewItem(default_namespace);
+	item[idIdxName] = idNum + 3;
+	item.SetPrecepts({"legacy_serial=serial()"});
+	rt.Upsert(default_namespace, item);
+	ASSERT_EQ(item["serial_idx"].Get<int64_t>(), 21);
+	err = rt.reindexer->GetMeta(default_namespace, canonicalKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(data, "21");
+	err = rt.reindexer->GetMeta(default_namespace, legacyKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(data, "20");
+
+	// Legacy meta is removed: the counter continues from the canonical value.
+	err = rt.reindexer->DeleteMeta(default_namespace, legacyKey);
+	ASSERT_TRUE(err.ok()) << err.what();
+	item = NewItem(default_namespace);
+	item[idIdxName] = idNum + 4;
+	item.SetPrecepts({"legacy_serial=serial()"});
+	rt.Upsert(default_namespace, item);
+	ASSERT_EQ(item["serial_idx"].Get<int64_t>(), 22);
+	err = rt.reindexer->GetMeta(default_namespace, canonicalKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(data, "22");
+	err = rt.reindexer->GetMeta(default_namespace, legacyKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_TRUE(data.empty());
+
+	// No serial meta left: the counter starts again from 1.
+	std::vector<std::string> metaKeys;
+	err = rt.reindexer->EnumMeta(default_namespace, metaKeys);
+	ASSERT_TRUE(err.ok()) << err.what();
+	for (const auto& key : metaKeys) {
+		err = rt.reindexer->DeleteMeta(default_namespace, key);
+		ASSERT_TRUE(err.ok()) << key << ": " << err.what();
+	}
+	item = NewItem(default_namespace);
+	item[idIdxName] = idNum + 5;
+	item.SetPrecepts({"legacy_serial=serial()"});
+	rt.Upsert(default_namespace, item);
+	ASSERT_EQ(item["serial_idx"].Get<int64_t>(), 1);
+	err = rt.reindexer->GetMeta(default_namespace, canonicalKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(data, "1");
+	err = rt.reindexer->GetMeta(default_namespace, legacyKey, data);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_TRUE(data.empty());
+}
+
 TEST_F(NsApi, ReturnOfItemChange) {
 	rt.OpenNamespace(default_namespace);
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName, "hash", "int", IndexOpts().PK(), 0},
@@ -337,6 +442,63 @@ static void ExpectIndexDefsEqual(const reindexer::IndexDef& expected, const rein
 	actual.GetJSON(actualSer);
 	EXPECT_EQ(expectedSer.Slice(), actualSer.Slice());
 }
+
+TEST_F(NsApi, AddIndexNameCaseConflicts) try {
+	rt.OpenNamespace(default_namespace);
+	const reindexer::IndexDef original{"Id", {"id"}, "hash", "int", IndexOpts().PK()};
+	rt.AddIndex(default_namespace, original);
+	rt.UpsertJSON(default_namespace, R"({"id":1})");
+
+	for (const auto* name : {"ID", "id"}) {
+		SCOPED_TRACE(name);
+		const reindexer::IndexDef requested{name, {"id"}, "hash", "int", IndexOpts().PK()};
+		const auto addErr = rt.reindexer->AddIndex(default_namespace, requested);
+		EXPECT_EQ(addErr.code(), errConflict) << addErr.what();
+		EXPECT_EQ(addErr.whatStr(), fmt::format("Index '{}.{}' already exists with different settings", default_namespace, name));
+
+		const auto nsDefs = rt.EnumNamespaces(reindexer::EnumNamespacesOpts());
+		const auto stored = findIndexDef(nsDefs, default_namespace, "Id");
+		if (stored.has_value()) {
+			ExpectIndexDefsEqual(original, stored.value());
+		} else {
+			FAIL() << "Index 'Id' is missing";
+		}
+		EXPECT_FALSE(findIndexDef(nsDefs, default_namespace, name).has_value());
+		EXPECT_EQ(rt.Select(Query(default_namespace).Where(name, CondEq, 1)).Count(), 1);
+	}
+
+	rt.AddIndex(default_namespace, original);
+}
+CATCH_AND_ASSERT
+
+TEST_F(NsApi, UpdateIndexCaseInsensitiveLookup) try {
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, {"Id", {"id"}, "hash", "int", IndexOpts().PK()});
+	rt.UpsertJSON(default_namespace, R"({"id":1})");
+
+	int value = 1;
+	for (const auto& updated : {reindexer::IndexDef{"ID", {"id"}, "hash", "int", IndexOpts().PK()},
+								reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts().PK()},
+								reindexer::IndexDef{"Id", {"id"}, "hash", "int", IndexOpts().PK()},
+								reindexer::IndexDef{"Id", {"id"}, "tree", "int", IndexOpts().PK()}}) {
+		SCOPED_TRACE(updated.Name());
+		rt.UpdateIndex(default_namespace, updated);
+		const auto stored = findIndexDef(rt.EnumNamespaces(reindexer::EnumNamespacesOpts()), default_namespace, updated.Name());
+		if (stored.has_value()) {
+			ExpectIndexDefsEqual(updated, stored.value());
+		} else {
+			FAIL() << "Index '" << updated.Name() << "' is missing";
+		}
+		for (const auto* name : {"Id", "ID", "id"}) {
+			SCOPED_TRACE(name);
+			EXPECT_EQ(rt.Select(Query(default_namespace).Where(name, CondEq, value)).Count(), 1);
+			EXPECT_EQ(rt.Update(Query(default_namespace).Where(name, CondEq, value).Set(name, value + 1)), 1);
+			++value;
+			EXPECT_EQ(rt.Select(Query(default_namespace).Where("id", CondEq, value)).Count(), 1);
+		}
+	}
+}
+CATCH_AND_ASSERT
 
 // Index update is performed as 'drop + add', so the index must be restored if the 'add' phase has failed
 TEST_F(NsApi, UpdateIndexRollbackOnInvalidUuidValues) try {
@@ -576,7 +738,7 @@ TEST_F(NsApi, TestUpdateIndexedField) {
 		Item item = it.GetItem(false);
 		Variant val = item[stringField];
 		ASSERT_TRUE(val.Type().Is<reindexer::KeyValueType::String>());
-		ASSERT_TRUE(val.As<std::string>() == "bingo!") << val.As<std::string>();
+		ASSERT_EQ(val.As<std::string>(), "bingo!");
 		checkIfItemJSONValid(it);
 	}
 }
@@ -1119,7 +1281,7 @@ TEST_F(NsApi, AppendToArrayWithSql) {
 
 	// 3. Extend array_field with expression substantially
 	Query updateQuery =
-		Query::FromSQL("update test_namespace set array_field = array_field || objects.more[1].array[4] || [22,22,22] || [11]");
+		Query::FromSQL("update test_namespace set array_field = array_field || objects[*].more[1].array[4] || [22,22,22] || [11]");
 	const auto qrUpdate = rt.UpdateQR(updateQuery);
 
 	constexpr int kElements = 3;
@@ -1223,7 +1385,8 @@ TEST_F(NsApi, ExtendArrayWithExpressions) {
 	// 3. Extend array_field with expression via Query builder
 	Query updateQuery =
 		Query(default_namespace)
-			.Set("array_field", Variant("[88,88,88] || array_field || [99, 99, 99] || indexed_array_field || objects.more[1].array[4]"),
+			.Set("array_field",
+				 Variant(std::string("[88,88,88] || array_field || [99, 99, 99] || indexed_array_field || objects[*].more[1].array[4]")),
 				 HasExpression_True);
 	const auto qrUpdate = rt.UpdateQR(updateQuery);
 
@@ -2298,64 +2461,46 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 							description);
 		}
 		{
-			const auto description = "Attempt to set array-value(1 element) by explicit index";
+			const auto description = "Set array-value(1 element) by explicit index";
 			Query updateQuery =
 				Query(kBaseQuery).Set("objects[0].array[1].field[0]", VariantArray{Variant{199}}.MarkArray(), HasExpression_False);
-			QueryResults qr;
-			err = rt.reindexer->Update(updateQuery, qr);
-			ASSERT_EQ(err.code(), errParams) << err.what();
-
-			qr.Clear();
-			qr = rt.Select(kBaseQuery);
-			// Make sure, that item was not changed
-			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[150]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
+			auto qr = rt.UpdateQR(updateQuery);
+			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[[199]]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
 							description);
 		}
 		{
-			const auto description = "Attempt to set array-value(multiple elements) by explicit index";
+			const auto description = "Set array-value(multiple elements) by explicit index";
 			VariantArray v{Variant{199}, Variant{200}, Variant{300}};
 			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field[0]", v, HasExpression_False);
-			QueryResults qr;
-			err = rt.reindexer->Update(updateQuery, qr);
-			ASSERT_EQ(err.code(), errParams) << err.what();
-
-			qr = rt.Select(kBaseQuery);
-			// Make sure, that item was not changed
-			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[150]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
+			auto qr = rt.UpdateQR(updateQuery);
+			ValidateResults(qr,
+							R"("objects":[{"array":[{"field":2345},{"field":[[199,200,300]]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
 							description);
 		}
 		{
-			const auto description = "Attempt to set array-value(1 element) by *-index";
-			VariantArray v{Variant{199}, Variant{200}, Variant{300}};
-			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field[*]", v, HasExpression_False);
-			QueryResults qr;
-			err = rt.reindexer->Update(updateQuery, qr);
-			ASSERT_EQ(err.code(), errParams) << err.what();
-
-			qr = rt.Select(kBaseQuery);
-			// Make sure, that item was not changed
-			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[150]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
+			const auto description = "Set array-value(1 element) by *-index";
+			Query updateQuery =
+				Query(kBaseQuery).Set("objects[0].array[1].field[*]", VariantArray{Variant{199}}.MarkArray(), HasExpression_False);
+			auto qr = rt.UpdateQR(updateQuery);
+			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[[199]]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
 							description);
 		}
 		{
-			const auto description = "Attempt to set array-value(multiple elements) by *-index";
+			const auto description = "Set array-value(multiple elements) by *-index";
 			VariantArray v{Variant{199}, Variant{200}, Variant{300}};
 			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[1].field[*]", v, HasExpression_False);
-			QueryResults qr;
-			err = rt.reindexer->Update(updateQuery, qr);
-			ASSERT_EQ(err.code(), errParams) << err.what();
-
-			qr = rt.Select(kBaseQuery);
-			// Make sure, that item was not changed
-			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[150]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
+			auto qr = rt.UpdateQR(updateQuery);
+			ValidateResults(qr,
+							R"("objects":[{"array":[{"field":2345},{"field":[[199,200,300]]},{"field":[4,3,2,8387,0]},{"field":837}]}])",
 							description);
 		}
 		{
 			const auto description = "Update array field, nested into objects array with *-index";
 			Query updateQuery = Query(kBaseQuery).Set("objects[0].array[2].field[*]", {199}, HasExpression_False);
 			auto qr = rt.UpdateQR(updateQuery);
-			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[150]},{"field":[199,199,199,199,199]},{"field":837}]}])",
-							description);
+			ValidateResults(
+				qr, R"("objects":[{"array":[{"field":2345},{"field":[[199,200,300]]},{"field":[199,199,199,199,199]},{"field":837}]}])",
+				description);
 		}
 		{
 			const auto description = "Attempt to update scalar value by *-index";
@@ -2367,8 +2512,9 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 
 			qr = rt.Select(kBaseQuery);
 			// Make sure, that item was not changed
-			ValidateResults(qr, R"("objects":[{"array":[{"field":2345},{"field":[150]},{"field":[199,199,199,199,199]},{"field":837}]}])",
-							description);
+			ValidateResults(
+				qr, R"("objects":[{"array":[{"field":2345},{"field":[[199,200,300]]},{"field":[199,199,199,199,199]},{"field":837}]}])",
+				description);
 		}
 		{
 			const auto description = "Update array field, nested into objects array without explicit index. Reduce array size to 0";
@@ -3038,6 +3184,89 @@ TEST_F(NsApi, TestUpdateObjectFieldWithScalar) {
 	}
 }
 
+TEST_F(NsApi, UpdateRejectsInvalidUtf8ForCollateUtf8) {
+	const std::string invalidUtf8("bad\xFF", 4);
+
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, reindexer::IndexDef(idIdxName, "hash", "int", IndexOpts().PK()));
+	rt.AddIndex(default_namespace, reindexer::IndexDef("title", {"meta.title"}, "hash", "string", IndexOpts().SetCollateMode(CollateUTF8)));
+	rt.AddIndex(default_namespace, reindexer::IndexDef("tags", "hash", "string", IndexOpts().Array().SetCollateMode(CollateUTF8)));
+
+	Item item = NewItem(default_namespace);
+	item[idIdxName] = 1;
+	item["title"] = "ok";
+	item["tags"] = VariantArray{Variant{"ok"}}.MarkArray();
+	item["raw_tags"] = VariantArray{Variant{invalidUtf8}}.MarkArray();
+	Upsert(default_namespace, item);
+
+	const auto expectRejected = [&](const Query& query) {
+		QueryResults qr;
+		const auto err = rt.reindexer->Update(query, qr);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_THAT(err.what(), ::testing::HasSubstr("Invalid UTF8")) << err.what();
+	};
+
+	expectRejected(Query(default_namespace).Set("title", invalidUtf8));
+	expectRejected(Query(default_namespace).Set("tags", Variant{std::string{"raw_tags||['z']"}}, HasExpression_True));
+
+	expectRejected(Query(default_namespace).SetObject("meta", "{\"title\":\"bad\xFF\"}"));
+
+	const auto selected = rt.Select(Query(default_namespace));
+	ASSERT_EQ(selected.Count(), 1);
+	Item stored = selected.begin().GetItem(false);
+	EXPECT_EQ(stored["title"].As<std::string>(), "ok");
+	const VariantArray tags = stored["tags"];
+	ASSERT_EQ(tags.size(), 1);
+	EXPECT_EQ(tags[0].As<std::string>(), "ok");
+}
+
+TEST_F(NsApi, UpdateRollsBackPreviousSetAfterInvalidUtf8) {
+	const std::string invalidUtf8("bad\xFF", 4);
+
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, reindexer::IndexDef(idIdxName, "hash", "int", IndexOpts().PK()));
+	rt.AddIndex(default_namespace, reindexer::IndexDef("title", {"meta.title"}, "hash", "string", IndexOpts().SetCollateMode(CollateUTF8)));
+
+	Item item = NewItem(default_namespace);
+	item[idIdxName] = 1;
+	item["title"] = "old";
+	Upsert(default_namespace, item);
+
+	QueryResults qr;
+	const auto err =
+		rt.reindexer->Update(Query(default_namespace).Where(idIdxName, CondEq, 1).Set("title", "middle").Set("title", invalidUtf8), qr);
+	ASSERT_EQ(err.code(), errParams) << err.what();
+	ASSERT_THAT(err.what(), ::testing::HasSubstr("Invalid UTF8"));
+
+	const auto oldResult = rt.Select(Query(default_namespace).Where("title", CondEq, "old"));
+	ASSERT_EQ(oldResult.Count(), 1);
+	EXPECT_EQ(oldResult.begin().GetItem(false)["title"].As<std::string>(), "old");
+
+	const auto middleResult = rt.Select(Query(default_namespace).Where("title", CondEq, "middle"));
+	EXPECT_EQ(middleResult.Count(), 0);
+}
+
+TEST_F(NsApi, FloatVectorDropRollsBackOnDuplicatePk) {
+	// DROP of an object that contains a float vector, together with SET of a duplicate PK.
+	// vec is updated before id, so rollback must restore the original vector instead of calling Data() on a stripped view.
+	constexpr std::string_view kNs = "ns_fv_drop_rollback";
+	rt.OpenNamespace(kNs);
+	rt.AddIndex(kNs, {"vec", reindexer::JsonPaths{"meta.vec"}, "vec_bf", "float_vector",
+					  IndexOpts{}.SetFloatVector(IndexVectorBruteforce, reindexer::FloatVectorIndexOpts{}.SetDimension(4))});
+	rt.AddIndex(kNs, {"id", "hash", "int", IndexOpts().PK()});
+
+	rt.UpsertJSON(kNs, R"({"id":1,"meta":{"vec":[1,2,3,4]}})");
+	rt.UpsertJSON(kNs, R"({"id":2,"meta":{"vec":[5,6,7,8]}})");
+
+	QueryResults qr;
+	const auto err = rt.UpdateErr(Query(kNs).Drop("meta").Set("id", 2).Where("id", CondEq, 1), qr);
+	ASSERT_EQ(err.code(), errLogic) << err.what();
+
+	auto res = rt.Select(Query(kNs).SelectAllFields().Where("id", CondEq, 1));
+	ASSERT_EQ(res.Count(), 1);
+	ASSERT_EQ(std::string{res.begin().GetItem().GetJSON()}, R"({"id":1,"meta":{"vec":[1.0,2.0,3.0,4.0]}})");
+}
+
 TEST_F(NsApi, TestUpdateEmptyIndexedField) {
 	DefineDefaultNamespace();
 	AddUnindexedData();
@@ -3372,7 +3601,7 @@ TEST_F(NsApi, TestUpdateCompositeIndexExpressionRejected) {
 			auto err = rt.reindexer->Update(
 				Query{default_namespace}.Where(idIdxName, CondEq, 0).Set(intField, Variant{expression}, HasExpression_True), qr);
 			ASSERT_EQ(err.code(), errParams) << expression << ": " << err.what();
-			EXPECT_THAT(err.what(), ::testing::HasSubstr("Only integral type non-array fields are supported")) << expression;
+			EXPECT_THAT(err.what(), ::testing::HasSubstr("Composite indexes are not supported in UPDATE expressions")) << expression;
 
 			auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
 			auto item = selected.begin().GetItem(false);
@@ -3385,12 +3614,12 @@ TEST_F(NsApi, TestUpdateCompositeIndexExpressionRejected) {
 		auto err = rt.reindexer->Update(
 			Query{default_namespace}.Where(idIdxName, CondEq, 0).Set("field", Variant{std::string{expression}}, HasExpression_True), qr);
 		ASSERT_EQ(err.code(), errParams) << expression << ": " << err.what();
-		EXPECT_THAT(err.what(), ::testing::HasSubstr("Only integral type non-array fields are supported")) << expression;
+		EXPECT_THAT(err.what(), ::testing::HasSubstr("Composite indexes are not supported in UPDATE expressions")) << expression;
 
 		qr = QueryResults();
 		err = rt.reindexer->ExecSQL(fmt::format("UPDATE test_namespace SET field = {} WHERE id = 0", expression), qr);
 		ASSERT_EQ(err.code(), errParams) << "SQL " << expression << ": " << err.what();
-		EXPECT_THAT(err.what(), ::testing::HasSubstr("Only integral type non-array fields are supported")) << "SQL " << expression;
+		EXPECT_THAT(err.what(), ::testing::HasSubstr("Composite indexes are not supported in UPDATE expressions")) << "SQL " << expression;
 
 		auto selected = rt.Select(Query{default_namespace}.Where(idIdxName, CondEq, 0));
 		auto item = selected.begin().GetItem(false);
@@ -4010,18 +4239,18 @@ TEST_F(NsApi, MultiDimensionalArrayQueryErrors) {
 		EXPECT_EQ(err.code(), errParams) << err.what();
 		EXPECT_EQ(err.what(), kTupleErrorText);
 
-		// Set tuple to the field
+		// Set array of tuples to the field
 		qr.Clear();
 		err = rx.Update(
 			Query(default_namespace).Set(field, {Variant{VariantArray::Create({1, 2, 3})}, Variant{VariantArray::Create({5, 2})}}), qr);
-		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_EQ(err.what(), kTupleErrorText);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 10);
 
 		// Set array of tuple and int to the field
 		qr.Clear();
 		err = rx.Update(Query(default_namespace).Set(field, {Variant{1}, Variant{VariantArray::Create({5, 2})}}), qr);
-		EXPECT_EQ(err.code(), errParams) << err.what();
-		EXPECT_EQ(err.what(), kTupleErrorText);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 10);
 
 		// Set composite to the field
 		qr.Clear();

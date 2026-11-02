@@ -131,9 +131,9 @@ ItemImpl::ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatc
 }
 
 ItemImpl::ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema,
-				   const FieldsFilter& fieldsFilter)
+				   std::shared_ptr<const FieldsFilter> fieldsFilter)
 	: ItemImpl{std::move(type), std::move(v), tagsMatcher, std::move(schema)} {
-	fieldsFilter_ = &fieldsFilter;
+	fieldsFilter_ = std::move(fieldsFilter);
 }
 
 void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray& keys, FieldModifyMode mode) {
@@ -168,12 +168,7 @@ void ItemImpl::ModifyField(const IndexedTagsPath& tagsPath, const VariantArray& 
 			case FieldModeDrop:
 				cjsonModifier.RemoveField(cjson, tagsPath, ser_, objectScalarIndexes_);
 				break;
-			case FieldModeArrayPushBack:
-			case FieldModeArrayPushFront:
-				throw Error(errLogic, "Update mode is not supported: {}", int(mode));
 		}
-	} catch (const Error& e) {
-		throw Error(e.code(), "Error modifying field value: '{}'", e.what());
 	} catch (std::exception& e) {
 		throw Error(errLogic, "Error modifying field value: '{}'", e.what());
 	}
@@ -231,7 +226,7 @@ Error ItemImpl::GetMsgPack(WrSerializer& wrser) {
 	int startTag = 0;
 	ConstPayload pl = GetConstPayload();
 
-	MsgPackEncoder msgpackEncoder(&tagsMatcher_, fieldsFilter_);
+	MsgPackEncoder msgpackEncoder(&tagsMatcher_, fieldsFilter_.get());
 	const TagsLengths& tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
@@ -251,7 +246,7 @@ std::string_view ItemImpl::GetMsgPack() {
 Error ItemImpl::GetProtobuf(WrSerializer& wrser) {
 	ConstPayload pl = GetConstPayload();
 	ProtobufBuilder protobufBuilder(wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
-	ProtobufEncoder protobufEncoder(&tagsMatcher_, fieldsFilter_);
+	ProtobufEncoder protobufEncoder(&tagsMatcher_, fieldsFilter_.get());
 	protobufEncoder.Encode(pl, protobufBuilder);
 	return {};
 }
@@ -276,6 +271,7 @@ void ItemImpl::Clear() {
 
 	unsafe_ = false;
 	ns_.reset();
+	fieldsFilter_.reset();
 	realValue_.Free();
 	objectScalarIndexes_.reset();
 }
@@ -320,9 +316,9 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder* recoder) 
 		decoder.Decode(CJsonDecoder::RestrictingFilter(pkFields_));
 	} else {
 		if (recoder) {
-			decoder.Decode(CJsonDecoder::DefaultFilter(fieldsFilter_), CJsonDecoder::CustomRecoder(*recoder));
+			decoder.Decode(CJsonDecoder::DefaultFilter(fieldsFilter_.get()), CJsonDecoder::CustomRecoder(*recoder));
 		} else {
-			decoder.Decode(CJsonDecoder::DefaultFilter(fieldsFilter_));
+			decoder.Decode(CJsonDecoder::DefaultFilter(fieldsFilter_.get()));
 		}
 	}
 	if (!holder.empty()) {
@@ -399,7 +395,7 @@ void ItemImpl::FromCJSON(ItemImpl& other, Recoder* recoder) {
 std::string_view ItemImpl::GetJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
 
-	JsonEncoder encoder(&tagsMatcher_, fieldsFilter_);
+	JsonEncoder encoder(&tagsMatcher_, fieldsFilter_.get());
 	JsonBuilder builder(ser_, ObjType::TypePlain);
 
 	ser_.Reset();
@@ -429,7 +425,7 @@ std::string_view ItemImpl::GetCJSON(WrSerializer& ser, WithTagsMatcher withTagsM
 	ConstPayload pl(payloadType_, payloadValue_);
 
 	CJsonBuilder builder(ser, ObjType::TypePlain);
-	CJsonEncoder encoder(&tagsMatcher_, fieldsFilter_);
+	CJsonEncoder encoder(&tagsMatcher_, fieldsFilter_.get());
 
 	if (withTagsMatcher) {
 		ser.PutCTag(kCTagEnd);
@@ -479,8 +475,11 @@ void ItemImpl::BuildTupleIfEmpty() {
 	}
 }
 
-void ItemImpl::CopyIndexedVectorsValuesFrom(FloatVectorsGetter&& floatVectorsGettter) {
-	auto data = floatVectorsGettter(payloadType_, payloadValue_, tagsMatcher_);
+void ItemImpl::CopyIndexedVectorsValuesFrom(const FloatVectorsGetter& floatVectorsGettter) {
+	CopyIndexedVectorsValuesFrom(floatVectorsGettter(payloadType_, payloadValue_, tagsMatcher_));
+}
+
+void ItemImpl::CopyIndexedVectorsValuesFrom(FloatVectorsIndexesValues data) {
 	if (data.empty()) {
 		return;
 	}

@@ -256,7 +256,7 @@ void Query::addConditionSubQueryImpl(OpType op, Query& subQuery, CondType cond, 
 		subQuery.checkSubQueryWithData();
 		if (!subQuery.selectFilter_.Fields().empty() && !subQuery.hasLimit() && !subQuery.hasOffset()) {
 			// Converts main query condition to subquery condition
-			subQuery.sortingEntries_.clear();
+			subQuery.clearSorting();
 			subQuery.addCondition<QueryEntry>(OpAnd, std::move(subQuery.selectFilter_.Fields()[0]), cond, std::move(values));
 			subQuery.selectFilter_.Clear();
 			return addConditionSubQueryImpl(op, subQuery, CondAny, VariantArray{});

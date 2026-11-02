@@ -529,6 +529,52 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 	upsertsTh.join();
 }
 
+TEST_F(RPCClientTestApi, RequestAfterRefusedConnect) {
+	// Request, issued after server's startup, must not receive an error of the connect attempt, which was started before that startup
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+	using reindexer::coroutine::wait_group;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+
+	loop.spawn(exceptionWrapper([this, &loop] {
+		const std::string kNsName = "ns1";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		CoroReindexer rx;
+		auto err = rx.Connect(dsn, loop, reindexer::client::ConnectOpts().CreateDBIfMissing());
+		ASSERT_TRUE(err.ok()) << err.what();
+		CreateNamespace(rx, kNsName);
+		FillData(rx, kNsName, 0, 1);
+
+		err = StopServer();
+		ASSERT_TRUE(err.ok()) << err.what();
+		auto item = CreateItem(rx, kNsName, 1);
+		err = rx.Upsert(kNsName, item);
+		ASSERT_FALSE(err.ok());
+		loop.sleep(std::chrono::milliseconds(100));
+
+		wait_group wg;
+		// Both coroutines are resumed in the same loop iteration: the first one's connect is still in progress,
+		// when the server starts up and the second request is queued
+		loop.spawn(wg, exceptionWrapper([this, &rx, &kNsName] {
+					   auto item = CreateItem(rx, kNsName, 2);
+					   std::ignore = rx.Upsert(kNsName, item);
+				   }));
+		loop.spawn(wg, exceptionWrapper([this, &rx, &kNsName] {
+					   StartServer();
+					   auto item = CreateItem(rx, kNsName, 3);
+					   const auto err = rx.Upsert(kNsName, item);
+					   EXPECT_TRUE(err.ok()) << err.what();
+				   }));
+		wg.wait();
+
+		rx.Stop();
+	}));
+
+	loop.run();
+}
+
 TEST_F(RPCClientTestApi, TemporaryNamespaceAutoremove) {
 	// Temporary namespace must be automatically removed after disconnect
 	using namespace reindexer::client;
@@ -1396,7 +1442,7 @@ TEST_F(RPCClientTestApi, QuerySetObjectUpdate) {
 		{
 			err = rx.Update(Query(kNsName).Where("id", CondGe, "0").SetObject("nested", Variant(R"({{"field": 1240}})")), qr);
 			ASSERT_FALSE(err.ok());
-			EXPECT_STREQ(err.what(), "Error modifying field value: 'JSONDecoder: Error parsing json: unquoted key, pos 15'");
+			EXPECT_STREQ(err.what(), "Error parsing json: unquoted key, pos 15");
 		}
 
 		{

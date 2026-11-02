@@ -66,12 +66,12 @@ bool Selector<IdCont>::exceedsKbLayoutHeuristicThresholds(std::u16string_view pa
 		}
 
 		const auto wordOccurencesSp = holder_.GetWordOccurences(suffixInfo.wordId);
-		if (hasDocsExcluded && allVidsExcluded(docsExcluded, *wordOccurencesSp)) {
+		if (hasDocsExcluded && allVidsExcluded(docsExcluded, *wordOccurencesSp.ids)) {
 			continue;
 		}
 
 		++words;
-		docs += wordOccurencesSp->size();
+		docs += wordOccurencesSp.ids->size();
 		if (words >= wordsLimit || docs > docsLimit) {
 			return true;
 		}
@@ -402,7 +402,7 @@ void Selector<IdCont>::processExactTermVariant(TermVariant& variant, ft::TermRes
 	if (wordOrdinal != IDataHolder::kIncorrectWordOrdinal) {
 		const WordIdType wordId = holder_.GetWordIdByOrdinal(wordOrdinal);
 		const auto wordOccurencesSp = holder_.GetWordOccurencesByOrdinal(wordOrdinal);
-		if (hasDocsExcluded && allVidsExcluded(docsExcluded, *wordOccurencesSp)) {
+		if (hasDocsExcluded && allVidsExcluded(docsExcluded, *wordOccurencesSp.ids)) {
 			++excludedCnt;
 		} else {
 			const float boost = std::max(getTermBoost(wordUtf8), variant.boost);
@@ -417,8 +417,8 @@ void Selector<IdCont>::processExactTermVariant(TermVariant& variant, ft::TermRes
 				res.AddSubterm(wordOccurencesSp, std::move(wordUtf8), wordId, proc, variant.termLenBoost);
 				wordsFound[wordId] = res.NumSubterms() - 1;
 				++matched;
-				totalVids += wordOccurencesSp->size();
-				vids += wordOccurencesSp->size();
+				totalVids += wordOccurencesSp.ids->size();
+				vids += wordOccurencesSp.ids->size();
 			}
 		}
 	}
@@ -488,7 +488,7 @@ void Selector<IdCont>::processSuffixTermVariant(TermVariant& variant, ft::TermRe
 			}
 
 			const auto wordOccurencesSp = holder_.GetWordOccurences(wordId);
-			if (hasDocsExcluded && allVidsExcluded(docsExcluded, *wordOccurencesSp)) {
+			if (hasDocsExcluded && allVidsExcluded(docsExcluded, *wordOccurencesSp.ids)) {
 				++excludedCnt;
 				continue;
 			}
@@ -505,8 +505,8 @@ void Selector<IdCont>::processSuffixTermVariant(TermVariant& variant, ft::TermRe
 			res.AddSubterm(wordOccurencesSp, std::move(wordUtf8), wordId, proc, variant.termLenBoost);
 			wordsFound[wordId] = res.NumSubterms() - 1;
 			++matched;
-			totalVids += wordOccurencesSp->size();
-			vids += wordOccurencesSp->size();
+			totalVids += wordOccurencesSp.ids->size();
+			vids += wordOccurencesSp.ids->size();
 		}
 	}
 

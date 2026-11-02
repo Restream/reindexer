@@ -5,6 +5,34 @@
 
 namespace reindexer {
 
+void PackedIdRelVec::AppendBuffer::Commit() {
+	if (tail_.empty()) {
+		return;
+	}
+	const size_t baseSize = dst_->data_.size();
+	const size_t maxSize = std::min<size_t>(dst_->data_.max_size(), std::numeric_limits<size_type>::max());
+	assertrx_throw(tail_.data_.size() <= maxSize - baseSize);
+	assertrx_throw(tail_.st_.size <= std::numeric_limits<size_type>::max() - dst_->st_.size);
+	const size_t required = baseSize + tail_.data_.size();
+	if (dst_->data_.capacity() < required) {
+		// Reserve from the actual packed size, with 10% headroom for subsequent updates.
+		const size_t extra = required / 10 + size_t(required % 10 != 0);
+		dst_->data_.reserve(required + std::min(extra, maxSize - required));
+	}
+	std::ignore = dst_->data_.insert(dst_->data_.end(), tail_.data_.begin(), tail_.data_.end());
+	if (dst_->arrayFoundPos_ == std::numeric_limits<size_t>::max() && tail_.arrayFoundPos_ != std::numeric_limits<size_t>::max()) {
+		dst_->arrayFoundPos_ = baseSize + tail_.arrayFoundPos_;
+	}
+	dst_->st_.size += tail_.st_.size;
+	dst_->st_.lastVdocId = tail_.st_.lastVdocId;
+	dst_->st_.lastVersion = tail_.st_.lastVersion;
+	tail_.clear();
+	if (tail_.data_.capacity() > kMaxRetainedCapacity) {
+		store_container{}.swap(tail_.data_);
+	}
+	initTailState();
+}
+
 namespace {
 
 enum [[nodiscard]] ControlBits : uint8_t {
@@ -159,7 +187,7 @@ inline bool canPackSimple(const PositionsVector& pos, unsigned fieldBits) noexce
 
 }  // namespace
 
-size_t IdRelType::pack(uint8_t* buf, uint32_t previousVdocId, unsigned fieldBits, bool storeArrayIdx) const {
+size_t IdRelType::pack(uint8_t* buf, VDocId previousVdocId, unsigned fieldBits, bool storeArrayIdx) const {
 	auto* p = buf;
 	assertrx_dbg(pos_.size() > 0);
 	assertrx_dbg(fieldBits <= 16);
@@ -270,7 +298,7 @@ const uint8_t* skipPosPayload(const uint8_t* p, [[maybe_unused]] const uint8_t* 
 
 }  // namespace
 
-size_t IdRelTypePacked::unpackIdentity(const uint8_t* buf, uint32_t len, uint32_t previousVdocId, unsigned fieldBits, bool storeArrayIdx) {
+size_t IdRelTypePacked::unpackIdentity(const uint8_t* buf, uint32_t len, VDocId previousVdocId, unsigned fieldBits, bool storeArrayIdx) {
 	assertrx_dbg(len > 0);
 	assertrx_dbg(fieldBits <= 16);
 	const uint8_t* p = buf;

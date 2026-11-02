@@ -788,7 +788,7 @@ reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int
 	WrSerializer ser;
 	ConstPayload pl(payloadType, pv);
 	CJsonBuilder builder(ser, ObjType::TypePlain);
-	CJsonEncoder cjsonEncoder(&tagsMatcher, &qr->GetFieldsFilter(ns_id));
+	CJsonEncoder cjsonEncoder(&tagsMatcher, qr->GetFieldsFilter(ns_id).get());
 
 	cjsonEncoder.Encode(pl, builder);
 	const int n = ser.Len();

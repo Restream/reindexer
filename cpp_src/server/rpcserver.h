@@ -108,7 +108,7 @@ public:
 	Error ExecSQL(cproto::Context& ctx, p_string query, int flags, int limit, p_string tmVersions);
 	Error FetchResults(cproto::Context& ctx, int reqId, int flags, int offset, int limit, std::optional<int64_t> qrUID);
 	Error CloseResults(cproto::Context& ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);
-	Error GetSQLSuggestions(cproto::Context& ctx, p_string query, int pos);
+	Error GetSQLSuggestions(cproto::Context& ctx, p_string query, int pos, std::optional<bool> withError);
 	Error GetReplState(cproto::Context& ctx, p_string ns);
 	Error SetClusterOperationStatus(cproto::Context& ctx, p_string ns, p_string serStatus);
 	Error GetSnapshot(cproto::Context& ctx, p_string ns, p_string optsJson);

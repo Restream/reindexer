@@ -1,11 +1,17 @@
 #include <gtest/gtest-param-test.h>
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <fstream>
 #include <ranges>
+#include <thread>
+#include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/ft_fast/frisosplitter.h"
 #include "core/ft/limits.h"
+#include "core/transaction/transaction.h"
 #include "estl/gift_str.h"
 #include "ft_api.h"
 #include "gtests/tests/tests_data.h"
@@ -26,6 +32,22 @@ using reindexer::IndexOpts;
 class [[nodiscard]] FTGenericApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_generic_default_namespace"; }
+
+	size_t GetFTMemorySize(const char* field, std::string_view nsName = "nm1", std::string_view indexName = "ft3") {
+		auto qr = rt.Select(Query("#memstats").Where("name", CondEq, nsName));
+		EXPECT_EQ(qr.Count(), 1u);
+		if (qr.Count() != 1) {
+			return 0;
+		}
+		const auto ns = YAML::Load(std::string{qr.begin().GetItem().GetJSON()});
+		for (const auto& index : ns["indexes"]) {
+			if (index["name"].as<std::string>() == indexName) {
+				return index["indexing_struct_details"][field].as<size_t>();
+			}
+		}
+		ADD_FAILURE() << "Fulltext index not found in #memstats: " << indexName;
+		return 0;
+	}
 
 	void CreateAndFillSimpleNs(const std::string& ns, int from, int to, fast_hash_map<int, std::string>* outItems) {
 		assertrx(from <= to);
@@ -157,18 +179,12 @@ TEST_P(FTGenericApi, MergeWithSameNSAndSelectFunctions) {
 			qr.AddFunction(field + " = highlight(<b>,</b>)");
 			auto res = rt.Select(qr);
 
-			std::unordered_set<std::string_view> data{"An <b>entity</b> is <b>something</b>|"sv,
-													  "An <xxx>entity</xf> is <xxx>something</xf>|d"sv,
-													  "| that in exists <b>entity</b> as itself"sv,
-													  "In law, a legal <b>entity</b> is|"sv,
-													  "|an <b>entity</b> that is capable of <b>something</b> bearing legal rights"sv,
-													  "an <xxx>entity</xf> tdof <xxx>something</xf> bd"sv,
-													  "al <xxx>entity</xf> id"sv,
-													  "In politics, <b>entity</b> is used as|"sv,
-													  "| term for <b>entity</b> territorial divisions of some countries"sv,
-													  "ts <xxx>entity</xf> ad"sv,
-													  "s, <xxx>entity</xf> id"sv,
-													  "or <xxx>entity</xf> td"sv};
+			// Same namespace and the same item ids: one copy stays, the one that sorts earlier.
+			// Equal fulltext ranks keep the smaller nsid, so the main query (highlight) stays.
+			std::unordered_set<std::string_view> data{
+				"An <b>entity</b> is <b>something</b>|"sv,	"| that in exists <b>entity</b> as itself"sv,
+				"In law, a legal <b>entity</b> is|"sv,		"|an <b>entity</b> that is capable of <b>something</b> bearing legal rights"sv,
+				"In politics, <b>entity</b> is used as|"sv, "| term for <b>entity</b> territorial divisions of some countries"sv};
 
 			rt.PrintQueryResults("nm1", res);
 			for (auto it : res) {
@@ -178,12 +194,33 @@ TEST_P(FTGenericApi, MergeWithSameNSAndSelectFunctions) {
 					if (curField != field) {
 						continue;
 					}
-					auto it = data.find(ritem[curField].As<std::string>());
-					ASSERT_TRUE(it != data.end());
-					data.erase(it);
+					auto found = data.find(ritem[curField].As<std::string>());
+					ASSERT_TRUE(found != data.end()) << ritem[curField].As<std::string>();
+					data.erase(found);
 				}
 			}
 			EXPECT_TRUE(data.empty());
+		}
+	}
+}
+
+TEST_P(FTGenericApi, MergeOffsetDoesNotRepeatEqualRanks) {
+	Init(GetDefaultConfig(), NS1 | NS2);
+	for (int i = 0; i < 60; ++i) {
+		Add("nm1"sv, fmt::format("rx some {} word", i), "rx some word"sv);
+	}
+	std::unordered_set<int> seen;
+	for (const unsigned offset : {0u, 20u, 40u}) {
+		auto qr = reindexer::Query("nm1")
+					  .Where("ft3", CondEq, "rx")
+					  .Merge(reindexer::Query("nm2").Where("ft3", CondEq, "word"))
+					  .Offset(offset)
+					  .Limit(20);
+		auto res = rt.Select(qr);
+		ASSERT_EQ(res.Count(), 20);
+		for (auto it : res) {
+			const int id = it.GetItem(false)["id"].As<int>();
+			ASSERT_TRUE(seen.insert(id).second) << id;
 		}
 	}
 }
@@ -1290,6 +1327,239 @@ TEST_P(FTGenericApi, DeleteTest) {
 	res = SimpleSelect("entity");
 
 	// TODO: add validation
+}
+
+TEST_P(FTGenericApi, MemoryStatsBreakdown) {
+	auto cfg = GetDefaultConfig();
+	cfg.stopWords.clear();
+	Init(cfg);
+
+	enum class [[nodiscard]] Built { No, Yes };
+	enum [[nodiscard]] Highlight { WithoutHighlight, WithHighlight };
+	const auto checkStats = [this](size_t wordsCount, Built built) {
+		auto qr = rt.Select(Query("#memstats").Where("name", CondEq, "nm1"));
+		ASSERT_EQ(qr.Count(), 1);
+		const auto ns = YAML::Load(std::string{qr.begin().GetItem().GetJSON()});
+		YAML::Node ft;
+		for (const auto& index : ns["indexes"]) {
+			if (index["name"].as<std::string>() == "ft3") {
+				ft.reset(index);
+			} else if (index["name"].as<std::string>() == "id") {
+				EXPECT_FALSE(index["text_index_stats"].IsDefined());
+				EXPECT_FALSE(index["indexing_struct_details"].IsDefined());
+			}
+		}
+		ASSERT_TRUE(ft.IsMap());
+		EXPECT_EQ(ft["is_built"].as<bool>(), built == Built::Yes);
+		const auto stats = ft["text_index_stats"];
+		EXPECT_EQ(stats["words_count"].as<size_t>(), wordsCount);
+		const auto typoGroups = stats["typos_groups_count"].as<size_t>();
+		const auto typoKeys = stats["typos_keys_count"].as<size_t>();
+		EXPECT_LE(typoGroups, typoKeys);
+		if (wordsCount == 0) {
+			EXPECT_EQ(typoGroups, 0u);
+			EXPECT_EQ(typoKeys, 0u);
+		}
+		EXPECT_FALSE(stats["memory"].IsDefined());
+		const auto mem = ft["indexing_struct_details"];
+		ASSERT_TRUE(mem.IsMap());
+		size_t total = 0;
+		for (const auto* field :
+			 {"words_size", "words_map_size", "word_ids_size", "suffixes_size", "typos_size", "postings_size", "vdocs_size",
+			  "vdoc_merge_info_size", "vdoc_id_map_size", "free_vdoc_ids_size", "pending_vdocs_size", "vdoc_set_size", "auxiliary_size"}) {
+			ASSERT_TRUE(mem[field].IsDefined()) << field;
+			total += mem[field].as<size_t>();
+		}
+		EXPECT_EQ(total, ft["indexing_struct_size"].as<size_t>());
+		const size_t capacity = mem["postings_capacity_size"].as<size_t>();
+		EXPECT_LE(capacity, mem["postings_size"].as<size_t>());
+		if (wordsCount == 0) {
+			EXPECT_EQ(capacity, 0);
+		} else {
+			EXPECT_GT(capacity, 0);
+			EXPECT_GT(mem["words_size"].as<size_t>(), 0);
+			EXPECT_GT(mem["words_map_size"].as<size_t>(), 0);
+			EXPECT_GT(mem["word_ids_size"].as<size_t>(), 0);
+		}
+		if (GetParam() == reindexer::FTConfig::Optimization::Memory) {
+			ASSERT_TRUE(mem["packed_data_size"].IsDefined());
+			const size_t packed = mem["packed_data_size"].as<size_t>();
+			EXPECT_LE(packed, capacity);
+			if (wordsCount == 0) {
+				EXPECT_EQ(packed, 0);
+			} else {
+				EXPECT_GT(packed, 0);
+			}
+		} else {
+			EXPECT_FALSE(mem["packed_data_size"].IsDefined());
+		}
+	};
+
+	checkStats(0, Built::No);
+	Add("alpha alpha beta"sv);
+	Add("alpha alpha beta"sv);
+	const int gammaId = Add("gamma"sv).second;
+	checkStats(0, Built::No);  // Pending texts are not dictionary entries yet.
+	ASSERT_EQ(SimpleSelect("alpha", WithoutHighlight).Count(), 2);
+	checkStats(3, Built::Yes);	// Count unique words, not occurrences or documents.
+
+	Add("delta"sv);
+	checkStats(3, Built::No);
+	ASSERT_EQ(SimpleSelect("delta", WithoutHighlight).Count(), 1);
+	checkStats(4, Built::Yes);
+
+	Delete(gammaId);
+	ASSERT_EQ(SimpleSelect("gamma", WithoutHighlight).Count(), 0);
+	checkStats(4, Built::Yes);	// Cleanup does not remove dictionary entries.
+
+	cfg.maxTypos = 0;  // Changing this option clears the inverted index.
+	SetFTConfig(cfg);
+	checkStats(0, Built::No);
+	ASSERT_EQ(SimpleSelect("alpha", WithoutHighlight).Count(), 2);
+	checkStats(3, Built::Yes);	// Full rebuild drops the deleted word.
+}
+
+TEST_P(FTGenericApi, SynonymsMemoryStats) {
+	auto cfg = GetDefaultConfig();
+	cfg.stopWords.clear();
+	cfg.maxTypos = 0;
+	Init(cfg);
+	Add("alpha"sv);
+	ASSERT_EQ(rt.Select(Query("nm1").Where("ft3", CondEq, "alpha")).Count(), 1u);
+	const size_t withoutSynonyms = GetFTMemorySize("auxiliary_size");
+
+	cfg.synonyms = {{.tokens = {"firstalias"}, .alternatives = {"alpha"}}};
+	SetFTConfig(cfg);
+	const size_t withSynonyms = GetFTMemorySize("auxiliary_size");
+	ASSERT_GT(withSynonyms, 0u);
+	ASSERT_GT(withSynonyms, withoutSynonyms);
+	ASSERT_EQ(rt.Select(Query("nm1").Where("ft3", CondEq, "firstalias")).Count(), 1u);
+
+	for (int i = 0; i < 64; ++i) {
+		cfg.synonyms.push_back({.tokens = {fmt::format("additionalalias{}", i)}, .alternatives = {"alpha", "several alternative words"}});
+	}
+	SetFTConfig(cfg);
+	const size_t expanded = GetFTMemorySize("auxiliary_size");
+	EXPECT_GT(expanded, withSynonyms);
+	ASSERT_EQ(rt.Select(Query("nm1").Where("ft3", CondEq, "additionalalias63")).Count(), 1u);
+
+	SetFTConfig(cfg);
+	EXPECT_EQ(GetFTMemorySize("auxiliary_size"), expanded) << "Reapplying the same synonyms must not accumulate memory";
+	cfg.synonyms.clear();
+	SetFTConfig(cfg);
+	EXPECT_EQ(GetFTMemorySize("auxiliary_size"), withoutSynonyms);
+	EXPECT_EQ(rt.Select(Query("nm1").Where("ft3", CondEq, "firstalias")).Count(), 0u);
+}
+
+TEST_P(FTGenericApi, PendingVdocsMemoryReusedAfterTransactions) {
+	constexpr std::string_view kNs = "pending_vdocs_memory_stats";
+	auto cfg = GetDefaultConfig(1);
+	cfg.stopWords.clear();
+	cfg.maxTypos = 0;
+	cfg.enableNumbersSearch = false;
+	Init(cfg, 0);
+	rt.OpenNamespace(kNs);
+	rt.DefineNamespaceDataset(kNs, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
+	rt.AddIndex(kNs, reindexer::IndexDef("ft", {"ft"}, IndexFastFT, IndexOpts().SetConfig(IndexFastFT, GetFTConfigJSON(cfg, {"ft"}))));
+
+	constexpr int kTransactions = 1000;
+	size_t reserved = 0;
+	for (int i = 0; i < kTransactions; ++i) {
+		SCOPED_TRACE(i);
+		const auto word = fmt::format("document{}", i);
+		auto tx = rt.NewTransaction(kNs);
+		auto item = tx.NewItem();
+		auto err = item.FromJSON(fmt::format(R"({{"id":{},"ft":"common {}"}})", i, word));
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = tx.Upsert(std::move(item));
+		ASSERT_TRUE(err.ok()) << err.what();
+		std::ignore = rt.CommitTransaction(tx);
+
+		const size_t pending = GetFTMemorySize("pending_vdocs_size", kNs, "ft");
+		if (i == 0) {
+			reserved = pending;
+			ASSERT_GT(reserved, 0u);
+		}
+		ASSERT_LE(pending, reserved);
+		// Transaction commit queues documents; the FT select guarantees that indexing has finished.
+		ASSERT_EQ(rt.Select(Query(kNs).Where("ft", CondEq, word)).Count(), 1u);
+		ASSERT_LE(GetFTMemorySize("pending_vdocs_size", kNs, "ft"), reserved);
+	}
+	EXPECT_EQ(rt.Select(Query(kNs).Where("ft", CondEq, "common")).Count(), size_t(kTransactions));
+}
+
+TEST_P(FTGenericApi, VdocMergeInfoMemoryStats) {
+	constexpr std::string_view kNs = "vdoc_merge_info_memory_stats";
+	const std::vector<std::string> fields{"ft1", "ft2", "ft3", "ft4"};
+	auto cfg = GetDefaultConfig(fields.size());
+	cfg.stopWords.clear();
+	cfg.maxTypos = 2;
+	Init(cfg, 0);
+	rt.OpenNamespace(kNs);
+	rt.DefineNamespaceDataset(kNs, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
+	rt.AddIndex(kNs,
+				reindexer::IndexDef("ft", fields, IndexCompositeFastFT, IndexOpts().SetConfig(IndexFastFT, GetFTConfigJSON(cfg, fields))));
+	const auto memorySize = [this, &kNs]() -> size_t {
+		auto qr = rt.Select(Query("#memstats").Where("name", CondEq, kNs));
+		EXPECT_EQ(qr.Count(), 1u);
+		if (qr.Count() != 1) {
+			return 0;
+		}
+		const auto ns = YAML::Load(std::string{qr.begin().GetItem().GetJSON()});
+		for (const auto& index : ns["indexes"]) {
+			if (index["name"].as<std::string>() == "ft") {
+				return index["indexing_struct_details"]["vdoc_merge_info_size"].as<size_t>();
+			}
+		}
+		ADD_FAILURE() << "Fulltext index not found in #memstats";
+		return 0;
+	};
+	const auto upsert = [this, &kNs](int id, std::string_view word) {
+		rt.UpsertJSON(kNs, fmt::format(R"({{"id":{},"ft1":"common","ft2":"{}","ft3":"beta","ft4":"gamma"}})", id, word));
+	};
+	const auto erase = [this, &kNs](int id) {
+		reindexer::QueryResults qr;
+		rt.Delete(Query(kNs).Where("id", CondEq, id), qr);
+	};
+
+	// Four fields force wordCounts_ out of its inline storage. Identical rows share one vdoc.
+	upsert(1, "alpha");
+	upsert(2, "alpha");
+	const size_t pendingSize = memorySize();
+	ASSERT_EQ(rt.Select(Query(kNs).Where("ft", CondEq, "common")).Count(), 2u);
+	const size_t builtSize = memorySize();
+	ASSERT_GT(builtSize, pendingSize);
+	const size_t perDocHeap = builtSize - pendingSize;
+	erase(1);
+	EXPECT_EQ(memorySize(), builtSize);
+	erase(2);
+	EXPECT_EQ(memorySize(), pendingSize);
+
+	upsert(3, "delta");
+	const size_t reusedSize = memorySize();
+	ASSERT_EQ(rt.Select(Query(kNs).Where("ft", CondEq, "common")).Count(), 1u);
+	EXPECT_EQ(memorySize(), reusedSize + perDocHeap);
+	cfg.maxTypos = 0;
+	rt.UpdateIndex(
+		kNs, reindexer::IndexDef("ft", fields, IndexCompositeFastFT, IndexOpts().SetConfig(IndexFastFT, GetFTConfigJSON(cfg, fields))));
+	EXPECT_EQ(memorySize(), reusedSize + perDocHeap);
+	ASSERT_EQ(rt.Select(Query(kNs).Where("ft", CondEq, "common")).Count(), 1u);
+	EXPECT_EQ(memorySize(), reusedSize + perDocHeap);
+	erase(3);
+	EXPECT_EQ(memorySize(), reusedSize);
+
+	// Grow the metadata array, then account only for the newly built per-field buffers.
+	constexpr int kDocs = 32;
+	for (int i = 0; i < kDocs; ++i) {
+		upsert(i, fmt::format("word{}", i));
+	}
+	const size_t grownSize = memorySize();
+	ASSERT_EQ(rt.Select(Query(kNs).Where("ft", CondEq, "common")).Count(), size_t(kDocs));
+	EXPECT_EQ(memorySize(), grownSize + kDocs * perDocHeap);
+	for (int i = 0; i < kDocs; ++i) {
+		erase(i);
+	}
+	EXPECT_EQ(memorySize(), grownSize);
 }
 
 TEST_P(FTGenericApi, VdocSlotReuse) {
@@ -2743,6 +3013,282 @@ TEST_P(FTGenericApi, SelectRepeatingItemsFromArray) {
 		reindexer::QueryResults qr;
 		auto res = rt.Select(q);
 		ASSERT_EQ(res.Count(), 3);
+	}
+}
+
+TEST_P(FTGenericApi, SearchAfterUpdates) {
+	using Bm25Type = reindexer::FTConfig::Bm25Config::Bm25Type;
+	constexpr std::string_view kNsName = "search_after_updates";
+	const std::set<int> expectedIds{0, 1, 2, 3};
+	for (const auto bm25Type : {Bm25Type::rx, Bm25Type::classic}) {
+		SCOPED_TRACE(bm25Type == Bm25Type::rx ? "rx_bm25" : "bm25");
+		auto cfg = GetDefaultConfig(3);
+		cfg.bm25Config.bm25Type = bm25Type;
+		Init(cfg, 0);
+		// Keep stale postings until cleanup is explicitly enabled; always recalculate ranks instead of caching them.
+		rt.UpsertJSON(
+			"#config",
+			R"({"type":"namespaces","namespaces":[{"namespace":"*","ft_cleanup_timeout_ms":0,"cache":{"ft_index_cache_size":0}}]})");
+		const auto createNamespace = [&] {
+			rt.OpenNamespace(kNsName);
+			rt.DefineNamespaceDataset(
+				kNsName,
+				{IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"name", "hash", "string", IndexOpts(), 0},
+				 IndexDeclaration{"path", "hash", "string", IndexOpts(), 0}, IndexDeclaration{"content", "hash", "string", IndexOpts(), 0},
+				 IndexDeclaration{"name+path+content=ft", "text", "composite",
+								  IndexOpts().SetConfig(IndexCompositeFastFT, GetFTConfigJSON(cfg, {"name", "path", "content"})), 0}});
+		};
+		createNamespace();
+
+		std::map<std::string_view, std::map<int, float>> initialPhraseRanks;
+		std::map<std::string_view, std::map<int, float>> initialTermRanks;
+		const std::map<std::string_view, std::set<int>> termCases{{"@content synthetic", {0, 1, 2, 3, 5}},
+																  {"@content synth*", {0, 1, 2, 3, 5}},
+																  {"@content +snapshotneedle +synthetic", expectedIds},
+																  {"@content +snapshotneedle -synthetic", {4}}};
+		unsigned generation = 0;
+		for (const std::string_view pathPrefix : {"elsewhere", "synthetic", "snapshotneedle/synthetic"}) {
+			SCOPED_TRACE(pathPrefix);
+			++generation;
+			for (int id = 0; id < 6; ++id) {
+				auto item = rt.NewItem(kNsName);
+				item["id"] = id;
+				item["name"] = "sample.txt";
+				if (expectedIds.contains(id)) {
+					item["path"] = fmt::format("/{}/ex0/{}/sample.txt", pathPrefix, id);
+					item["content"] = "snapshotneedle synthetic corpus";
+				} else {
+					item["path"] = fmt::format("/control/{}/{}/sample.txt", generation, id);
+					item["content"] = id == 4 ? "snapshotneedle corpus" : "synthetic corpus";
+				}
+				rt.Upsert(kNsName, item);
+			}
+
+			for (const auto& [dsl, ids] : termCases) {
+				SCOPED_TRACE(dsl);
+				auto results = rt.Select(Query(kNsName).Where("ft", CondEq, dsl).WithRank());
+				EXPECT_EQ(results.Count(), ids.size());
+				std::set<int> actualIds;
+				std::map<int, float> actualRanks;
+				for (auto it : results.ToLocalQr()) {
+					const int id = it.GetItem()["id"].As<int>();
+					const float rank = it.GetItemRefRanked().Rank().Value();
+					EXPECT_TRUE(std::isfinite(rank));
+					EXPECT_GT(rank, 0.0f);
+					actualIds.insert(id);
+					actualRanks.emplace(id, rank);
+				}
+				EXPECT_EQ(actualIds, ids);
+				if (pathPrefix == "elsewhere") {
+					initialTermRanks.emplace(dsl, actualRanks);
+				} else {
+					EXPECT_EQ(actualRanks, initialTermRanks.at(dsl));
+				}
+			}
+
+			for (const std::string_view dsl : {R"(@content "snapshotneedle synthetic")", R"("snapshotneedle synthetic")",
+											   R"(@content "snapshotneedle synthetic"~2)", R"("snapshotneedle synthetic"~2)"}) {
+				SCOPED_TRACE(dsl);
+				for (const std::string_view function : {"", "ft = highlight(<b>,</b>)"}) {
+					SCOPED_TRACE(function);
+					auto query = Query(kNsName).Where("ft", CondEq, dsl).WithRank();
+					if (!function.empty()) {
+						query.AddFunction(std::string(function));
+					}
+					auto results = rt.Select(query);
+					EXPECT_EQ(results.Count(), expectedIds.size());
+					std::set<int> actualIds;
+					std::map<int, float> actualRanks;
+					for (auto it : results.ToLocalQr()) {
+						auto item = it.GetItem();
+						const int id = item["id"].As<int>();
+						actualIds.insert(id);
+						actualRanks.emplace(id, it.GetItemRefRanked().Rank().Value());
+						EXPECT_EQ(item["content"].As<std::string>(),
+								  function.empty() ? "snapshotneedle synthetic corpus" : "<b>snapshotneedle synthetic</b> corpus");
+					}
+					EXPECT_EQ(actualIds, expectedIds);
+					if (dsl.starts_with("@content")) {
+						if (pathPrefix == "elsewhere" && function.empty()) {
+							initialPhraseRanks.emplace(dsl, actualRanks);
+						} else {
+							EXPECT_EQ(actualRanks, initialPhraseRanks.at(dsl));
+						}
+					}
+				}
+			}
+		}
+
+		EXPECT_EQ(rt.Delete(Query(kNsName)), 6);
+		rt.UpsertJSON(kNsName, R"({"id":0,"name":"sample.txt","path":"/elsewhere/sample.txt","content":"unrelated text"})");
+		EXPECT_EQ(rt.Select(Query(kNsName).Where("ft", CondEq, R"(@content "snapshotneedle synthetic")")).Count(), 0);
+		EXPECT_EQ(rt.Select(Query(kNsName).Where("ft", CondEq, "@content synthetic")).Count(), 0);
+		auto singleDoc = rt.Select(Query(kNsName).Where("ft", CondEq, "@content unrelated").WithRank());
+		ASSERT_EQ(singleDoc.Count(), 1);
+		for (const auto& it : singleDoc.ToLocalQr()) {
+			const float rank = it.GetItemRefRanked().Rank().Value();
+			EXPECT_TRUE(std::isfinite(rank));
+			EXPECT_GT(rank, 0.0f);
+		}
+		EXPECT_EQ(rt.Delete(Query(kNsName)), 1);
+		EXPECT_EQ(rt.Select(Query(kNsName).Where("ft", CondEq, "@content unrelated")).Count(), 0);
+
+		// Start with clean postings and keep BM25 scores below 255 so scaling cannot hide IDF changes.
+		rt.DropNamespace(kNsName);
+		cfg.fieldsCfg[2].bm25Weight = 1.0;
+		cfg.fieldsCfg[2].bm25Boost = 0.5;
+		cfg.fullMatchBoost = 1.0;
+		createNamespace();
+		rt.EnablePerfStats(*rt.reindexer);
+
+		const auto addDocs = [&](int from, int to, std::string_view content) {
+			for (int id = from; id < to; ++id) {
+				auto item = rt.NewItem(kNsName);
+				item["id"] = id;
+				item["name"] = "sample.txt";
+				// Distinct composite values prevent documents from sharing a VDoc.
+				item["path"] = fmt::format("/frequency/{}/sample.txt", id);
+				item["content"] = std::string(content);
+				rt.Upsert(kNsName, item);
+			}
+		};
+		const auto selectRanks = [&] {
+			auto results = rt.Select(Query(kNsName).Where("ft", CondEq, "@content synthetic").WithRank());
+			std::map<int, float> ranks;
+			for (auto it : results.ToLocalQr()) {
+				const int id = it.GetItem()["id"].As<int>();
+				const float rank = it.GetItemRefRanked().Rank().Value();
+				EXPECT_TRUE(std::isfinite(rank));
+				EXPECT_GT(rank, 0.0f);
+				EXPECT_LT(rank, 255.0f);
+				ranks.emplace(id, rank);
+			}
+			return ranks;
+		};
+		const auto cleanCount = [&]() -> size_t {
+			auto qr = rt.Select(Query("#perfstats").Where("name", CondEq, kNsName));
+			EXPECT_EQ(qr.Count(), 1);
+			if (qr.Count() != 1) {
+				return 0;
+			}
+			const auto stats = YAML::Load(std::string{qr.begin().GetItem().GetJSON()});
+			for (const auto& index : stats["indexes"]) {
+				if (index["name"].as<std::string>() == "ft") {
+					return index["cleans"]["total_queries_count"].as<size_t>();
+				}
+			}
+			ADD_FAILURE() << "ft index not found in #perfstats";
+			return 0;
+		};
+
+		// Equal content lengths keep average document length unchanged as the word becomes more common.
+		addDocs(0, 4, "synthetic corpus");
+		addDocs(4, 104, "background corpus");
+		const auto rareRanks = selectRanks();
+		ASSERT_EQ(rareRanks.size(), expectedIds.size());
+		for (const int id : expectedIds) {
+			ASSERT_TRUE(rareRanks.contains(id));
+		}
+
+		addDocs(104, 204, "synthetic corpus");
+		const auto frequentRanks = selectRanks();
+		ASSERT_EQ(frequentRanks.size(), 104);
+		for (const auto& [id, rank] : rareRanks) {
+			ASSERT_TRUE(frequentRanks.contains(id));
+			EXPECT_LT(frequentRanks.at(id), rank);
+		}
+
+		EXPECT_EQ(rt.Delete(Query(kNsName).Where("id", CondGe, 104)), 100);
+		const auto beforeCleanupRanks = selectRanks();
+		ASSERT_EQ(beforeCleanupRanks.size(), rareRanks.size());
+		for (const int id : expectedIds) {
+			EXPECT_TRUE(beforeCleanupRanks.contains(id));
+		}
+		ASSERT_EQ(cleanCount(), 0);
+		rt.UpsertJSON(
+			"#config",
+			R"({"type":"namespaces","namespaces":[{"namespace":"*","ft_cleanup_timeout_ms":1,"cache":{"ft_index_cache_size":0}}]})");
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+		while (cleanCount() == 0) {
+			ASSERT_LT(std::chrono::steady_clock::now(), deadline) << "Timed out waiting for fulltext cleanup";
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+		EXPECT_EQ(selectRanks(), rareRanks);
+	}
+}
+
+TEST_P(FTGenericApi, PhraseSearchInLargeArray) {
+	const auto cfg = GetDefaultConfig(1);
+	Init(cfg, 0);
+	constexpr std::string_view kNsName = "phrase_search_in_large_array";
+	rt.OpenNamespace(kNsName);
+	rt.DefineNamespaceDataset(
+		kNsName, {IndexDeclaration{"id", "hash", "string", IndexOpts().PK(), 0},
+				  IndexDeclaration{"w", "text", "string", IndexOpts().Array().SetConfig(IndexFastFT, GetFTConfigJSON(cfg, {"w"})), 0}});
+
+	auto upsert = [this, kNsName](const std::string& id, const std::vector<std::string>& words) {
+		auto item = rt.NewItem(kNsName);
+		item["id"] = id;
+		item["w"] = words;
+		rt.Upsert(kNsName, item);
+	};
+
+	std::set<std::string> expectedIds;
+	fast_hash_map<std::string, std::vector<std::string>> expectedWords;
+	for (const size_t arraySize : {16, 17, 32, 33}) {
+		std::vector<std::string> words(arraySize);
+		for (size_t i = 1; i + 1 < arraySize; ++i) {
+			words[i] = fmt::format("filler{}", i);
+		}
+		words.back() = "golf hotel";
+		const auto id = fmt::format("n{}", arraySize);
+		words.front() = "hotel";
+		upsert(id, words);
+		expectedIds.insert(id);
+		expectedWords.emplace(id, words);
+		words.front() = "xyz";
+		upsert(id + "_noprior", words);
+		expectedIds.insert(id + "_noprior");
+		expectedWords.emplace(id + "_noprior", words);
+
+		words.front() = "hotel";
+		words.back() = "golf";
+		upsert(id + "_separate", words);
+		words.front() = "golf";
+		words.back() = "xyz hotel";
+		upsert(id + "_cross_element", words);
+		words.front() = "xyz";
+		words.back() = "hotel golf";
+		upsert(id + "_reversed", words);
+	}
+
+	for (const std::string_view function : {"", "w = highlight(<b>,</b>)"}) {
+		SCOPED_TRACE(function);
+		auto query = Query(kNsName).Where("w", CondEq, R"("golf hotel")");
+		if (!function.empty()) {
+			query.AddFunction(std::string(function));
+		}
+		auto results = rt.Select(query);
+		ASSERT_EQ(results.Count(), expectedIds.size());
+		std::set<std::string> actualIds;
+		for (auto it : results) {
+			auto item = it.GetItem();
+			const auto id = item["id"].As<std::string>();
+			SCOPED_TRACE(id);
+			actualIds.insert(id);
+			const auto expectedIt = expectedWords.find(id);
+			ASSERT_NE(expectedIt, expectedWords.end());
+			auto expected = expectedIt->second;
+			if (!function.empty()) {
+				expected.back() = "<b>golf hotel</b>";
+			}
+			const reindexer::VariantArray actual = item["w"];
+			ASSERT_EQ(actual.size(), expected.size());
+			for (size_t i = 0; i < expected.size(); ++i) {
+				EXPECT_EQ(actual[i].As<std::string>(), expected[i]) << "array index: " << i;
+			}
+		}
+		EXPECT_EQ(actualIds, expectedIds);
 	}
 }
 

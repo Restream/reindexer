@@ -1,4 +1,5 @@
 #include "queries_api.h"
+#include <vector>
 #include "core/enums.h"
 #include "gtests/tools.h"
 
@@ -28,11 +29,15 @@ void QueriesApi::CheckMergeQueriesWithLimit() {
 	EXPECT_FALSE(err.ok());
 	EXPECT_STREQ(err.what(), "Sorting in inner merge query is not allowed");  // TODO #1449
 
-	q = Query{default_namespace}.Merge(Query{joinNs}).Sort(kFieldNameId, SortOrder::Asc);
+	// Each namespace keeps its own top rows, then the merge is stably ordered by the root sort.
+	q = Query{testSimpleNs}.Merge(Query{joinNs}).Sort(kFieldNameId, SortOrder::Desc).Limit(5);
 	qr.Clear();
-	err = rt.reindexer->Select(q, qr);
-	EXPECT_FALSE(err.ok());
-	EXPECT_STREQ(err.what(), "Sorting in merge query is not implemented yet");	// TODO #1449
+	rt.Select(q, qr);
+	std::vector<int> ids;
+	for (auto it : qr) {
+		ids.emplace_back(it.GetItem()[kFieldNameId].As<int>());
+	}
+	EXPECT_EQ(ids, (std::vector<int>{299, 298, 297, 296, 295}));
 
 	q = Query{default_namespace}.Where(kFieldNameDescription, CondEq, RandString()).Merge(Query{joinNs});
 	qr.Clear();
@@ -52,15 +57,11 @@ void QueriesApi::CheckMergeQueriesWithLimit() {
 
 	q = Query{default_namespace}.Where(kFieldNameDescription, CondEq, RandString()).Merge(Query{joinNs}).Sort(kFieldNameId, SortOrder::Asc);
 	qr.Clear();
-	err = rt.reindexer->Select(q, qr);
-	EXPECT_FALSE(err.ok());
-	EXPECT_STREQ(err.what(), "Sorting in merge query is not implemented yet");	// TODO #1449
+	rt.Select(q, qr);
 
 	q = Query{default_namespace}.Merge(Query{joinNs}.Where(kFieldNameDescription, CondEq, RandString())).Sort(kFieldNameId, SortOrder::Asc);
 	qr.Clear();
-	err = rt.reindexer->Select(q, qr);
-	EXPECT_FALSE(err.ok());
-	EXPECT_STREQ(err.what(), "Sorting in merge query is not implemented yet");	// TODO #1449
+	rt.Select(q, qr);
 
 	qr.Clear();
 	q = Query{default_namespace}.Merge(Query{joinNs}).Limit(10);
@@ -109,6 +110,8 @@ void QueriesApi::CheckMergeQueriesWithAggregation() {
 		val = aggs[0].GetValue().value();
 		if (tp == AggCount || tp == AggCountCached) {
 			ASSERT_EQ(val, qr.TotalCount());
+		} else {
+			ASSERT_EQ(qr.Count(), 0);
 		}
 	};
 	// check the correctness of the aggregation functions with the merge query
@@ -250,6 +253,7 @@ void QueriesApi::CheckMergeQueriesWithAggregation() {
 					  .Merge(Query{joinNs})
 					  .Merge(Query{testSimpleNs});
 		auto qr = rt.Select(q);
+		ASSERT_EQ(qr.Count(), 0);
 		ASSERT_EQ(qr.GetAggregationResults().size(), 3);
 		for (auto a : {AggSum, AggCount, AggMin}) {
 			int exist = 0;

@@ -131,6 +131,31 @@ public:
 									   });
 	}
 
+	static Variant GetDefaultValue(KeyValueType type) noexcept {
+		static constexpr size_t kBufferSize =
+			std::max({sizeof(bool), sizeof(int), sizeof(int64_t), sizeof(double), sizeof(p_string), sizeof(Uuid), sizeof(uint64_t)});
+
+		static constexpr std::array<uint8_t, kBufferSize> zero{};
+		return type.EvaluateOneOf([&](KeyValueType::Bool) noexcept { return getDefaultValueFromPtr<bool>(zero.data()); },
+								  [&](KeyValueType::Int) noexcept { return getDefaultValueFromPtr<int>(zero.data()); },
+								  [&](KeyValueType::Int64) noexcept { return getDefaultValueFromPtr<int64_t>(zero.data()); },
+								  [&](KeyValueType::Double) noexcept { return getDefaultValueFromPtr<double>(zero.data()); },
+								  [&](KeyValueType::String) noexcept(noexcept(Variant(std::declval<p_string>()))) {
+									  return getDefaultValueFromPtr<p_string>(zero.data());
+								  },
+								  [&](KeyValueType::Uuid) noexcept { return getDefaultValueFromPtr<Uuid>(zero.data()); },
+								  [&](KeyValueType::FloatVector) noexcept {
+									  uint64_t v;
+									  std::memcpy(&v, zero.data(), sizeof(uint64_t));
+									  return Variant{ConstFloatVectorView::FromUint64(v)};
+								  },
+								  [](concepts::OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+													 KeyValueType::Null, KeyValueType::Float> auto) noexcept -> Variant {
+									  assertrx(0);
+									  abort();
+								  });
+	}
+
 	static Variant PrepareValueForField(const PayloadFieldType& fieldType, Variant kv) {
 		const auto fieldTypeKVT = fieldType.Type();
 		if (kv.Type().IsSame(fieldTypeKVT)) [[likely]] {
@@ -207,6 +232,13 @@ private:
 	template <typename T>
 	RX_ALWAYS_INLINE Variant getVariantFromPtr() const noexcept {
 		return Variant(getValueFromPtr<T>());
+	}
+
+	template <typename T>
+	static RX_ALWAYS_INLINE Variant getDefaultValueFromPtr(const uint8_t* ptr) noexcept {
+		T v;
+		std::memcpy(&v, ptr, sizeof(T));
+		return Variant{v};
 	}
 
 	template <typename T>

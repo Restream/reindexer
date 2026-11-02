@@ -13,15 +13,18 @@
 #include "core/namespace/float_vector_data_access.h"
 #include "core/namespace/migrations/pk_migration_service.h"
 #include "core/namespace/namespaceimpl.h"
+#include "core/payload/payloadfieldtype.h"
 #include "tools/logger.h"
 #include "tools/scope_guard.h"
+#include "validator.h"
 
 namespace reindexer::ns_indexes {
 
 TransactionDDL::TransactionDDL(NamespaceImpl& ns) noexcept : ns_{ns}, registry_{ns.indexRegistry_} {}
 
 void TransactionDDL::AddIndex(const IndexDef& indexDef, bool disableTmVersionInc, bool skipEqualityCheck) {
-	if (bool requireTtlUpdate = false; !skipEqualityCheck && ns_.checkIfSameIndexExists(indexDef, &requireTtlUpdate)) {
+	if (RequireTtlUpdate requireTtlUpdate = RequireTtlUpdate_False;
+		!skipEqualityCheck && Validator{registry_}.CheckIfSameIndexExists(indexDef, requireTtlUpdate)) {
 		if (requireTtlUpdate) {
 			int idxPos = 0;
 			[[maybe_unused]] const bool found = registry_.TryGetIndexPos(indexDef.Name(), idxPos);
@@ -38,7 +41,7 @@ void TransactionDDL::DropIndex(const IndexDef& indexDef, bool disableTmVersionIn
 }
 
 bool TransactionDDL::UpdateIndex(const IndexDef& indexDef, bool disableTmVersionInc) {
-	const IndexDef foundIndex = ns_.getIndexDefinition(indexDef.Name());
+	const IndexDef foundIndex = registry_.GetIndexDefinition(indexDef.Name());
 	if (indexDef.Compare(foundIndex).Equal()) {
 		return false;
 	}
@@ -59,7 +62,7 @@ void TransactionDDL::apply(const Operation& op) {
 	if (op.toDrop && op.toAdd) {
 		// The update is verified against the current state. Every JSON-path, which the verification registers, goes into
 		// the tags matcher copy of the target state, so an aborted update never bumps the namespace tags matcher
-		ns_.verifyUpdateIndex(*op.toAdd, st.GetTagsMatcher());
+		Validator{registry_}.VerifyUpdateIndex(*op.toAdd, st.GetTagsMatcher(), ns_.indexUpdateContext());
 	}
 
 	int droppedSrcPos = -1;
@@ -129,7 +132,7 @@ void TransactionDDL::apply(const Operation& op) {
 }
 
 int TransactionDDL::prepareDrop(TargetState& st, const IndexDef& indexDef, PayloadFieldsChange& change) {
-	const int pos = ns_.verifyDropIndex(indexDef);
+	const int pos = Validator{registry_}.VerifyDropIndex(indexDef, ns_.itemsCount());
 
 	for (int i = st.FirstCompositePos(), total = st.TotalSize(); i < total; ++i) {
 		if (st.FieldsAt(i).contains(pos)) [[unlikely]] {
@@ -157,9 +160,9 @@ TransactionDDL::AddedIndex TransactionDDL::prepareAdd(TargetState& st, const Ind
 	}
 
 	if (IsComposite(indexDef.IndexType())) {
-		ns_.verifyCompositeIndex(indexDef);
-		auto fields = CreateFieldsSetFromJsonPaths(indexDef, st.GetTagsMatcher(), [&st](std::string_view jsonPath, int& idx) noexcept {
-			return st.TryGetScalarIndexByName(jsonPath, idx);
+		Validator{registry_}.VerifyCompositeIndex(indexDef);
+		auto fields = CreateFieldsSetFromJsonPaths(indexDef, st.GetTagsMatcher(), [&st](std::string_view name, int& idx) noexcept {
+			return st.TryGetNonCompositeIndexPos(name, idx);
 		});
 		auto newIndex = Index::New(indexDef, PayloadType{st.GetPayloadType()}, std::move(fields), ns_.config_.cacheConfig, ns_.itemsCount(),
 								   LogCreation_True);
@@ -215,7 +218,7 @@ void TransactionDDL::prepareComposites(TargetState& st, const PayloadFieldsChang
 			for (int field : curFields) {
 				if (field == IndexValueType::SetByJsonPath) {
 					const auto& jsonPath = curFields.getJsonPath(jsonPathIdx);
-					if (!st.TryGetScalarIndexByName(jsonPath, field)) {
+					if (!st.TryGetNonCompositeIndexPos(jsonPath, field)) {
 						fields.push_back(curFields.getTagsPath(jsonPathIdx));
 						fields.push_back(jsonPath);
 					}
@@ -346,13 +349,11 @@ void TransactionDDL::prepareItems(TargetState& st, const PayloadFieldsChange& ch
 		oldValue.Get(0, skrefsDel, Variant::hold);
 		tuple.Delete(skrefsDel, rowId, MustExist_True, *ns_.strHolder_, needClearCache);
 		newItem.GetPayload().Get(0, skrefsUps);
-		krefs.resize(0);
 		tuple.Upsert(krefs, skrefsUps, rowId, needClearCache);
 		newValue.Set(0, krefs);
 
 		if (change.addedPos >= 0) {
 			newItem.GetPayload().Get(change.addedPos, skrefsUps);
-			krefs.resize(0);
 			st.created(change.addedPos).Upsert(krefs, skrefsUps, rowId, needClearCache);
 			newValue.Set(change.addedPos, krefs);
 		}
@@ -362,7 +363,6 @@ void TransactionDDL::prepareItems(TargetState& st, const PayloadFieldsChange& ch
 			if (skrefsUps.IsObjectValue()) [[unlikely]] {
 				throwUnexpectedObjectInIndex(st.At(added.pos).Name(), "sparse index");
 			}
-			krefs.resize(0);
 			st.created(added.pos).Upsert(krefs, skrefsUps, rowId, needClearCache);
 		}
 
@@ -393,7 +393,6 @@ void TransactionDDL::fillAddedIndex(TargetState& st, const AddedIndex& added) {
 				if (skrefs.IsObjectValue()) [[unlikely]] {
 					throwUnexpectedObjectInIndex(index.Name(), "sparse index");
 				}
-				krefs.resize(0);
 				index.Upsert(krefs, skrefs, rowId, needClearCache);
 			} catch (const std::exception& err) {
 				ns_.throwIndexUpsertErrorWithPKInfo(ConstPayload(plType, ns_.items_[rowId]), err);

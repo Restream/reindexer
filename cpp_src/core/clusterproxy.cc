@@ -67,7 +67,7 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults,
 				throw Error(errLogic, "Missing incarnation tag for ns id {} in non-empty result", nsid);
 			}
 		}
-		result.addNSContext(clientResults.GetPayloadType(int(nsid)), clientResults.GetTagsMatcher(int(nsid)), FieldsFilter(), nullptr,
+		result.addNSContext(clientResults.GetPayloadType(int(nsid)), clientResults.GetTagsMatcher(int(nsid)), nullptr, nullptr,
 							std::move(incTag));
 	}
 	result.explainResults = clientResults.GetExplainResults();
@@ -98,8 +98,8 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults& clientResults,
 
 		const auto& itemParams = it.GetItemParams();
 		itemimpl.Value().SetLSN(itemParams.lsn);
-		result.AddItemRef(itemParams.rank, itemParams.id, itemimpl.Value(), itemParams.nsid, true);
-		result.SaveRawData(std::move(itemimpl));
+		result.AddItemRef(itemParams.rank, itemParams.id, itemimpl.Value(), itemParams.nsid);
+		result.SaveItemData(std::move(itemimpl));
 	}
 }
 

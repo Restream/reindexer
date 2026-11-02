@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "core/item_tree/data_extractor.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "helpers.h"
@@ -144,9 +145,9 @@ bool satisfyRangeVsScalar(const Range& left, CondType cond, const ExprScalar& ri
 }
 }  // namespace
 
-ArithmeticComparator::ArithmeticComparator(QueryArithmeticEntry&& entry, PayloadType pt, const NamespaceImpl& ns,
+ArithmeticComparator::ArithmeticComparator(QueryArithmeticEntry&& entry, PayloadType pt, const NamespaceImpl& ns, const TagsMatcher& tm,
 										   std::optional<int64_t> nowNsec)
-	: entry_{std::move(entry)}, pt_{std::move(pt)}, ns_{&ns} {
+	: entry_{std::move(entry)}, pt_{std::move(pt)}, ns_{&ns}, tm_{&tm} {
 	if (entry_.GetLeftKind() == QueryArithmeticEntry::LeftKind::Arithmetic) {
 		leftExprFieldBindings_ = resolveExpressionFields(entry_.LeftExpr(), pt_, ns);
 	}
@@ -223,15 +224,19 @@ const VariantArray& ArithmeticComparator::fieldValues(ConstPayload item, const Q
 ExprScalar ArithmeticComparator::evalExpr(const expressions::ArithmeticExpression& expr, const ConstPayload& item,
 										  std::span<const ExprFieldBinding> fieldBindings) const {
 	assertrx_throw(ns_);
+	assertrx_throw(tm_);
+	assertrx_throw(item.Value());
+	PayloadDataExtractor dataExtractor{*item.Value(), pt_, *ns_, *tm_};
 	ExprEvalContext ctx{.ns = *ns_,
 						.functionInvoker = nullptr,
 						.ctx = nullptr,
 						.forField = {},
 						.whereMode = true,
 						.fieldBindings = fieldBindings,
+						.updateIndexBindings = {},
 						.nowTimes = nowTimes_ ? &*nowTimes_ : nullptr,
-						.payload = item,
-						.fieldScratch = exprScratch_};
+						.fieldScratch = exprScratch_,
+						.dataExtractor = dataExtractor};
 	return expr.Ast().EvaluateScalar(ctx);
 }
 

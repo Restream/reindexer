@@ -1673,6 +1673,9 @@ int HTTPServer::queryResultsJSON(http::Context& ctx, reindexer::QueryResults& re
 }
 
 int HTTPServer::queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption) {
+	if (res.IsWALQuery()) [[unlikely]] {
+		throw Error(errForbidden, "WAL queries (#lsn) are not supported in CSV");
+	}
 	if (!res.GetAggregationResults().empty()) {
 		throw Error(errForbidden, "Aggregations are not supported in CSV");
 	}
@@ -1743,6 +1746,9 @@ int HTTPServer::queryResultsCSV(http::Context& ctx, reindexer::QueryResults& res
 
 int HTTPServer::queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption,
 									bool withColumns, int width) {
+	if (res.IsWALQuery()) [[unlikely]] {
+		throw Error(errForbidden, "WAL queries (#lsn) are not supported in msgpack");
+	}
 	int paramsToSend = 3;
 	if (!res.GetAggregationResults().empty()) {
 		++paramsToSend;
@@ -1808,6 +1814,9 @@ int HTTPServer::queryResultsMsgPack(http::Context& ctx, reindexer::QueryResults&
 
 int HTTPServer::queryResultsProtobuf(http::Context& ctx, reindexer::QueryResults& res, const IQRSerializingOption& qrOption,
 									 bool withColumns, int width) {
+	if (res.IsWALQuery()) [[unlikely]] {
+		throw Error(errForbidden, "WAL queries (#lsn) are not supported in protobuf");
+	}
 	auto ser = makeRestrictedWrSerializer(ctx);
 	ProtobufBuilder protobufBuilder(ser);
 

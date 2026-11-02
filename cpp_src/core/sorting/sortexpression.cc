@@ -99,6 +99,8 @@ bool SortExpression::ByJoinedField() const noexcept {
 	return Size() == 1 && container_[0].Is<JoinedIndex>() && GetOperation(0) == noOperation;
 }
 
+bool SortExpression::ByMergedQueryId() const noexcept { return Size() == 1 && container_[0].Is<SortExprFuncs::MergedQueryId>(); }
+
 SortExprFuncs::JoinedIndex& SortExpression::GetJoinedIndex() {
 	assertrx_throw(Size() == 1);
 	return container_[0].Value<JoinedIndex>();
@@ -589,6 +591,13 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 								CloseBracket();
 							} else if (funcName == "st_distance"sv) {
 								parseDistance(expr, joinItemsProcessors, fullExpr, op, negative, skipSpaces);
+							} else if (funcName == "merged_query_id"sv) {
+								skipSpaces();
+								if (!expr.empty() && expr[0] != ')') [[unlikely]] {
+									throwParseError(fullExpr, expr.data() - fullExpr.data(),
+													"merged_query_id() does not accept arguments"sv);
+								}
+								std::ignore = Append<MergedQueryId>({op, negative});
 							} else if (funcName == "hash") {
 								skipSpaces();
 								uint32_t seed = 0;
@@ -716,6 +725,7 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 			},
 			[rank] RX_PRE_LMBD_ALWAYS_INLINE(const concepts::OneOf<Rank, RankNamed> auto&)
 				RX_POST_LMBD_ALWAYS_INLINE { return double(rank.Value()); },
+			[] RX_PRE_LMBD_ALWAYS_INLINE(const MergedQueryId& id) RX_POST_LMBD_ALWAYS_INLINE { return double(id.Id()); },
 			[] RX_PRE_LMBD_ALWAYS_INLINE(const Rrf&) RX_POST_LMBD_ALWAYS_INLINE -> double {
 				throw Error(errNotValid, "Reciprocal rank fusion (RRF) is allowed in hybrid queries only");
 			},
@@ -783,6 +793,7 @@ double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, I
 			[rowId, shardIdHash](const SortExprFuncs::SortHash& sh) { return CalcSortHash(rowId, sh.Seed(), shardIdHash); },
 			[&pv, &tagsMatcher](const SortExprFuncs::ProxiedField& f) { return f.GetValue(pv, tagsMatcher); },
 			[rank](const concepts::OneOf<Rank, RankNamed> auto&) { return double(rank.Value()); },
+			[](const MergedQueryId& id) { return double(id.Id()); },
 			[&pv, &tagsMatcher](const ProxiedDistanceFromPoint& f) { return f.GetValue(pv, tagsMatcher); },
 			[&pv, &tagsMatcher](const ProxiedDistanceBetweenFields& f) { return f.GetValue(pv, tagsMatcher); });
 		if (it->operation.negative) {
@@ -838,6 +849,7 @@ void ProxiedSortExpression::fill(SortExpression::const_iterator it, SortExpressi
 			[&](const Value& v) { std::ignore = Append(it->operation, v); },
 			[&](const SortExprFuncs::Index& i) { std::ignore = Append<ProxiedField>(it->operation, getJsonPath(i.column, i.index, ns)); },
 			[&](const Rank&) { std::ignore = Append<Rank>(it->operation); },
+			[&](const MergedQueryId& id) { std::ignore = Append(it->operation, id); },
 			[&](const RankNamed& r) { std::ignore = Append(it->operation, r); },
 			[&](const SortExprFuncs::SortHash& sh) { std::ignore = Append(it->operation, sh); },
 			[&](const DistanceFromPoint& i) {
@@ -852,8 +864,8 @@ void ProxiedSortExpression::fill(SortExpression::const_iterator it, SortExpressi
 
 void SortExpression::PrepareIndexes(const NamespaceImpl& ns) {
 	VisitForEach(
-		Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, JoinedIndex, Rank, Rrf, SortExprFuncs::SortHash,
-			 DistanceJoinedIndexFromPoint, DistanceBetweenIndexAndJoinedIndex, DistanceBetweenJoinedIndexes,
+		Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, JoinedIndex, Rank, MergedQueryId, Rrf,
+			 SortExprFuncs::SortHash, DistanceJoinedIndexFromPoint, DistanceBetweenIndexAndJoinedIndex, DistanceBetweenJoinedIndexes,
 			 DistanceBetweenJoinedIndexesSameNs>{},
 		[&ns](SortExprFuncs::Index& exprIndex) { PrepareSortIndex(exprIndex.column, exprIndex.index, ns, IsRanked_False); },
 		[&ns](DistanceFromPoint& exprIndex) { PrepareSortIndex(exprIndex.column, exprIndex.index, ns, IsRanked_False); },
@@ -1357,6 +1369,7 @@ void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer
 			},
 			[&ser](const Value& v) { ser << v.value; }, [&ser](const SortExprFuncs::Index& i) { ser << i.column; },
 			[&ser](const JoinedIndex& i) { ser << "joined "sv << i.nsIdx << ' ' << i.column; }, [&ser](const Rank&) { ser << "rank()"sv; },
+			[&ser](const MergedQueryId&) { ser << "merged_query_id()"sv; },
 			[&ser](const RankNamed& r) { ser << "rank("sv << r.IndexName() << ", "sv << r.DefaultValue() << ')'; },
 			[&ser](const Rrf& r) { ser << "RRF(rank_const="sv << r.RankConst() << ')'; },
 			[&ser](const SortExprFuncs::SortHash& sh) { ser << "hash("sv << (sh.IsUserSeed() ? std::to_string(sh.Seed()) : ""sv) << ')'; },
@@ -1419,7 +1432,8 @@ void ProxiedSortExpression::dump(const_iterator begin, const_iterator end, WrSer
 				ser << ')';
 			},
 			[&ser](const Value& v) { ser << v.value; }, [&ser](const SortExprFuncs::ProxiedField& i) { ser << i.json; },
-			[&ser](const Rank&) { ser << "rank()"sv; }, [&ser](const RankNamed& r) { ser << "rank("sv << r.IndexName() << ')'; },
+			[&ser](const Rank&) { ser << "rank()"sv; }, [&ser](const MergedQueryId&) { ser << "merged_query_id()"sv; },
+			[&ser](const RankNamed& r) { ser << "rank("sv << r.IndexName() << ')'; },
 			[&ser](const SortExprFuncs::SortHash& sh) { ser << "hash("sv << (sh.IsUserSeed() ? std::to_string(sh.Seed()) : ""sv) << ')'; },
 			[&ser](const ProxiedDistanceFromPoint& i) {
 				ser << "ST_Distance("sv << i.json << ", ["sv << i.point.X() << ", "sv << i.point.Y() << "])"sv;

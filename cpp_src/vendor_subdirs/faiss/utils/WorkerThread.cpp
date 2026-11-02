@@ -29,7 +29,7 @@ WorkerThread::WorkerThread() : wantStop_(false) {
     startThread();
 
     // Make sure that the thread has started before continuing
-    add([]() {}).get();
+    (void)add([]() {}).get();
 }
 
 WorkerThread::~WorkerThread() {

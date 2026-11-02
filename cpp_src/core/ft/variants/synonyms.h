@@ -171,6 +171,11 @@ public:
 		groups_.resize(0);
 		index_.clear();
 
+		if (cfg->synonyms.empty()) {
+			std::vector<GroupOfSynonyms>{}.swap(groups_);
+			return;
+		}
+
 		groups_.reserve(cfg->synonyms.size());
 		for (const auto& synonym : cfg->synonyms) {
 			groups_.emplace_back();

@@ -4,6 +4,7 @@
 #include "core/payload/payloadiface.h"
 #include "cpp-btree/btree_map.h"
 #include "estl/extendible_hash_map.h"
+#include "estl/sparse_hash_prefix_bits.h"
 #include "sparse-map/sparse_map.h"
 #include "sparse-map/sparse_set.h"
 #include "vendor/hopscotch/hopscotch_set.h"
@@ -38,7 +39,7 @@ public:
 	}
 	bool operator()(const PayloadValue& lhs, const PayloadValue& rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
 	bool operator()(const PayloadValueWithHash& lhs, const PayloadValueWithHash& rhs) const {
-		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
+		return lhs.GetHash() == rhs.GetHash() && ConstPayload(type_, lhs).IsEQ(rhs, fields_);
 	}
 	bool operator()(const PayloadValueWithHash& lhs, const PayloadValue& rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }
 	bool operator()(const PayloadValue& lhs, const PayloadValueWithHash& rhs) const { return ConstPayload(type_, lhs).IsEQ(rhs, fields_); }

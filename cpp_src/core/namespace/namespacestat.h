@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdlib.h>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -27,6 +28,33 @@ struct [[nodiscard]] EmbedderStatus {
 	Error lastError;
 };
 
+// Components of indexing_struct_size, excluding source strings and the query cache.
+struct [[nodiscard]] TextIndexMemoryStats {
+	void GetJSON(JsonBuilder& builder) const;
+	size_t TotalSize() const noexcept {
+		return wordsSize + wordsMapSize + wordIdsSize + suffixesSize + typosSize + postingsSize + vdocsSize + vdocMergeInfoSize +
+			   vdocIdMapSize + freeVdocIdsSize + pendingVdocsSize + vdocSetSize + auxiliarySize;
+	}
+
+	size_t wordsSize = 0;
+	size_t wordsMapSize = 0;
+	size_t wordIdsSize = 0;
+	size_t suffixesSize = 0;
+	size_t typosSize = 0;
+	size_t postingsSize = 0;
+	// Subsets of postingsSize; do not add these to TotalSize().
+	size_t postingsCapacitySize = 0;
+	std::optional<size_t> packedDataSize;
+	size_t vdocsSize = 0;
+	size_t vdocMergeInfoSize = 0;
+	size_t vdocIdMapSize = 0;
+	size_t freeVdocIdsSize = 0;
+	size_t pendingVdocsSize = 0;
+	// Deduplication set keys only, preserving the existing accounting estimate.
+	size_t vdocSetSize = 0;
+	size_t auxiliarySize = 0;
+};
+
 struct [[nodiscard]] TextIndexStats {
 	void GetJSON(JsonBuilder& builder) const;
 	// Live virtual documents (present in the dedup set).
@@ -35,6 +63,12 @@ struct [[nodiscard]] TextIndexStats {
 	size_t removedVdocs = 0;
 	// Permanently retired slots that cannot be reused (e.g. version exhausted).
 	size_t deadVdocs = 0;
+	// Dictionary entries, including words whose postings are all stale or already removed.
+	size_t wordsCount = 0;
+	// Distinct typo variants, including variants without skipped characters.
+	size_t typosGroupsCount = 0;
+	// Sum of key counts across all typo groups, including variants without skipped characters.
+	size_t typosKeysCount = 0;
 };
 
 struct [[nodiscard]] IndexMemStat {
@@ -46,6 +80,7 @@ struct [[nodiscard]] IndexMemStat {
 	size_t idsetPlainSize = 0;
 	size_t sortOrdersSize = 0;
 	size_t indexingStructSize = 0;
+	std::optional<TextIndexMemoryStats> indexingStructDetails;	// Fast-text indexes only
 	size_t vectorsKeeperSize = 0;
 	size_t columnSize = 0;
 	size_t trackedUpdatesCount = 0;

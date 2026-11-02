@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"encoding/json"
 	"math/rand"
 	"regexp"
 	"testing"
@@ -288,4 +289,38 @@ func TestFtConfigCompatibility(t *testing.T) {
 		index := addFtIndex("idxBm25")
 		checkBm25FtConfig(index, expectedBm25k1, expectedBm25b, expectedBm25Type)
 	})
+
+	t.Run("check enable_kb_layout config with index create", func(t *testing.T) {
+		for _, mode := range []reindexer.KbLayoutMode{reindexer.KbLayoutDisable, reindexer.KbLayoutEnable, reindexer.KbLayoutHeuristic} {
+			config.EnableKbLayout = mode
+			index := addFtIndex("idxKbLayout_" + string(mode))
+			assert.Equal(t, string(mode), index.Config.(map[string]any)["enable_kb_layout"])
+		}
+	})
+
+	t.Run("check empty enable_kb_layout is not sent with index create", func(t *testing.T) {
+		config.EnableKbLayout = ""
+		index := addFtIndex("idxKbLayoutEmpty")
+		assert.NotContains(t, index.Config.(map[string]any), "enable_kb_layout")
+	})
+}
+
+func TestFtKbLayoutModeUnmarshal(t *testing.T) {
+	for raw, expected := range map[string]reindexer.KbLayoutMode{
+		`"disable"`:   reindexer.KbLayoutDisable,
+		`"enable"`:    reindexer.KbLayoutEnable,
+		`"heuristic"`: reindexer.KbLayoutHeuristic,
+		`"HeUriStIc"`: reindexer.KbLayoutHeuristic,
+		`false`:       reindexer.KbLayoutDisable,
+		`true`:        reindexer.KbLayoutHeuristic,
+	} {
+		var cfg reindexer.FtFastConfig
+		require.NoError(t, json.Unmarshal([]byte(`{"enable_kb_layout":`+raw+`}`), &cfg), raw)
+		assert.Equal(t, expected, cfg.EnableKbLayout, raw)
+	}
+
+	for _, raw := range []string{`"unknown"`, `1`} {
+		var cfg reindexer.FtFastConfig
+		assert.Error(t, json.Unmarshal([]byte(`{"enable_kb_layout":`+raw+`}`), &cfg), raw)
+	}
 }

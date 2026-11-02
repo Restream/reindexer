@@ -137,11 +137,11 @@ public:
 	Base& MergingTree() noexcept { return tree_; }
 
 	using InvalidEntries = TypesPack<>;
-	using SkippingEntries =
-		TypesPack<SortExprFuncs::Index, SortExprFuncs::JoinedIndex, SortExprFuncs::Rank, SortExprFuncs::RankNamed, SortExprFuncs::Rrf,
-				  SortExprFuncs::SortHash, SortExprFuncs::DistanceFromPoint, SortExprFuncs::DistanceJoinedIndexFromPoint,
-				  SortExprFuncs::DistanceBetweenIndexes, SortExprFuncs::DistanceBetweenIndexAndJoinedIndex,
-				  SortExprFuncs::DistanceBetweenJoinedIndexes, SortExprFuncs::DistanceBetweenJoinedIndexesSameNs>;
+	using SkippingEntries = TypesPack<SortExprFuncs::Index, SortExprFuncs::JoinedIndex, SortExprFuncs::Rank, SortExprFuncs::RankNamed,
+									  SortExprFuncs::Rrf, SortExprFuncs::SortHash, SortExprFuncs::DistanceFromPoint,
+									  SortExprFuncs::DistanceJoinedIndexFromPoint, SortExprFuncs::DistanceBetweenIndexes,
+									  SortExprFuncs::DistanceBetweenIndexAndJoinedIndex, SortExprFuncs::DistanceBetweenJoinedIndexes,
+									  SortExprFuncs::DistanceBetweenJoinedIndexesSameNs, SortExprFuncs::MergedQueryId>;
 	using MergingEntry = SortExprFuncs::Value;
 
 protected:

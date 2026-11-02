@@ -1,4 +1,10 @@
 #pragma once
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <new>
+#include <type_traits>
+#include "estl/id_offset_hash.h"
 #include "estl/lazy_deque.h"
 #include "phrasemerger.h"
 #include "querymergedata.h"
@@ -7,30 +13,102 @@ namespace reindexer {
 
 namespace ft {
 
-// Intermediate information about document found at current merge step. Used only for queries with 2 or more terms
+template <typename T, size_t Alignment>
+class [[nodiscard]] OverallocatingAlignedAllocator {
+	static_assert((Alignment & (Alignment - 1)) == 0);
+	static_assert(Alignment >= alignof(T));
+
+public:
+	using value_type = T;
+	using size_type = size_t;
+	using is_always_equal = std::true_type;
+
+	template <typename U>
+	struct [[nodiscard]] rebind {
+		using other = OverallocatingAlignedAllocator<U, Alignment>;
+	};
+
+	OverallocatingAlignedAllocator() noexcept = default;
+
+	template <typename U>
+	OverallocatingAlignedAllocator(const OverallocatingAlignedAllocator<U, Alignment>&) noexcept {}
+
+	[[nodiscard]] T* allocate(size_t count) {
+		if (count == 0) {
+			return nullptr;
+		}
+
+		constexpr size_t kOverhead = Alignment - 1 + sizeof(void*);
+		if (count > (std::numeric_limits<size_t>::max() - kOverhead) / sizeof(T)) [[unlikely]] {
+			throw std::bad_array_new_length();
+		}
+
+		void* allocation = ::operator new(count * sizeof(T) + kOverhead);
+		const uintptr_t begin = reinterpret_cast<uintptr_t>(allocation) + sizeof(void*);
+		const uintptr_t aligned = (begin + Alignment - 1) & ~(Alignment - 1);
+		reinterpret_cast<void**>(aligned)[-1] = allocation;
+		return reinterpret_cast<T*>(aligned);
+	}
+
+	void deallocate(T* ptr, size_t) noexcept {
+		if (ptr) {
+			::operator delete(reinterpret_cast<void**>(ptr)[-1]);
+		}
+	}
+
+	template <typename U>
+	bool operator==(const OverallocatingAlignedAllocator<U, Alignment>&) const noexcept {
+		return true;
+	}
+};
+
+// Complete document state used while merging queries with 2 or more terms.
+// The compact result type is extracted before result post-processing and sorting.
 struct [[nodiscard]] MergerDocumentData {
+	static constexpr uint16_t kMaxMergedPart = (1U << 15) - 1;
+
 	MergerDocumentData() noexcept = default;
-	explicit MergerDocumentData(PositionsVector&& positions, float r) noexcept : nextTermPositions(std::move(positions)), rank(r) {}
-	explicit MergerDocumentData(PosType position, float r) : rank(r) { nextTermPositions.emplace_back(position); }
-	explicit MergerDocumentData(float r) noexcept : rank(r) {}
 	MergerDocumentData(MergerDocumentData&&) noexcept = default;
 	MergerDocumentData& operator=(MergerDocumentData&&) noexcept = default;
 	MergerDocumentData& operator=(const MergerDocumentData&) = default;
 
-	PositionsVector lastTermPositions;	// positions of matched document of current step
-	PositionsVector nextTermPositions;	// positions of matched document of next step
-	float rank = 0;						// Rank of current matched document
+	PositionsVector lastTermPositions;	// Positions of the previous matched part, used for distance ranking
+	PositionsVector nextTermPositions;	// Best positions of the current part, promoted lazily on the next match
+	float rank = 0;						// Best term contribution for the current query part
+	float proc = 0;						// Accumulated document rank before normalization
+	IdType id = IdType::Zero();			// Virtual document ID in the fulltext index
 
-	uint16_t lastTermCounted = 0;
-	uint16_t termsCounter = 0;
-	bool containsFullMultiWordSynonym = false;
-	bool canBeBoostedByFullMatch = false;
+	uint16_t lastMergedPart : 15 = 0;				   // Last matched query part; 0 before the first match
+	uint16_t notAllPartsPresent : 1 = false;		   // A part was skipped within the current query/synonym group
+	uint8_t field : 6 = 0;							   // Field selected when the document entered merge
+	uint8_t containsFullMultiWordSynonym : 1 = false;  // At least one complete multiword synonym matched
+	uint8_t canBeBoostedByFullMatch : 1 = false;	   // All original query parts matched; field length is checked separately
 
-	void InreaseTermsCounter(uint16_t termIdx) {
-		if (lastTermCounted < termIdx) {
-			++termsCounter;
-			lastTermCounted = termIdx;
+	void SetField(uint8_t value) noexcept {
+		assertrx_dbg(value < (1U << 6));
+		field = value;
+	}
+
+	// Prepare positions for a new query part. The previous matched part remains the distance
+	// anchor even if intermediate parts were missed. Repeated subterms of one part are a no-op.
+	void PrepareForPart(uint16_t partIdx, uint16_t groupBegin) noexcept {
+		assertrx_dbg(partIdx >= groupBegin);
+		assertrx_dbg(partIdx >= lastMergedPart);
+		if (lastMergedPart == partIdx) {
+			return;
 		}
+
+		const uint16_t expectedGroupPart = lastMergedPart < groupBegin ? groupBegin : uint16_t(lastMergedPart + 1);
+		if (partIdx != expectedGroupPart) {
+			notAllPartsPresent = true;
+		}
+
+		if (!nextTermPositions.empty()) {
+			lastTermPositions.swap(nextTermPositions);
+			nextTermPositions.clear();
+		}
+		rank = 0;
+		lastMergedPart = partIdx;
 	}
 };
 
@@ -42,7 +120,10 @@ public:
 	constexpr static bool kWithAreas = kWithRegularAreas || kWithDebugAreas;
 
 	using InfoType = typename MergeDataType::InfoType;
-	static constexpr MergeOffsetT kNotInMerge = std::numeric_limits<MergeOffsetT>::max();
+	using DocumentData = MergerDocumentData;
+	static constexpr size_t kDocumentAlignment = 64;
+	using DocumentVector = std::vector<DocumentData, OverallocatingAlignedAllocator<DocumentData, kDocumentAlignment>>;
+	static constexpr MergeOffsetT kNotInMerge = IdOffsetHash<VDocId, MergeOffsetT>::kEmpty;
 
 	Merger(size_t totalNumDocs, FTConfig* cfg, FtMergeStatuses::Statuses& docsExcluded, size_t fieldSize, int maxAreasInDoc,
 		   bool inTransaction, const RdxContext& ctx)
@@ -58,34 +139,30 @@ public:
 	MergeDataType Merge(QueryMergeData<IdCont>& queryMergeData, RankSortType rankSortType, const DocsStatsGetter& docsStatsGetter);
 
 private:
-	MergeOffsetT mergeDataIdx(uint32_t vdocId) const noexcept {
+	MergeOffsetT& findOffsetSlot(VDocId vdocId) noexcept {
 		assertrx_dbg(useIdoffsets_);
-		assertrx_dbg(vdocId < idoffsets_.size());
-		assertrx_dbg(idoffsets_[vdocId] != kNotInMerge);
-		return idoffsets_[vdocId];
+		return idoffsets_.FindSlot(vdocId);
 	}
-	const InfoType& getMergeData(uint32_t vdocId) const noexcept { return mergeData_[mergeDataIdx(vdocId)]; }
-	const MergerDocumentData& getMergeDataExtended(uint32_t vdocId) const noexcept { return mergeDataExtended_[mergeDataIdx(vdocId)]; }
-	InfoType& getMergeData(uint32_t vdocId) noexcept { return mergeData_[mergeDataIdx(vdocId)]; }
-	MergerDocumentData& getMergeDataExtended(uint32_t vdocId) noexcept { return mergeDataExtended_[mergeDataIdx(vdocId)]; }
 
 	template <typename Bm25Type, typename DocsStatsGetter>
 	void init(QueryMergeData<IdCont>& queryMergeData, uint32_t maxMergedSize, const DocsStatsGetter& docsStatsGetter) {
 		maxMergedDocs_ = std::min<uint32_t>(maxMergedSize, std::numeric_limits<MergeOffsetT>::max());
 		maxMergedDocs_ = std::min(maxMergedSize, cfg_->mergeLimit);
-		mergeData_.reserve(maxMergedDocs_);
 
 		if (!queryMergeData.Trivial()) {
 			useIdoffsets_ = true;
-			idoffsets_.assign(totalNumDocs_, kNotInMerge);
+			idoffsets_.Init(maxMergedDocs_, totalNumDocs_);
 		}
 
 		if (!queryMergeData.Simple()) {
-			mergeDataExtended_.reserve(maxMergedDocs_);
+			mergedDocs_.reserve(maxMergedDocs_);
+			assertrx_dbg(reinterpret_cast<uintptr_t>(mergedDocs_.data()) % kDocumentAlignment == 0);
 
 			if constexpr (kWithAreas) {
 				mergeData_.vectorAreas.reserve(maxMergedDocs_);
 			}
+		} else {
+			mergeData_.reserve(maxMergedDocs_);
 		}
 
 		// init phraseMerger for each phrase and merge phrase results
@@ -110,13 +187,32 @@ private:
 	// See fulltext_ranking.md#full-match-boost
 	template <typename DocsStatsGetter>
 	void addFullMatchBoost(size_t numTerms, const DocsStatsGetter& docsStatsGetter) {
-		for (size_t idx = 0; idx < mergeData_.size(); ++idx) {
-			auto& md = mergeData_[idx];
-			if ((mergeDataExtended_.empty() || mergeDataExtended_[idx].canBeBoostedByFullMatch) &&
-				docsStatsGetter.NumWordsInField(md.id.ToNumber(), md.field) == numTerms) {
+		for (auto& md : mergedDocs_) {
+			if (md.canBeBoostedByFullMatch && docsStatsGetter.NumWordsInField(md.id.ToNumber(), md.field) == numTerms) {
 				md.proc *= cfg_->fullMatchBoost;
 			}
 		}
+	}
+
+	template <typename DocsStatsGetter>
+	void addSimpleFullMatchBoost(const DocsStatsGetter& docsStatsGetter) {
+		for (auto& md : mergeData_) {
+			if (docsStatsGetter.NumWordsInField(md.id.ToNumber(), md.field) == 1) {
+				md.proc *= cfg_->fullMatchBoost;
+			}
+		}
+	}
+
+	void extractMergeData() {
+		mergeData_.reserve(mergedDocs_.size());
+		for (auto& md : mergedDocs_) {
+			InfoType info{.id = md.id, .proc = md.proc, .field = md.field};
+			if constexpr (kWithAreas) {
+				info.areaIndex = uint32_t(mergeData_.size());
+			}
+			mergeData_.emplace_back(std::move(info));
+		}
+		DocumentVector().swap(mergedDocs_);
 	}
 
 	// MinRank filter, scale to 0-255, sort by rank.
@@ -167,11 +263,9 @@ private:
 		}
 	}
 
-	size_t numDocs() const noexcept { return mergeData_.size(); }
+	size_t numMergedDocs() const noexcept { return mergedDocs_.size(); }
 
-	bool docAdded(uint32_t vdocId) const noexcept { return useIdoffsets_ && idoffsets_[vdocId] != kNotInMerge; }
-
-	void addDoc(uint32_t vdocId, float proc, uint8_t field) {
+	void addSimpleDoc(VDocId vdocId, float proc, uint8_t field, MergeOffsetT* offsetSlot) {
 		InfoType info{.id = IdType::FromNumber(vdocId), .proc = proc, .field = field};
 
 		if constexpr (kWithAreas) {
@@ -181,36 +275,44 @@ private:
 		}
 
 		mergeData_.push_back(std::move(info));
-		if (useIdoffsets_) {
-			idoffsets_[vdocId] = MergeOffsetT(mergeData_.size() - 1);
+		if (offsetSlot) {
+			assertrx_dbg(*offsetSlot == kNotInMerge);
+			*offsetSlot = MergeOffsetT(mergeData_.size() - 1);
 		}
 	}
 
-	void addDoc(uint32_t vdocId, float proc, uint8_t field, PositionsVector&& positions, TermRankInfo& subtermInf,
-				const std::u16string& pattern) {
-		addDoc(vdocId, proc, field);
+	DocumentData& addMergedDoc(VDocId vdocId, float proc, uint8_t field, MergeOffsetT& offsetSlot) {
+		auto& md = mergedDocs_.emplace_back();
+		md.id = IdType::FromNumber(vdocId);
+		md.proc = proc;
+		md.SetField(field);
+
+		if constexpr (kWithAreas) {
+			auto& area = mergeData_.vectorAreas.emplace_back();
+			area.ReserveField(fieldSize_);
+		}
+
+		assertrx_dbg(offsetSlot == kNotInMerge);
+		offsetSlot = MergeOffsetT(mergedDocs_.size() - 1);
+		return md;
+	}
+
+	void addMergedDoc(VDocId vdocId, float proc, uint8_t field, PositionsVector&& positions, TermRankInfo& subtermInf,
+					  const std::u16string& pattern, uint16_t partIdx, MergeOffsetT& offsetSlot) {
+		auto& md = addMergedDoc(vdocId, proc, field, offsetSlot);
 		addLastDocAreas(positions, proc, subtermInf, pattern);
-		mergeDataExtended_.emplace_back(std::move(positions), proc);
+		md.PrepareForPart(partIdx, partsGroupBegin_);
+		md.nextTermPositions = std::move(positions);
+		md.rank = proc;
 	}
 
-	void addDoc(uint32_t vdocId, float proc, uint8_t field, PosType position, TermRankInfo& subtermInf, const std::u16string& pattern) {
-		addDoc(vdocId, proc, field);
+	void addMergedDoc(VDocId vdocId, float proc, uint8_t field, PosType position, TermRankInfo& subtermInf, const std::u16string& pattern,
+					  uint16_t partIdx, MergeOffsetT& offsetSlot) {
+		auto& md = addMergedDoc(vdocId, proc, field, offsetSlot);
 		addLastDocAreas(position, proc, subtermInf, pattern);
-		mergeDataExtended_.emplace_back(position, proc);
-	}
-
-	void addDocAreas(uint32_t vdocId, const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
-		if constexpr (kWithAreas) {
-			auto& md = getMergeData(vdocId);
-			addAreas(md.areaIndex, positions, rank, termInf, pattern);
-		}
-	}
-
-	void addDocAreas(uint32_t vdocId, PosType position, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
-		if constexpr (kWithAreas) {
-			auto& md = getMergeData(vdocId);
-			addAreas(md.areaIndex, position, rank, termInf, pattern);
-		}
+		md.PrepareForPart(partIdx, partsGroupBegin_);
+		md.nextTermPositions.emplace_back(position);
+		md.rank = proc;
 	}
 
 	void addLastDocAreas(const PositionsVector& positions, float rank, TermRankInfo& termInf, const std::u16string& pattern) {
@@ -264,14 +366,18 @@ private:
 		}
 	}
 
-	void switchToNextWord() {
-		for (auto& mdExt : mergeDataExtended_) {
-			if (!mdExt.nextTermPositions.empty()) {
-				mdExt.lastTermPositions.swap(mdExt.nextTermPositions);
-				mdExt.nextTermPositions.clear();
-				mdExt.rank = 0;
-			}
+	uint16_t advancePart() {
+		if (currentPart_ == DocumentData::kMaxMergedPart) [[unlikely]] {
+			throw Error(errLogic, "Fulltext merge exceeded max term steps ({})", DocumentData::kMaxMergedPart);
 		}
+		return ++currentPart_;
+	}
+
+	void beginPartsGroup() {
+		if (currentPart_ == DocumentData::kMaxMergedPart) [[unlikely]] {
+			throw Error(errLogic, "Fulltext merge exceeded max term steps ({})", DocumentData::kMaxMergedPart);
+		}
+		partsGroupBegin_ = uint16_t(currentPart_ + 1);
 	}
 
 	template <typename DocsStatsGetter>
@@ -326,11 +432,13 @@ private:
 	FtMergeStatuses::Statuses& docsExcluded_;
 	lazy_deque<PhraseMerger<IdCont, MergeDataType, MergeOffsetT>> phraseMergers_;
 	MergeDataType mergeData_;
-	std::vector<MergerDocumentData> mergeDataExtended_;
+	DocumentVector mergedDocs_;
 	uint32_t maxMergedDocs_ = 0;
-	std::vector<MergeOffsetT> idoffsets_;
+	IdOffsetHash<VDocId, MergeOffsetT> idoffsets_;
 	bool useIdoffsets_ = false;
 	BitsetType restrictingMask_;
+	uint16_t currentPart_ = 0;
+	uint16_t partsGroupBegin_ = 1;
 
 	bool inTransaction_ = false;
 	const RdxContext& ctx_;

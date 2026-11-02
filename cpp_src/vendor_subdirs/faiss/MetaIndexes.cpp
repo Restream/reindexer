@@ -118,7 +118,7 @@ void IndexSplitVectors::search(
 
         // Blocking wait for completion
         for (auto& func : v) {
-            func.get();
+            (void)func.get();
         }
     }
 

@@ -82,7 +82,8 @@ namespace tsl {
 template <class Key, class T, class Hash = std::hash<Key>, class KeyEqual = std::equal_to<Key>,
 		  class Allocator = std::allocator<std::pair<Key, T>>, class GrowthPolicy = tsl::sh::power_of_two_growth_policy<2>,
 		  tsl::sh::exception_safety ExceptionSafety = tsl::sh::exception_safety::basic,
-		  tsl::sh::sparsity Sparsity = tsl::sh::sparsity::medium>
+		  tsl::sh::sparsity Sparsity = tsl::sh::sparsity::medium,
+		  std::size_t HashPrefixBits = tsl::sh::default_hash_prefix_bits<Key>::value>
 class sparse_map {
 private:
 	template <typename U>
@@ -107,7 +108,7 @@ private:
 	};
 
 	using ht = detail_sparse_hash::sparse_hash<std::pair<Key, T>, KeySelect, ValueSelect, Hash, KeyEqual, Allocator, GrowthPolicy,
-											   ExceptionSafety, Sparsity, tsl::sh::probing::quadratic>;
+											   ExceptionSafety, Sparsity, tsl::sh::probing::quadratic, HashPrefixBits>;
 
 public:
 	using key_type = typename ht::key_type;
@@ -600,7 +601,7 @@ public:
 	float max_load_factor() const { return m_ht.max_load_factor(); }
 	void max_load_factor(float ml) { m_ht.max_load_factor(ml); }
 
-	void rehash(size_type count) { m_ht.rehash(count); }
+	void rehash(size_type count) noexcept { m_ht.rehash(count); }
 	void reserve(size_type count) { m_ht.reserve(count); }
 
 	/*
@@ -617,55 +618,6 @@ public:
 	 * Convert a `const_iterator` to an `iterator`.
 	 */
 	iterator mutable_iterator(const_iterator pos) { return m_ht.mutable_iterator(pos); }
-
-	/**
-	 * Serialize the map through the `serializer` parameter.
-	 *
-	 * The `serializer` parameter must be a function object that supports the
-	 * following call:
-	 *  - `template<typename U> void operator()(const U& value);` where the types
-	 * `std::uint64_t`, `float` and `std::pair<Key, T>` must be supported for U.
-	 *
-	 * The implementation leaves binary compatibility (endianness, IEEE 754 for
-	 * floats, ...) of the types it serializes in the hands of the `Serializer`
-	 * function object if compatibility is required.
-	 */
-	template <class Serializer>
-	void serialize(Serializer& serializer) const {
-		m_ht.serialize(serializer);
-	}
-
-	/**
-	 * Deserialize a previously serialized map through the `deserializer`
-	 * parameter.
-	 *
-	 * The `deserializer` parameter must be a function object that supports the
-	 * following calls:
-	 *  - `template<typename U> U operator()();` where the types `std::uint64_t`,
-	 * `float` and `std::pair<Key, T>` must be supported for U.
-	 *
-	 * If the deserialized hash map type is hash compatible with the serialized
-	 * map, the deserialization process can be sped up by setting
-	 * `hash_compatible` to true. To be hash compatible, the Hash, KeyEqual and
-	 * GrowthPolicy must behave the same way than the ones used on the serialized
-	 * map. The `std::size_t` must also be of the same size as the one on the
-	 * platform used to serialize the map. If these criteria are not met, the
-	 * behaviour is undefined with `hash_compatible` sets to true.
-	 *
-	 * The behaviour is undefined if the type `Key` and `T` of the `sparse_map`
-	 * are not the same as the types used during serialization.
-	 *
-	 * The implementation leaves binary compatibility (endianness, IEEE 754 for
-	 * floats, size of int, ...) of the types it deserializes in the hands of the
-	 * `Deserializer` function object if compatibility is required.
-	 */
-	template <class Deserializer>
-	static sparse_map deserialize(Deserializer& deserializer, bool hash_compatible = false) {
-		sparse_map map(0);
-		map.m_ht.deserialize(deserializer, hash_compatible);
-
-		return map;
-	}
 
 	friend bool operator==(const sparse_map& lhs, const sparse_map& rhs) {
 		if (lhs.size() != rhs.size()) {

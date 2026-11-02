@@ -7,8 +7,6 @@
 
 namespace reindexer {
 
-using index_t = uint32_t;
-
 struct [[nodiscard]] FtMergeStatuses {
 	using Statuses = DynamicBitset<>;
 

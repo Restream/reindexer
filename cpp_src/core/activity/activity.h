@@ -21,7 +21,10 @@ struct [[nodiscard]] Activity {
 		IndexesLookup,
 		SelectLoop,
 		ProxiedViaClusterProxy,
-		ProxiedViaShardingProxy
+		ProxiedViaShardingProxy,
+		ItemsDeletion,
+		ItemsModification,
+		WaitReplication
 	} state;
 	std::string_view description;
 	void GetJSON(WrSerializer&) const;

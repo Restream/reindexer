@@ -7,20 +7,23 @@
 #include "core/query/query_impl.h"
 #include "core/query/sql/sql_helpers.h"
 #include "core/reindexer.h"
-#include "estl/lock.h"
 #include "server/dbmanager.h"
 #include "tools/clock.h"
 #include "tools/logger.h"
 
 #include <grpcpp/grpcpp.h>
 
+#include <tuple>
+
 namespace reindexer {
 namespace grpc {
 using namespace std::string_view_literals;
 
+constexpr auto kTxNotFoundMsg = "No such transaction ID or transaction has expired"sv;
+
 ReindexerService::ReindexerService(reindexer_server::DBManager& dbMgr, std::chrono::seconds txIdleTimeout,
 								   reindexer::net::ev::dynamic_loop& loop, reindexer_server::LoggerWrapper logger)
-	: Reindexer::Service(), dbMgr_(dbMgr), logger_(logger), txID_(0), txIdleTimeout_(txIdleTimeout) {
+	: Reindexer::Service(), dbMgr_(dbMgr), logger_(std::move(logger)), txRegistry_(txIdleTimeout) {
 	expirationChecker_.set<ReindexerService, &ReindexerService::removeExpiredTxCb>(this);
 	expirationChecker_.set(loop);
 	expirationChecker_.start(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::seconds(1)).count(),
@@ -137,8 +140,8 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 				opts.Dense(index.options().isdense());
 				opts.Sparse(index.options().issparse());
 				opts.SetConfig(IndexDef::DetermineIndexType(index.name(), index.indextype(), index.fieldtype()), index.options().config());
-				opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(index.options().rtreetype()));
-				opts.SetCollateMode(CollateMode(index.options().collatemode()));
+				std::ignore = opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(index.options().rtreetype()));
+				std::ignore = opts.SetCollateMode(CollateMode(index.options().collatemode()));
 				JsonPaths jsonPaths;
 				jsonPaths.reserve(index.jsonpaths().size());
 				for (int j = 0; j < index.jsonpaths().size(); ++j) {
@@ -207,9 +210,9 @@ static IndexDef toIndexDef(const Index& src) {
 	opts.Array(src.options().isarray());
 	opts.Dense(src.options().isdense());
 	opts.Sparse(src.options().issparse());
-	opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(src.options().rtreetype()));
+	std::ignore = opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(src.options().rtreetype()));
 	if (src.options().sortorderstable().empty()) {
-		opts.SetCollateMode(CollateMode(src.options().collatemode()));
+		std::ignore = opts.SetCollateMode(CollateMode(src.options().collatemode()));
 	} else {
 		opts.collateOpts_ = CollateOpts(src.options().sortorderstable());
 	}
@@ -868,15 +871,11 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 			reindexer::Transaction tr = rx->NewTransaction(request->nsname());
 			status = tr.Status();
 			if (status.ok()) {
-				uint64_t txID = txID_++;
-				response->set_id(txID);
-				TxData txData;
+				TxRegistry::TxData txData;
 				txData.dbName = request->dbname();
 				txData.nsName = request->nsname();
 				txData.tx = std::make_shared<Transaction>(std::move(tr));
-				txData.txDeadline = steady_clock_w::now_coarse() + txIdleTimeout_;
-				lock_guard lck(m_);
-				transactions_.emplace(txID, std::move(txData));
+				response->set_id(txRegistry_.Add(std::move(txData), steady_clock_w::now_coarse()));
 			}
 		}
 		ErrorResponse* retStatus = response->status().New();
@@ -887,39 +886,52 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	});
 }
 
-void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
-	auto now = steady_clock_w::now_coarse();
-	lock_guard lck(m_);
-	for (auto it = transactions_.begin(); it != transactions_.end();) {
-		if (it->second.txDeadline <= now) {
-			auto ctx = reindexer_server::MakeSystemAuthContext();
-			auto status = dbMgr_.OpenDatabase(it->second.dbName, ctx, false);
-			if (status.ok()) {
-				reindexer::Reindexer* db = nullptr;
-				status = ctx.GetDB<reindexer_server::AuthContext::CalledFrom::GRPC>(reindexer_server::kRoleSystem, &db);
-				if (db && status.ok()) {
-					status = db->RollBackTransaction(*it->second.tx);
-					(void)status;  // ignore
-				}
-			}
-			logFmt(LogWarning, "GRPC transaction with id '{}' has expired", it->first);
-			it = transactions_.erase(it);
-		} else {
-			++it;
-		}
+ReindexerService::TxGuard::TxGuard(TxRegistry& registry, uint64_t id, TxRegistry::TxData data) noexcept
+	: registry_(&registry), id_(id), data_(std::move(data)) {}
+
+ReindexerService::TxGuard::TxGuard(TxGuard&& o) noexcept : registry_(o.registry_), id_(o.id_), data_(std::move(o.data_)) {
+	o.registry_ = nullptr;
+}
+
+ReindexerService::TxGuard& ReindexerService::TxGuard::operator=(TxGuard&& o) noexcept {
+	if (this != &o) {
+		Release();
+		registry_ = o.registry_;
+		id_ = o.id_;
+		data_ = std::move(o.data_);
+		o.registry_ = nullptr;
+	}
+	return *this;
+}
+
+void ReindexerService::TxGuard::Release() {
+	if (registry_) {
+		registry_->Release(id_, steady_clock_w::now_coarse());
+		registry_ = nullptr;
 	}
 }
 
-Error ReindexerService::getTx(uint64_t id, TxData& txData) {
-	unique_lock lck(m_);
-	auto it = transactions_.find(id);
-	if (it == transactions_.end()) {
-		lck.unlock();
-		return Error(errParams, "No such transaction ID or transaction has expired");
+void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
+	for (auto& [id, txData] : txRegistry_.ExtractExpired(steady_clock_w::now_coarse())) {
+		auto ctx = reindexer_server::MakeSystemAuthContext();
+		auto status = dbMgr_.OpenDatabase(txData.dbName, ctx, false);
+		if (status.ok()) {
+			reindexer::Reindexer* db = nullptr;
+			status = ctx.GetDB<reindexer_server::AuthContext::CalledFrom::GRPC>(reindexer_server::kRoleSystem, &db);
+			if (db && status.ok()) {
+				std::ignore = db->RollBackTransaction(*txData.tx);
+			}
+		}
+		logFmt(LogWarning, "GRPC transaction with id '{}' has expired", id);
 	}
-	txData.dbName = it->second.dbName;
-	txData.nsName = it->second.nsName;
-	txData.tx = it->second.tx;
+}
+
+Error ReindexerService::getTx(uint64_t id, TxGuard& tx) {
+	auto txData = txRegistry_.Acquire(id);
+	if (!txData) {
+		return Error(errParams, kTxNotFoundMsg);
+	}
+	tx = TxGuard(txRegistry_, id, std::move(*txData));
 	return errOK;
 }
 
@@ -932,22 +944,22 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 		ErrorResponse response;
 		AddTxItemRequest request;
 		while (stream->Read(&request)) {
-			TxData txData;
-			status = getTx(request.id(), txData);
-			dbNameStorage = txData.dbName;
-			dbName = dbNameStorage;
+			TxGuard tx;
+			status = getTx(request.id(), tx);
 			if (!status.ok()) {
 				break;
 			}
+			dbNameStorage = tx.dbName();
+			dbName = dbNameStorage;
 
 			reindexer::Reindexer* rx = nullptr;
-			status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
+			status = getDB(tx.dbName(), reindexer_server::kRoleDataWrite, &rx);
 			if (!status.ok()) {
 				break;
 			}
 
 			assertrx(rx);
-			Item item = rx->NewItem(txData.nsName);
+			Item item = rx->NewItem(tx.nsName());
 			if (!item.Status().ok()) {
 				status = item.Status();
 				break;
@@ -978,16 +990,16 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 			}
 			switch (request.mode()) {
 				case ModifyMode::UPDATE:
-					status = txData.tx->Update(std::move(item));
+					status = tx.tx()->Update(std::move(item));
 					break;
 				case ModifyMode::INSERT:
-					status = txData.tx->Insert(std::move(item));
+					status = tx.tx()->Insert(std::move(item));
 					break;
 				case ModifyMode::UPSERT:
-					status = txData.tx->Upsert(std::move(item));
+					status = tx.tx()->Upsert(std::move(item));
 					break;
 				case ModifyMode::DELETE:
-					status = txData.tx->Delete(std::move(item));
+					status = tx.tx()->Delete(std::move(item));
 					break;
 				case ModifyMode_INT_MAX_SENTINEL_DO_NOT_USE_:
 				case ModifyMode_INT_MIN_SENTINEL_DO_NOT_USE_:
@@ -997,6 +1009,7 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 			if (!status.ok()) {
 				break;
 			}
+			tx.Release();
 			response.set_code(ErrorResponse::ErrorCode(status.code()));
 			response.set_what(status.whatStr());
 			stream->Write(response);
@@ -1014,21 +1027,21 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 
 ::grpc::Status ReindexerService::CommitTransaction(::grpc::ServerContext* context, const CommitTransactionRequest* request,
 												   ErrorResponse* response) {
-	TxData txData;
+	TxGuard tx;
 	std::string_view dbName;
 	return handleRequest(context, dbName, __func__, [&]() -> RequestResult {
-		Error status = getTx(request->id(), txData);
-		dbName = txData.dbName;
+		Error status = getTx(request->id(), tx);
 		if (status.ok()) {
+			dbName = tx.dbName();
 			reindexer::Reindexer* rx = nullptr;
-			status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
+			status = getDB(tx.dbName(), reindexer_server::kRoleDataWrite, &rx);
 			if (status.ok()) {
-				reindexer::QueryResults qr;
-				assertrx(rx);
-				status = rx->CommitTransaction(*txData.tx, qr);
-				{
-					lock_guard lck(m_);
-					transactions_.erase(request->id());
+				if (txRegistry_.Remove(request->id())) {
+					reindexer::QueryResults qr;
+					assertrx(rx);
+					status = rx->CommitTransaction(*tx.tx(), qr);
+				} else {
+					status = Error(errParams, kTxNotFoundMsg);
 				}
 			}
 		}
@@ -1040,20 +1053,20 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 
 ::grpc::Status ReindexerService::RollbackTransaction(::grpc::ServerContext* context, const RollbackTransactionRequest* request,
 													 ErrorResponse* response) {
-	TxData txData;
+	TxGuard tx;
 	std::string_view dbName;
 	return handleRequest(context, dbName, __func__, [&]() -> RequestResult {
-		Error status = getTx(request->id(), txData);
-		dbName = txData.dbName;
+		Error status = getTx(request->id(), tx);
 		if (status.ok()) {
+			dbName = tx.dbName();
 			reindexer::Reindexer* rx = nullptr;
-			status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
+			status = getDB(tx.dbName(), reindexer_server::kRoleDataWrite, &rx);
 			if (status.ok()) {
-				assertrx(rx);
-				status = rx->RollBackTransaction(*txData.tx);
-				{
-					lock_guard lck(m_);
-					transactions_.erase(request->id());
+				if (txRegistry_.Remove(request->id())) {
+					assertrx(rx);
+					status = rx->RollBackTransaction(*tx.tx());
+				} else {
+					status = Error(errParams, kTxNotFoundMsg);
 				}
 			}
 		}
@@ -1165,7 +1178,7 @@ extern "C" void* start_reindexer_grpc(reindexer_server::DBManager& dbMgr, std::c
 									  reindexer_server::LoggerWrapper logger) {
 	auto data = new grpc_data();
 
-	data->service_.reset(new reindexer::grpc::ReindexerService(dbMgr, txIdleTimeout, loop, logger));
+	data->service_.reset(new reindexer::grpc::ReindexerService(dbMgr, txIdleTimeout, loop, std::move(logger)));
 	::grpc::ServerBuilder builder;
 	builder.AddListeningPort(address, ::grpc::InsecureServerCredentials());
 	builder.RegisterService(data->service_.get());

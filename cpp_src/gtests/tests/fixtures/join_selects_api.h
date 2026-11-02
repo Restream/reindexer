@@ -440,7 +440,7 @@ protected:
 
 	void SetQueriesCacheHitsCount(unsigned hitsCount) {
 		auto q = reindexer::Query(reindexer::kConfigNamespace)
-					 .Set("namespaces.cache.query_count_hit_to_cache", int64_t(hitsCount))
+					 .Set("namespaces[*].cache.query_count_hit_to_cache", int64_t(hitsCount))
 					 .Where("type", CondEq, "namespaces");
 		auto updated = Update(q);
 		ASSERT_EQ(updated, 1);

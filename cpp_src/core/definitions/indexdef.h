@@ -80,7 +80,7 @@ public:
 
 	// Returns true if `diff` only contains differences that do not break index compatibility (i.e. an
 	// existing index can be safely reused as-is when re-adding the same definition). Callers like
-	// NamespaceImpl::checkIfSameIndexExists() and reindexer_tool's --dry-run use this to decide whether
+	// ns_indexes::Validator::CheckIfSameIndexExists() and reindexer_tool's --dry-run use this to decide whether
 	// two IndexDefs are "the same enough" for restore-style operations.
 	[[nodiscard]] static bool IsBasicCompatibility(const DiffResult& diff) noexcept;
 

@@ -54,9 +54,9 @@ INSTANTIATE_TEST_SUITE_P(Delete, SQLParserTests,
 										   "DELETE FROM ns WHERE \"123\" = 123 AND \"abc123\" = 'some_value' AND \"123abc123\" = 123",
 										   "DELETE FROM ns WHERE \"123\" = 123 AND \"abc123\" = \"123abc123\" AND \"123abc123\" = 123"));
 
-struct [[nodiscard]] SQLParserWhere : public ::testing::TestWithParam<std::pair<std::string, std::string>> {};
+struct [[nodiscard]] SQLParserErrors : public ::testing::TestWithParam<std::pair<std::string, std::string>> {};
 
-TEST_P(SQLParserWhere, CheckWhereError) {
+TEST_P(SQLParserErrors, CheckError) {
 	auto [sql, errString] = GetParam();
 	try {
 		auto q = reindexer::SQLParser::Parse(sql);
@@ -68,10 +68,11 @@ TEST_P(SQLParserWhere, CheckWhereError) {
 	}
 }
 
-// --gtest_filter=TestsSqlWhere/SQLParserWhere.CheckWhereError/*
+// --gtest_filter=TestsSqlParserErrors/SQLParserErrors.CheckError/*
 INSTANTIATE_TEST_SUITE_P(
-	TestsSqlWhere, SQLParserWhere,
+	TestsSqlParserErrors, SQLParserErrors,
 	::testing::Values(
+		std::pair{R"(UPDATE ns SET field = [[{"id": 1}]])", "Objects in nested array literals are not supported, line: 1 column: 23 24"},
 		std::pair{"select * from ns where", "Expected condition after 'WHERE'"},
 		std::pair{"select * from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 23 26)"},
 		std::pair{"select * from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 24 27)"},

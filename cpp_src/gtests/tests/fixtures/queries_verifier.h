@@ -1314,6 +1314,7 @@ private:
 					return values[0].As<double>();
 				},
 				[](const concepts::OneOf<Rank, RankNamed, Rrf, SortHash> auto&) -> double { abort(); },
+				[](const MergedQueryId& id) { return double(id.Id()); },
 				[&item](const DistanceFromPoint& i) {
 					return distance(static_cast<Point>(static_cast<VariantArray>(item[i.column])), i.point);
 				},

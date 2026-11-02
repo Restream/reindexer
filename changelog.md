@@ -1,3 +1,47 @@
+# Version 5.18.0 (02.11.2026)
+## Core
+- [fea] Reworked the `UPDATE` query engine. The new implementation supports updates with multidimensional arrays and arrays of vectors (for example: `UPDATE ns SET vecs_arr = [[1.0, 1.1], [0.0, 0.7], [[0.5, 0.1], [0.3, 1.0]]]`). It also fixes 24 issues with updates to array elements by position or wildcard, arrays of objects, and uninitialized indexed fields
+- [fea] Added explicit sorting to [MERGE queries](readme.md#merge). `MERGE` now works with any selection, not just full-text queries
+- [fea] Added [deduplication](readme.md#deduplication) to `MERGE` queries. **May break compatibility**: automatic deduplication changes the results in some cases
+- [fea] Added [`merged_query_id()`](readme.md#sorting) for sort expressions. It lets you explicitly prioritize subquery results in `MERGE`
+- [fea] Optimized collision handling for string `hash` indexes, reducing unnecessary string comparisons
+- [fea] Added the `items_deletion`, `items_modification`, and `wait_replication` states to [`#activitystats`](cpp_src/server/contrib/server.md#activitystats) for `UPDATE`/`DELETE` queries, transactions, and RAFT cluster replication
+- [fix] Fixed a possible hang in `UnsubscribeUpdates` when closing an [updates subscription](readme.md#events-subscription) with pending events
+- [fix] Fixed event loss and unnecessary queue retention when subscribers join or leave
+- [fix] Fixed event delivery after queue overflow. Event-loss notifications no longer repeat indefinitely and are delivered to all subscription streams regardless of their filters
+- [fix] Fixed metadata key compatibility for the [`serial()` precept](readme.md#atomic-on-update-functions). Both the old key format and the new one introduced after `v5.11.0` are now recognized correctly
+
+## Fulltext
+- [fea] Reduced full-text index memory usage during builds and background cleanup by limiting excess buffer capacity and releasing unused space
+- [fea] Reduced peak memory usage for full-text queries by using more compact temporary structures to combine term matches
+- [fea] Added `indexing_struct_details` to `#memstats` with a more detailed breakdown of text index memory usage. See the full list of fields in the [`TextIndexMemoryStats` schema](cpp_src/server/contrib/server.md#textindexmemorystats)
+- [fix] Improved BM25 ranking accuracy when deleted or updated documents have not yet been cleaned up from the full-text index
+- [fix] Fixed [highlight/snippet](fulltext.md#using-select-functions) for arrays of certain lengths
+- [fix] Fixed [phrase search](fulltext.md#phrase-search) in individual fields of composite text indexes and in arrays
+
+## Replication
+- [fix] Fixed a possible temporary split-brain in RAFT clusters during overlapping leader elections. A node could start a new election after already accepting another leader
+- [fix] Fixed error handling for snapshots during initial RAFT leader synchronization. Previously, this could terminate the process in rare cases
+
+## Reindexer server
+- [fea] Added IPv6 address support when displaying connected clients in `#clientsstats`
+- [fix] `WAL` queries are now rejected for `CSV`, `Protobuf`, and `MsgPack` output formats
+- [fix] Fixed transaction lifetime handling in [gRPC](cpp_src/readme.md#grpc-api). Active transactions no longer expire prematurely
+- [fix] Fixed a possible `heap-use-after-free` when stopping the RPC server while a client connection is closing
+
+## Reindexer tool
+- [fea] SQL errors are now displayed when attempting to autocomplete an invalid query
+- [fix] Fixed CLI autocompletion for backslash commands, empty input, and commands with leading whitespace
+
+## Build
+- [fea] CMake now detects and uses `ccache` and `mold` when available
+
+## Face
+- [fea] Changed the script of the "Save" button availability for the forms
+- [fea] Added new `ft_cleanup_timeout_ms` field to the "Namespace settings"
+- [fea] Added new `deleted_docs_optimization_threshold` field to the full-text indexes config
+- [fix] Changed some Russian labels in accordance with the documentation
+
 # Version 5.17.0 (26.09.2026)
 ## Core
 - [fea] Optimized [transaction](readme.md#transactions-and-batch-update) commit. Transactions with CJSON items now commit 10-20% faster

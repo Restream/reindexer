@@ -34,10 +34,10 @@ public:
 			return false;
 		}
 		if (iequals(ns, kConfigNamespace)) {
-			if (!commonFilter_.withConfigNamespace) {
-				return false;
-			}
-		} else if (isSystemNamespaceNameFast(ns)) {
+			// Namespaces list does not affect #config (just like in StreamConfig::Check())
+			return commonFilter_.withConfigNamespace;
+		}
+		if (isSystemNamespaceNameFast(ns)) {
 			return false;
 		}
 		return commonFilter_.nss->empty() || commonFilter_.nss->find(ns) != commonFilter_.nss->end();
@@ -59,24 +59,18 @@ private:
 		std::optional<NSSetT> nss;
 		bool withConfigNamespace = false;
 	};
-	class [[nodiscard]] ObserverInfo {
-	public:
-		explicit ObserverInfo(uint32_t _uid) : uid(_uid) {}
-
-		const uint32_t uid;
+	struct [[nodiscard]] ObserverInfo {
 		uint64_t nextUpdateId = 0;
-		uint64_t startUpdateId = 0;
 		EventSubscriberConfig cfg;
 	};
 
-	using DBMapT = fast_hash_map<const void*, DBNamespaces>;
 	using SubscribersMapT = fast_hash_map<IEventsObserver*, ObserverInfo>;
 
 	void stop();
 	void rebuildCommonFilter();
 	void eventsLoop() noexcept;
-	void handleUpdates() RX_REQUIRES(!mtx_);
-	void eraseUpdatesOnUnsubscribe(uint32_t uid, uint64_t from, uint64_t to, uint32_t replicas);
+	void handleUpdates() noexcept RX_REQUIRES(!mtx_);
+	void sendUpdates(IEventsObserver& observer, ObserverInfo& subInfo);
 	uint32_t buildStreamsMask(const ObserverInfo& observer, const EventRecord& rec) noexcept;
 
 	std::thread eventsThread_;
@@ -94,9 +88,6 @@ private:
 	const std::string dbName_;
 	std::atomic<int> serverID_ = {-1};
 	std::atomic<int> shardID_ = {ShardingKeyType::NotSetShard};
-
-	std::vector<uint32_t> emptyUIDs_;
-	uint32_t maxUID_ = 0;
 };
 
 }  // namespace reindexer

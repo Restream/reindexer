@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include "args.h"
 #include "core/keyvalue/p_string.h"
 #include "coroutine/channel.h"
@@ -157,6 +158,7 @@ private:
 		uint32_t seq;
 		bool used;
 		bool system;
+		uint64_t connectAttempt = 0;
 		TimePointT deadline;
 		const reindexer::IRdxCancelContext* cancelCtx;
 		coroutine::channel<CoroRPCAnswer> rspCh;
@@ -193,8 +195,9 @@ private:
 	void appendChunck(std::vector<char>& buf, chunk&& ch);
 	Error login(std::vector<char>& buf);
 	void handleFatalErrorFromReader(const Error& err) noexcept;
-	void handleFatalErrorImpl(const Error& err) noexcept;
-	void handleFatalErrorFromWriter(const Error& err) noexcept;
+	// Only the calls, registered before the connect attempt 'failedConnectAttempt' was started, receive the error
+	void handleFatalErrorImpl(const Error& err, uint64_t failedConnectAttempt = std::numeric_limits<uint64_t>::max()) noexcept;
+	void handleFatalErrorFromWriter(const Error& err, uint64_t failedConnectAttempt = std::numeric_limits<uint64_t>::max()) noexcept;
 	chunk getChunk() noexcept;
 	void recycleChunk(chunk&&) noexcept;
 	void sendCloseResults(const CProtoHeader&, const CoroRPCAnswer&);
@@ -228,6 +231,7 @@ private:
 	coroutine::wait_group wg_;
 	coroutine::wait_group readWg_;
 	bool loggedIn_ = false;
+	uint64_t connectAttempt_ = 0;
 	coroutine::channel<bool> errSyncCh_;
 	manual_connection conn_;
 	TimePointT loginTs_;

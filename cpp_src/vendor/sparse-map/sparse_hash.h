@@ -25,6 +25,8 @@
 #define TSL_SPARSE_HASH_H
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cassert>
 #include <climits>
 #include <cmath>
@@ -66,6 +68,13 @@ enum class probing { linear, quadratic };
 enum class exception_safety { basic, strong };
 
 enum class sparsity { high, medium, low };
+
+/**
+ * Default hash-prefix bits stored per bucket slot when HashPrefixBits is omitted.
+ * Specialize for key types where hash()/operator== is expensive (collated strings, composite payload).
+ */
+template <typename Key, typename = void>
+struct default_hash_prefix_bits : std::integral_constant<std::size_t, 0> {};
 }  // namespace sh
 
 namespace detail_popcount {
@@ -203,41 +212,6 @@ inline std::size_t round_up_to_power_of_two(std::size_t value) {
 	return value + 1;
 }
 
-template <typename T, typename U>
-static T numeric_cast(U value, const char* error_message = "numeric_cast() failed.") {
-	T ret = static_cast<T>(value);
-	if (static_cast<U>(ret) != value) {
-		throw std::runtime_error(error_message);
-	}
-
-	const bool is_same_signedness =
-		(std::is_unsigned<T>::value && std::is_unsigned<U>::value) || (std::is_signed<T>::value && std::is_signed<U>::value);
-	if (!is_same_signedness && (ret < T{}) != (value < U{})) {
-		throw std::runtime_error(error_message);
-	}
-
-	return ret;
-}
-
-/**
- * Fixed size type used to represent size_type values on serialization. Need to
- * be big enough to represent a std::size_t on 32 and 64 bits platforms, and
- * must be the same size on both platforms.
- */
-using slz_size_type = std::uint64_t;
-static_assert(std::numeric_limits<slz_size_type>::max() >= std::numeric_limits<std::size_t>::max(), "slz_size_type must be >= std::size_t");
-
-template <class T, class Deserializer>
-static T deserialize_value(Deserializer& deserializer) {
-	// MSVC < 2017 is not conformant, circumvent the problem by removing the
-	// template keyword
-#if defined(_MSC_VER) && _MSC_VER < 1910
-	return deserializer.Deserializer::operator()<T>();
-#else
-	return deserializer.Deserializer::template operator()<T>();
-#endif
-}
-
 /**
  * WARNING: the sparse_array class doesn't free the ressources allocated through
  * the allocator passed in parameter in each method. You have to manually call
@@ -267,7 +241,7 @@ static T deserialize_value(Deserializer& deserializer) {
  *
  * TODO Check to use std::realloc and std::memmove when possible
  */
-template <typename T, typename Allocator, tsl::sh::sparsity Sparsity>
+template <typename T, typename Allocator, tsl::sh::sparsity Sparsity, std::size_t HashPrefixBits = 0>
 class sparse_array {
 public:
 	using value_type = T;
@@ -300,12 +274,113 @@ private:
 
 	static const std::size_t BUCKET_MASK = BITMAP_NB_BITS - 1;
 
+	/**
+	 * Hash-prefix filter keyed by bucket index (no shift on dense insert/erase):
+	 * - bit0 in m_bitmap_deleted_vals (live slots only; tombstone when !live);
+	 * - HashPrefixBits consecutive bits per index in hash_prefix_storage::pack;
+	 * - +1 bit in hash_prefix_storage::extra for indices [0, 32).
+	 * Totals: indices [0,32) → HashPrefixBits+2 bits; [32,64) → HashPrefixBits+1.
+	 * When HashPrefixBits == 0, hash_prefix_storage is empty and none of this is used.
+	 */
+
+	static_assert(HashPrefixBits + 2 <= 8, "HashPrefixBits+2 must fit in uint8_t");
+
 	static_assert(is_power_of_two(BITMAP_NB_BITS), "BITMAP_NB_BITS must be a power of two.");
 	static_assert(std::numeric_limits<bitmap_type>::digits >= BITMAP_NB_BITS, "bitmap_type must be able to hold at least BITMAP_NB_BITS.");
 	static_assert((std::size_t(1) << BUCKET_SHIFT) == BITMAP_NB_BITS, "(1 << BUCKET_SHIFT) must be equal to BITMAP_NB_BITS.");
 	static_assert(std::numeric_limits<size_type>::max() >= BITMAP_NB_BITS, "size_type must be big enough to hold BITMAP_NB_BITS.");
 	static_assert(std::is_unsigned<bitmap_type>::value, "bitmap_type must be unsigned.");
 	static_assert((std::numeric_limits<bitmap_type>::max() & BUCKET_MASK) == BITMAP_NB_BITS - 1, "");
+
+	struct hash_prefix_storage_empty {};
+
+	template <std::size_t PrefixBits>
+	struct hash_prefix_storage_impl {
+		static constexpr std::size_t PACK_WORDS = (PrefixBits * BITMAP_NB_BITS + 63) / 64;
+		static constexpr std::size_t EXTRA_SLOTS = 32;
+		static constexpr std::uint8_t PACK_MASK = std::uint8_t((1u << PrefixBits) - 1u);
+		static constexpr unsigned BITS_BASE = unsigned(PrefixBits + 1);
+
+		std::array<std::uint64_t, PACK_WORDS> pack{};
+		std::uint32_t extra = 0;
+
+		void reset() noexcept {
+			pack = {};
+			extra = 0;
+		}
+
+		void swap(hash_prefix_storage_impl& other) noexcept {
+			using std::swap;
+			swap(pack, other.pack);
+			swap(extra, other.extra);
+		}
+
+		void copy_from(const hash_prefix_storage_impl& other) noexcept {
+			pack = other.pack;
+			extra = other.extra;
+		}
+
+		bool matches(size_type index, std::uint8_t query_prefix, bitmap_type deleted_bitmap) const noexcept {
+			if (std::uint8_t((deleted_bitmap >> index) & 1) != (query_prefix & 1)) {
+				return false;
+			}
+			if (packed(index) != std::uint8_t((query_prefix >> 1) & PACK_MASK)) {
+				return false;
+			}
+			if (index < EXTRA_SLOTS) {
+				const std::uint8_t stored_extra = std::uint8_t((extra >> index) & 1);
+				return stored_extra == std::uint8_t((query_prefix >> BITS_BASE) & 1);
+			}
+			return true;
+		}
+
+		void store(size_type index, std::uint8_t prefix, bitmap_type& deleted_bitmap) noexcept {
+			const bitmap_type bit = bitmap_type(1) << index;
+			if (prefix & 1) {
+				deleted_bitmap |= bit;
+			} else {
+				deleted_bitmap &= ~bit;
+			}
+			set_packed(index, std::uint8_t(prefix >> 1));
+			if (index < EXTRA_SLOTS) {
+				const std::uint32_t ebit = std::uint32_t(1) << unsigned(index);
+				if ((prefix >> BITS_BASE) & 1) {
+					extra |= ebit;
+				} else {
+					extra &= ~ebit;
+				}
+			}
+		}
+
+	private:
+		std::uint8_t packed(size_type index) const noexcept {
+			const unsigned bit_pos = unsigned(index * PrefixBits);
+			const unsigned word = bit_pos / 64u;
+			const unsigned shift = bit_pos % 64u;
+			std::uint64_t value = pack[word] >> shift;
+			if (shift + unsigned(PrefixBits) > 64u) {
+				value |= pack[word + 1] << (64u - shift);
+			}
+			return std::uint8_t(value & PACK_MASK);
+		}
+
+		void set_packed(size_type index, std::uint8_t bits) noexcept {
+			bits = std::uint8_t(bits & PACK_MASK);
+			const unsigned bit_pos = unsigned(index * PrefixBits);
+			const unsigned word = bit_pos / 64u;
+			const unsigned shift = bit_pos % 64u;
+			const std::uint64_t clear_mask = ~(std::uint64_t(PACK_MASK) << shift);
+			pack[word] = (pack[word] & clear_mask) | (std::uint64_t(bits) << shift);
+			if (shift + unsigned(PrefixBits) > 64u) {
+				const unsigned lo_bits = 64u - shift;
+				const std::uint8_t hi_mask = std::uint8_t((1u << (PrefixBits - lo_bits)) - 1u);
+				pack[word + 1] = (pack[word + 1] & ~std::uint64_t(hi_mask)) | std::uint64_t(bits >> lo_bits);
+			}
+		}
+	};
+
+	using hash_prefix_storage =
+		std::conditional_t<HashPrefixBits != 0, hash_prefix_storage_impl<HashPrefixBits>, hash_prefix_storage_empty>;
 
 public:
 	/**
@@ -343,13 +418,31 @@ public:
 
 public:
 	sparse_array() noexcept
-		: m_values(nullptr), m_bitmap_vals(0), m_bitmap_deleted_vals(0), m_nb_elements(0), m_capacity(0), m_last_array(false) {}
+		: m_values(nullptr),
+		  m_bitmap_vals(0),
+		  m_bitmap_deleted_vals(0),
+		  m_hash_prefix_{},
+		  m_nb_elements(0),
+		  m_capacity(0),
+		  m_last_array(false) {}
 
 	explicit sparse_array(bool last_bucket) noexcept
-		: m_values(nullptr), m_bitmap_vals(0), m_bitmap_deleted_vals(0), m_nb_elements(0), m_capacity(0), m_last_array(last_bucket) {}
+		: m_values(nullptr),
+		  m_bitmap_vals(0),
+		  m_bitmap_deleted_vals(0),
+		  m_hash_prefix_{},
+		  m_nb_elements(0),
+		  m_capacity(0),
+		  m_last_array(last_bucket) {}
 
 	sparse_array(size_type capacity, Allocator& alloc)
-		: m_values(nullptr), m_bitmap_vals(0), m_bitmap_deleted_vals(0), m_nb_elements(0), m_capacity(capacity), m_last_array(false) {
+		: m_values(nullptr),
+		  m_bitmap_vals(0),
+		  m_bitmap_deleted_vals(0),
+		  m_hash_prefix_{},
+		  m_nb_elements(0),
+		  m_capacity(capacity),
+		  m_last_array(false) {
 		if (m_capacity > 0) {
 			m_values = alloc.allocate(m_capacity);
 			tsl_sh_assert(m_values != nullptr);	 // allocate should throw if there is a failure
@@ -360,9 +453,13 @@ public:
 		: m_values(nullptr),
 		  m_bitmap_vals(other.m_bitmap_vals),
 		  m_bitmap_deleted_vals(other.m_bitmap_deleted_vals),
+		  m_hash_prefix_{},
 		  m_nb_elements(0),
 		  m_capacity(other.m_capacity),
 		  m_last_array(other.m_last_array) {
+		if constexpr (HashPrefixBits != 0) {
+			m_hash_prefix_.copy_from(other.m_hash_prefix_);
+		}
 		tsl_sh_assert(other.m_capacity >= other.m_nb_elements);
 		if (m_capacity == 0) {
 			return;
@@ -385,12 +482,16 @@ public:
 		: m_values(other.m_values),
 		  m_bitmap_vals(other.m_bitmap_vals),
 		  m_bitmap_deleted_vals(other.m_bitmap_deleted_vals),
+		  m_hash_prefix_(std::move(other.m_hash_prefix_)),
 		  m_nb_elements(other.m_nb_elements),
 		  m_capacity(other.m_capacity),
 		  m_last_array(other.m_last_array) {
 		other.m_values = nullptr;
 		other.m_bitmap_vals = 0;
 		other.m_bitmap_deleted_vals = 0;
+		if constexpr (HashPrefixBits != 0) {
+			other.m_hash_prefix_.reset();
+		}
 		other.m_nb_elements = 0;
 		other.m_capacity = 0;
 	}
@@ -399,9 +500,13 @@ public:
 		: m_values(nullptr),
 		  m_bitmap_vals(other.m_bitmap_vals),
 		  m_bitmap_deleted_vals(other.m_bitmap_deleted_vals),
+		  m_hash_prefix_{},
 		  m_nb_elements(0),
 		  m_capacity(other.m_capacity),
 		  m_last_array(other.m_last_array) {
+		if constexpr (HashPrefixBits != 0) {
+			m_hash_prefix_.copy_from(other.m_hash_prefix_);
+		}
 		tsl_sh_assert(other.m_capacity >= other.m_nb_elements);
 		if (m_capacity == 0) {
 			return;
@@ -457,6 +562,9 @@ public:
 		}
 
 		if (m_capacity > 0) {
+			for (size_type i = 0; i < m_nb_elements; i++) {
+				destroy_value(alloc, m_values + i);
+			}
 			alloc.deallocate(m_values, m_capacity);
 		}
 
@@ -470,6 +578,9 @@ public:
 		m_values = nullptr;
 		m_bitmap_vals = 0;
 		m_bitmap_deleted_vals = 0;
+		if constexpr (HashPrefixBits != 0) {
+			m_hash_prefix_.reset();
+		}
 		m_nb_elements = 0;
 		m_capacity = 0;
 	}
@@ -483,9 +594,21 @@ public:
 		return (m_bitmap_vals & (bitmap_type(1) << index)) != 0;
 	}
 
+	/**
+	 * Tombstone only when the slot is empty. With HashPrefixBits > 0, live slots
+	 * also use bit0 of m_bitmap_deleted_vals as hash-prefix storage.
+	 */
 	bool has_deleted_value(size_type index) const noexcept {
 		tsl_sh_assert(index < BITMAP_NB_BITS);
-		return (m_bitmap_deleted_vals & (bitmap_type(1) << index)) != 0;
+		return !has_value(index) && ((m_bitmap_deleted_vals & (bitmap_type(1) << index)) != 0);
+	}
+
+	bool hash_prefix_matches(size_type index, std::uint8_t query_prefix) const noexcept {
+		tsl_sh_assert(has_value(index));
+		if constexpr (HashPrefixBits != 0) {
+			return m_hash_prefix_.matches(index, query_prefix, m_bitmap_deleted_vals);
+		}
+		return true;
 	}
 
 	iterator value(size_type index) noexcept {
@@ -502,14 +625,16 @@ public:
 	 * Return iterator to set value.
 	 */
 	template <typename... Args>
-	iterator set(allocator_type& alloc, size_type index, Args&&... value_args) {
+	iterator set(allocator_type& alloc, size_type index, std::uint8_t hash_prefix, Args&&... value_args) {
 		tsl_sh_assert(!has_value(index));
 
 		const size_type offset = index_to_offset(index);
 		insert_at_offset(alloc, offset, std::forward<Args>(value_args)...);
 
 		m_bitmap_vals = (m_bitmap_vals | (bitmap_type(1) << index));
-		m_bitmap_deleted_vals = (m_bitmap_deleted_vals & ~(bitmap_type(1) << index));
+		if constexpr (HashPrefixBits != 0) {
+			m_hash_prefix_.store(index, hash_prefix, m_bitmap_deleted_vals);
+		}
 
 		m_nb_elements++;
 
@@ -549,83 +674,15 @@ public:
 		swap(m_values, other.m_values);
 		swap(m_bitmap_vals, other.m_bitmap_vals);
 		swap(m_bitmap_deleted_vals, other.m_bitmap_deleted_vals);
+		if constexpr (HashPrefixBits != 0) {
+			m_hash_prefix_.swap(other.m_hash_prefix_);
+		}
 		swap(m_nb_elements, other.m_nb_elements);
 		swap(m_capacity, other.m_capacity);
 		swap(m_last_array, other.m_last_array);
 	}
 
 	static iterator mutable_iterator(const_iterator pos) { return const_cast<iterator>(pos); }
-
-	template <class Serializer>
-	void serialize(Serializer& serializer) const {
-		const slz_size_type sparse_bucket_size = m_nb_elements;
-		serializer(sparse_bucket_size);
-
-		const slz_size_type bitmap_vals = m_bitmap_vals;
-		serializer(bitmap_vals);
-
-		const slz_size_type bitmap_deleted_vals = m_bitmap_deleted_vals;
-		serializer(bitmap_deleted_vals);
-
-		for (const value_type& value : *this) {
-			serializer(value);
-		}
-	}
-
-	template <class Deserializer>
-	static sparse_array deserialize_hash_compatible(Deserializer& deserializer, Allocator& alloc) {
-		const slz_size_type sparse_bucket_size = deserialize_value<slz_size_type>(deserializer);
-		const slz_size_type bitmap_vals = deserialize_value<slz_size_type>(deserializer);
-		const slz_size_type bitmap_deleted_vals = deserialize_value<slz_size_type>(deserializer);
-
-		if (sparse_bucket_size > BITMAP_NB_BITS) {
-			throw std::runtime_error(
-				"Deserialized sparse_bucket_size is too big for the platform. "
-				"Maximum should be BITMAP_NB_BITS.");
-		}
-
-		sparse_array sarray;
-		if (sparse_bucket_size == 0) {
-			return sarray;
-		}
-
-		sarray.m_bitmap_vals = numeric_cast<bitmap_type>(bitmap_vals, "Deserialized bitmap_vals is too big.");
-		sarray.m_bitmap_deleted_vals = numeric_cast<bitmap_type>(bitmap_deleted_vals, "Deserialized bitmap_deleted_vals is too big.");
-
-		sarray.m_capacity = numeric_cast<size_type>(sparse_bucket_size, "Deserialized sparse_bucket_size is too big.");
-		sarray.m_values = alloc.allocate(sarray.m_capacity);
-
-		try {
-			for (size_type ivalue = 0; ivalue < sarray.m_capacity; ivalue++) {
-				construct_value(alloc, sarray.m_values + ivalue, deserialize_value<value_type>(deserializer));
-				sarray.m_nb_elements++;
-			}
-		} catch (...) {
-			sarray.clear(alloc);
-			throw;
-		}
-
-		return sarray;
-	}
-
-	/**
-	 * Deserialize the values of the bucket and insert them all in sparse_hash
-	 * through sparse_hash.insert(...).
-	 */
-	template <class Deserializer, class SparseHash>
-	static void deserialize_values_into_sparse_hash(Deserializer& deserializer, SparseHash& sparse_hash) {
-		const slz_size_type sparse_bucket_size = deserialize_value<slz_size_type>(deserializer);
-
-		const slz_size_type bitmap_vals = deserialize_value<slz_size_type>(deserializer);
-		static_cast<void>(bitmap_vals);	 // Ignore, not needed
-
-		const slz_size_type bitmap_deleted_vals = deserialize_value<slz_size_type>(deserializer);
-		static_cast<void>(bitmap_deleted_vals);	 // Ignore, not needed
-
-		for (slz_size_type ivalue = 0; ivalue < sparse_bucket_size; ivalue++) {
-			sparse_hash.insert(deserialize_value<value_type>(deserializer));
-		}
-	}
 
 	constexpr static size_type aligned_capacity(size_t size) noexcept { return align_up<sparse_array::CAPACITY_GROWTH_STEP>(size); }
 
@@ -887,6 +944,7 @@ private:
 
 	bitmap_type m_bitmap_vals;
 	bitmap_type m_bitmap_deleted_vals;
+	[[no_unique_address]] hash_prefix_storage m_hash_prefix_;
 
 	size_type m_nb_elements;
 	size_type m_capacity;
@@ -929,7 +987,7 @@ public:
  * `sparse_array::index_in_sparse_bucket(ibucket)`.
  */
 template <class ValueType, class KeySelect, class ValueSelect, class Hash, class KeyEqual, class Allocator, class GrowthPolicy,
-		  tsl::sh::exception_safety ExceptionSafety, tsl::sh::sparsity Sparsity, tsl::sh::probing Probing>
+		  tsl::sh::exception_safety ExceptionSafety, tsl::sh::sparsity Sparsity, tsl::sh::probing Probing, std::size_t HashPrefixBits = 0>
 class sparse_hash : private Allocator, private Hash, private KeyEqual, private GrowthPolicy {
 private:
 	template <typename U>
@@ -958,7 +1016,7 @@ public:
 	using const_iterator = sparse_iterator<true>;
 
 private:
-	using sparse_array = tsl::detail_sparse_hash::sparse_array<ValueType, Allocator, Sparsity>;
+	using sparse_array = tsl::detail_sparse_hash::sparse_array<ValueType, Allocator, Sparsity, HashPrefixBits>;
 
 	using sparse_buckets_allocator = typename std::allocator_traits<allocator_type>::template rebind_alloc<sparse_array>;
 	using sparse_buckets_container = std::vector<sparse_array, sparse_buckets_allocator>;
@@ -1632,7 +1690,7 @@ public:
 		m_load_threshold_clear_deleted = size_type(float(bucket_count()) * max_load_factor_with_deleted_buckets);
 	}
 
-	void rehash(size_type count) {
+	void rehash(size_type count) noexcept {
 		count = std::max(count, size_type(std::ceil(float(size()) / max_load_factor())));
 		rehash_impl(count);
 	}
@@ -1655,16 +1713,6 @@ public:
 		return iterator(it_sparse_buckets, sparse_array::mutable_iterator(pos.m_sparse_array_it));
 	}
 
-	template <class Serializer>
-	void serialize(Serializer& serializer) const {
-		serialize_impl(serializer);
-	}
-
-	template <class Deserializer>
-	void deserialize(Deserializer& deserializer, bool hash_compatible) {
-		deserialize_impl(deserializer, hash_compatible);
-	}
-
 private:
 	template <class K>
 	std::size_t hash_key(const K& key) const {
@@ -1682,6 +1730,21 @@ private:
 					  (bucket == 0 && m_sparse_buckets_data.empty()));
 
 		return bucket;
+	}
+
+	// Next hash-prefix bits after bucket index bits (power-of-two bucket_count).
+	std::uint8_t hash_prefix_for(std::size_t hash) const noexcept {
+		if constexpr (HashPrefixBits == 0) {
+			return 0;
+		} else {
+			constexpr std::uint8_t kMask = std::uint8_t((1u << (HashPrefixBits + 2)) - 1u);
+			const std::size_t bc = bucket_count();
+			if (bc <= 1) {
+				return std::uint8_t(hash & kMask);
+			}
+			const unsigned shift = unsigned(std::countr_zero(bc));
+			return std::uint8_t((hash >> shift) & kMask);
+		}
 	}
 
 	template <class U = GrowthPolicy, typename std::enable_if<is_power_of_two_policy<U>::value>::type* = nullptr>
@@ -1762,6 +1825,10 @@ private:
 
 		const std::size_t hash = precalculated_hash;
 		tsl_sh_assert(precalculated_hash == hash_key(key));
+		std::uint8_t query_prefix = 0;
+		if constexpr (HashPrefixBits != 0) {
+			query_prefix = hash_prefix_for(hash);
+		}
 		std::size_t ibucket = bucket_for_hash(hash);
 
 		std::size_t probe = 0;
@@ -1770,9 +1837,18 @@ private:
 			auto index_in_sparse_bucket = sparse_array::index_in_sparse_bucket(ibucket);
 
 			if (m_sparse_buckets[sparse_ibucket].has_value(index_in_sparse_bucket)) {
-				auto value_it = m_sparse_buckets[sparse_ibucket].value(index_in_sparse_bucket);
-				if (compare_keys(key, KeySelect()(*value_it))) {
-					return std::make_pair(iterator(m_sparse_buckets_data.begin() + sparse_ibucket, value_it), false);
+				if constexpr (HashPrefixBits != 0) {
+					if (m_sparse_buckets[sparse_ibucket].hash_prefix_matches(index_in_sparse_bucket, query_prefix)) {
+						auto value_it = m_sparse_buckets[sparse_ibucket].value(index_in_sparse_bucket);
+						if (compare_keys(key, KeySelect()(*value_it))) {
+							return std::make_pair(iterator(m_sparse_buckets_data.begin() + sparse_ibucket, value_it), false);
+						}
+					}
+				} else {
+					auto value_it = m_sparse_buckets[sparse_ibucket].value(index_in_sparse_bucket);
+					if (compare_keys(key, KeySelect()(*value_it))) {
+						return std::make_pair(iterator(m_sparse_buckets_data.begin() + sparse_ibucket, value_it), false);
+					}
 				}
 			} else if (m_sparse_buckets[sparse_ibucket].has_deleted_value(index_in_sparse_bucket) && probe < m_bucket_count) {
 				if (!found_first_deleted_bucket) {
@@ -1781,13 +1857,13 @@ private:
 					index_in_sparse_bucket_first_deleted = index_in_sparse_bucket;
 				}
 			} else if (found_first_deleted_bucket) {
-				auto it = insert_in_bucket(sparse_ibucket_first_deleted, index_in_sparse_bucket_first_deleted,
+				auto it = insert_in_bucket(sparse_ibucket_first_deleted, index_in_sparse_bucket_first_deleted, hash,
 										   std::forward<Args>(value_type_args)...);
 				m_nb_deleted_buckets--;
 
 				return it;
 			} else {
-				return insert_in_bucket(sparse_ibucket, index_in_sparse_bucket, std::forward<Args>(value_type_args)...);
+				return insert_in_bucket(sparse_ibucket, index_in_sparse_bucket, hash, std::forward<Args>(value_type_args)...);
 			}
 
 			probe++;
@@ -1802,8 +1878,14 @@ private:
 
 	template <class... Args>
 	std::pair<iterator, bool> insert_in_bucket(std::size_t sparse_ibucket, typename sparse_array::size_type index_in_sparse_bucket,
-											   Args&&... value_type_args) {
-		auto value_it = m_sparse_buckets[sparse_ibucket].set(*this, index_in_sparse_bucket, std::forward<Args>(value_type_args)...);
+											   std::size_t hash, Args&&... value_type_args) {
+		typename sparse_array::iterator value_it;
+		if constexpr (HashPrefixBits != 0) {
+			const std::uint8_t prefix = hash_prefix_for(hash);
+			value_it = m_sparse_buckets[sparse_ibucket].set(*this, index_in_sparse_bucket, prefix, std::forward<Args>(value_type_args)...);
+		} else {
+			value_it = m_sparse_buckets[sparse_ibucket].set(*this, index_in_sparse_bucket, 0, std::forward<Args>(value_type_args)...);
+		}
 		m_nb_elements++;
 
 		return std::make_pair(iterator(m_sparse_buckets_data.begin() + sparse_ibucket, value_it), true);
@@ -1812,6 +1894,10 @@ private:
 	template <class K>
 	size_type erase_impl(const K& key, std::size_t hash) {
 		std::size_t ibucket = bucket_for_hash(hash);
+		std::uint8_t query_prefix = 0;
+		if constexpr (HashPrefixBits != 0) {
+			query_prefix = hash_prefix_for(hash);
+		}
 
 		std::size_t probe = 0;
 		while (true) {
@@ -1819,13 +1905,26 @@ private:
 			const auto index_in_sparse_bucket = sparse_array::index_in_sparse_bucket(ibucket);
 
 			if (m_sparse_buckets[sparse_ibucket].has_value(index_in_sparse_bucket)) {
-				auto value_it = m_sparse_buckets[sparse_ibucket].value(index_in_sparse_bucket);
-				if (compare_keys(key, KeySelect()(*value_it))) {
-					m_sparse_buckets[sparse_ibucket].erase(*this, value_it, index_in_sparse_bucket);
-					m_nb_elements--;
-					m_nb_deleted_buckets++;
+				if constexpr (HashPrefixBits != 0) {
+					if (m_sparse_buckets[sparse_ibucket].hash_prefix_matches(index_in_sparse_bucket, query_prefix)) {
+						auto value_it = m_sparse_buckets[sparse_ibucket].value(index_in_sparse_bucket);
+						if (compare_keys(key, KeySelect()(*value_it))) {
+							m_sparse_buckets[sparse_ibucket].erase(*this, value_it, index_in_sparse_bucket);
+							m_nb_elements--;
+							m_nb_deleted_buckets++;
 
-					return 1;
+							return 1;
+						}
+					}
+				} else {
+					auto value_it = m_sparse_buckets[sparse_ibucket].value(index_in_sparse_bucket);
+					if (compare_keys(key, KeySelect()(*value_it))) {
+						m_sparse_buckets[sparse_ibucket].erase(*this, value_it, index_in_sparse_bucket);
+						m_nb_elements--;
+						m_nb_deleted_buckets++;
+
+						return 1;
+					}
 				}
 			} else if (!m_sparse_buckets[sparse_ibucket].has_deleted_value(index_in_sparse_bucket) || probe >= m_bucket_count) {
 				return 0;
@@ -1844,6 +1943,10 @@ private:
 	template <class K>
 	const_iterator find_impl(const K& key, std::size_t hash) const {
 		std::size_t ibucket = bucket_for_hash(hash);
+		std::uint8_t query_prefix = 0;
+		if constexpr (HashPrefixBits != 0) {
+			query_prefix = hash_prefix_for(hash);
+		}
 
 		std::size_t probe = 0;
 		while (true) {
@@ -1851,9 +1954,18 @@ private:
 			const auto index_in_sparse_bucket = sparse_array::index_in_sparse_bucket(ibucket);
 
 			if (m_sparse_buckets[sparse_ibucket].has_value(index_in_sparse_bucket)) {
-				auto value_it = m_sparse_buckets[sparse_ibucket].value(index_in_sparse_bucket);
-				if (compare_keys(key, KeySelect()(*value_it))) {
-					return const_iterator(m_sparse_buckets_data.cbegin() + sparse_ibucket, value_it);
+				if constexpr (HashPrefixBits != 0) {
+					if (m_sparse_buckets[sparse_ibucket].hash_prefix_matches(index_in_sparse_bucket, query_prefix)) {
+						auto value_it = m_sparse_buckets[sparse_ibucket].value(index_in_sparse_bucket);
+						if (compare_keys(key, KeySelect()(*value_it))) {
+							return const_iterator(m_sparse_buckets_data.cbegin() + sparse_ibucket, value_it);
+						}
+					}
+				} else {
+					auto value_it = m_sparse_buckets[sparse_ibucket].value(index_in_sparse_bucket);
+					if (compare_keys(key, KeySelect()(*value_it))) {
+						return const_iterator(m_sparse_buckets_data.cbegin() + sparse_ibucket, value_it);
+					}
 				}
 			} else if (!m_sparse_buckets[sparse_ibucket].has_deleted_value(index_in_sparse_bucket) || probe >= m_bucket_count) {
 				return cend();
@@ -1873,42 +1985,137 @@ private:
 
 	template <tsl::sh::exception_safety U = ExceptionSafety,
 			  typename std::enable_if<U == tsl::sh::exception_safety::basic>::type* = nullptr>
-	void rehash_impl(size_type count) {
+	// NOLINTNEXTLINE(bugprone-exception-escape) Rehash failures are not recoverable
+	void rehash_impl(size_type count) noexcept {
 		sparse_hash new_table(count, static_cast<Hash&>(*this), static_cast<KeyEqual&>(*this), static_cast<Allocator&>(*this),
 							  m_max_load_factor);
 
-		for (auto& bucket : m_sparse_buckets_data) {
-			for (auto& val : bucket) {
-				KeySelect ks;
-				const key_type& key = ks(val);
-				const std::size_t hash = hash_key(key);
-				new_table.insert_on_rehash(std::move(val), hash);
-			}
+		KeySelect ks;
+		if constexpr (is_power_of_two_policy<GrowthPolicy>::value) {
+			const size_type new_ngroups = new_table.m_sparse_buckets_data.size();
+			// Incoming counts into new groups for the current old group (home buckets only).
+			std::vector<std::uint8_t> incoming(new_ngroups, 0);
+			std::vector<size_type> touched;
+			touched.reserve(sparse_array::max_buckets());
+			std::vector<std::size_t> hashes;
+			hashes.reserve(sparse_array::max_buckets());
 
-			// TODO try to reuse some of the memory
-			bucket.clear(*this);
+			for (auto& bucket : m_sparse_buckets_data) {
+				if (bucket.empty()) {
+					bucket.clear(*this);
+					continue;
+				}
+
+				hashes.resize(0);
+				touched.resize(0);
+
+				// Pass 1: hash each live element once; count home sparse-groups in the new table.
+				for (auto& val : bucket) {
+					const std::size_t hash = hash_key(ks(val));
+					hashes.push_back(hash);
+					const size_type gi = sparse_array::sparse_ibucket(new_table.bucket_for_hash(hash));
+					tsl_sh_assert(gi < new_ngroups);
+					if (incoming[gi] == 0) {
+						touched.push_back(gi);
+					}
+					tsl_sh_assert(incoming[gi] < std::numeric_limits<std::uint8_t>::max());
+					++incoming[gi];
+				}
+
+				// Grow destination m_values capacity up-front (sparsity-aligned).
+				for (size_type gi : touched) {
+					auto& dst = new_table.m_sparse_buckets_data[gi];
+					const std::size_t need = std::size_t(dst.size()) + incoming[gi];
+					const std::size_t capped = std::min(need, sparse_array::max_buckets());
+					if (capped > dst.capacity()) {
+						dst.reserve(sparse_array::aligned_capacity(typename sparse_array::size_type(capped)),
+									static_cast<Allocator&>(new_table));
+					}
+					incoming[gi] = 0;
+				}
+
+				// Pass 2: insert with precomputed hashes.
+				tsl_sh_assert(hashes.size() == bucket.size());
+				std::size_t i = 0;
+				for (auto& val : bucket) {
+					new_table.insert_on_rehash(std::move(val), hashes[i++]);
+				}
+				bucket.clear(*this);
+			}
+		} else {
+			for (auto& bucket : m_sparse_buckets_data) {
+				for (auto& val : bucket) {
+					const std::size_t hash = hash_key(ks(val));
+					new_table.insert_on_rehash(std::move(val), hash);
+				}
+				bucket.clear(*this);
+			}
 		}
 
 		new_table.swap(*this);
 	}
 
 	/**
-	 * TODO: For now we copy each element into the new map. We could move
-	 * them if they are nothrow_move_constructible without triggering
-	 * any exception if we reserve enough space in the sparse arrays beforehand.
+	 * Strong guarantee: copy into the new table (no partial move of *this).
 	 */
 	template <tsl::sh::exception_safety U = ExceptionSafety,
 			  typename std::enable_if<U == tsl::sh::exception_safety::strong>::type* = nullptr>
-	void rehash_impl(size_type count) {
+	// NOLINTNEXTLINE(bugprone-exception-escape) Rehash failures are not recoverable
+	void rehash_impl(size_type count) noexcept {
 		sparse_hash new_table(count, static_cast<Hash&>(*this), static_cast<KeyEqual&>(*this), static_cast<Allocator&>(*this),
 							  m_max_load_factor);
 
-		for (const auto& bucket : m_sparse_buckets_data) {
-			for (const auto& val : bucket) {
-				KeySelect ks;
-				const key_type& key = ks(val);
-				const std::size_t hash = hash_key(key);
-				new_table.insert_on_rehash(val, hash);
+		KeySelect ks;
+		if constexpr (is_power_of_two_policy<GrowthPolicy>::value) {
+			const size_type new_ngroups = new_table.m_sparse_buckets_data.size();
+			std::vector<std::uint8_t> incoming(new_ngroups, 0);
+			std::vector<size_type> touched;
+			touched.reserve(sparse_array::max_buckets());
+			std::vector<std::size_t> hashes;
+			hashes.reserve(sparse_array::max_buckets());
+
+			for (const auto& bucket : m_sparse_buckets_data) {
+				if (bucket.empty()) {
+					continue;
+				}
+
+				hashes.clear();
+				touched.clear();
+
+				for (const auto& val : bucket) {
+					const std::size_t hash = hash_key(ks(val));
+					hashes.push_back(hash);
+					const size_type gi = sparse_array::sparse_ibucket(new_table.bucket_for_hash(hash));
+					tsl_sh_assert(gi < new_ngroups);
+					if (incoming[gi] == 0) {
+						touched.push_back(gi);
+					}
+					tsl_sh_assert(incoming[gi] < std::numeric_limits<std::uint8_t>::max());
+					++incoming[gi];
+				}
+
+				for (size_type gi : touched) {
+					auto& dst = new_table.m_sparse_buckets_data[gi];
+					const std::size_t need = std::size_t(dst.size()) + incoming[gi];
+					const std::size_t capped = std::min(need, sparse_array::max_buckets());
+					if (capped > dst.capacity()) {
+						dst.reserve(sparse_array::aligned_capacity(typename sparse_array::size_type(capped)),
+									static_cast<Allocator&>(new_table));
+					}
+					incoming[gi] = 0;
+				}
+
+				std::size_t i = 0;
+				for (const auto& val : bucket) {
+					new_table.insert_on_rehash(val, hashes[i++]);
+				}
+			}
+		} else {
+			for (const auto& bucket : m_sparse_buckets_data) {
+				for (const auto& val : bucket) {
+					const std::size_t hash = hash_key(ks(val));
+					new_table.insert_on_rehash(val, hash);
+				}
 			}
 		}
 
@@ -1925,7 +2132,12 @@ private:
 			auto index_in_sparse_bucket = sparse_array::index_in_sparse_bucket(ibucket);
 
 			if (!m_sparse_buckets[sparse_ibucket].has_value(index_in_sparse_bucket)) {
-				m_sparse_buckets[sparse_ibucket].set(*this, index_in_sparse_bucket, std::forward<K>(key_value));
+				if constexpr (HashPrefixBits != 0) {
+					const std::uint8_t prefix = hash_prefix_for(hash);
+					m_sparse_buckets[sparse_ibucket].set(*this, index_in_sparse_bucket, prefix, std::forward<K>(key_value));
+				} else {
+					m_sparse_buckets[sparse_ibucket].set(*this, index_in_sparse_bucket, 0, std::forward<K>(key_value));
+				}
 				m_nb_elements++;
 
 				return;
@@ -1939,103 +2151,9 @@ private:
 		}
 	}
 
-	template <class Serializer>
-	void serialize_impl(Serializer& serializer) const {
-		const slz_size_type version = SERIALIZATION_PROTOCOL_VERSION;
-		serializer(version);
-
-		const slz_size_type bucket_count = m_bucket_count;
-		serializer(bucket_count);
-
-		const slz_size_type nb_sparse_buckets = m_sparse_buckets_data.size();
-		serializer(nb_sparse_buckets);
-
-		const slz_size_type nb_elements = m_nb_elements;
-		serializer(nb_elements);
-
-		const slz_size_type nb_deleted_buckets = m_nb_deleted_buckets;
-		serializer(nb_deleted_buckets);
-
-		const float max_load_factor = m_max_load_factor;
-		serializer(max_load_factor);
-
-		for (const auto& bucket : m_sparse_buckets_data) {
-			bucket.serialize(serializer);
-		}
-	}
-
-	template <class Deserializer>
-	void deserialize_impl(Deserializer& deserializer, bool hash_compatible) {
-		tsl_sh_assert(m_bucket_count == 0 && m_sparse_buckets_data.empty());  // Current hash table must be empty
-
-		const slz_size_type version = deserialize_value<slz_size_type>(deserializer);
-		// For now we only have one version of the serialization protocol.
-		// If it doesn't match there is a problem with the file.
-		if (version != SERIALIZATION_PROTOCOL_VERSION) {
-			throw std::runtime_error(
-				"Can't deserialize the sparse_map/set. The "
-				"protocol version header is invalid.");
-		}
-
-		const slz_size_type bucket_count_ds = deserialize_value<slz_size_type>(deserializer);
-		const slz_size_type nb_sparse_buckets = deserialize_value<slz_size_type>(deserializer);
-		const slz_size_type nb_elements = deserialize_value<slz_size_type>(deserializer);
-		const slz_size_type nb_deleted_buckets = deserialize_value<slz_size_type>(deserializer);
-		const float max_load_factor = deserialize_value<float>(deserializer);
-
-		if (!hash_compatible) {
-			this->max_load_factor(max_load_factor);
-			reserve(numeric_cast<size_type>(nb_elements, "Deserialized nb_elements is too big."));
-			for (slz_size_type ibucket = 0; ibucket < nb_sparse_buckets; ibucket++) {
-				sparse_array::deserialize_values_into_sparse_hash(deserializer, *this);
-			}
-		} else {
-			m_bucket_count = numeric_cast<size_type>(bucket_count_ds, "Deserialized bucket_count is too big.");
-
-			GrowthPolicy::operator=(GrowthPolicy(m_bucket_count));
-			// GrowthPolicy should not modify the bucket count we got from
-			// deserialization
-			if (m_bucket_count != bucket_count_ds) {
-				throw std::runtime_error(
-					"The GrowthPolicy is not the same even though "
-					"hash_compatible is true.");
-			}
-
-			if (nb_sparse_buckets != sparse_array::nb_sparse_buckets(m_bucket_count)) {
-				throw std::runtime_error("Deserialized nb_sparse_buckets is invalid.");
-			}
-
-			m_nb_elements = numeric_cast<size_type>(nb_elements, "Deserialized nb_elements is too big.");
-			m_nb_deleted_buckets = numeric_cast<size_type>(nb_deleted_buckets, "Deserialized nb_deleted_buckets is too big.");
-
-			m_sparse_buckets_data.reserve(numeric_cast<size_type>(nb_sparse_buckets, "Deserialized nb_sparse_buckets is too big."));
-			for (slz_size_type ibucket = 0; ibucket < nb_sparse_buckets; ibucket++) {
-				m_sparse_buckets_data.emplace_back(sparse_array::deserialize_hash_compatible(deserializer, static_cast<Allocator&>(*this)));
-			}
-
-			if (!m_sparse_buckets_data.empty()) {
-				m_sparse_buckets_data.back().set_as_last();
-				m_sparse_buckets = m_sparse_buckets_data.data();
-			}
-
-			this->max_load_factor(max_load_factor);
-			if (load_factor() > this->max_load_factor()) {
-				throw std::runtime_error(
-					"Invalid max_load_factor. Check that the serializer and "
-					"deserializer support "
-					"floats correctly as they can be converted implicitely to ints.");
-			}
-		}
-	}
-
 public:
 	static const size_type DEFAULT_INIT_BUCKET_COUNT = 0;
 	static constexpr float DEFAULT_MAX_LOAD_FACTOR = 0.5f;
-
-	/**
-	 * Protocol version currenlty used for serialization.
-	 */
-	static const slz_size_type SERIALIZATION_PROTOCOL_VERSION = 1;
 
 	/**
 	 * Return an always valid pointer to an static empty bucket_entry with

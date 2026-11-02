@@ -139,6 +139,7 @@ private:
 
 template <typename Inserter>
 void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter insert) {
+	static constexpr auto errMsgSameFieldOrdering = "You cannot sort by the same expression twice: {}";
 	std::visit(
 		overloaded{[&](const SortingContext::ExpressionEntry& e) { insert.expr(e.data.desc); },
 				   [&](const SortingContext::JoinedFieldEntry& e) {
@@ -162,7 +163,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 							   tagsPath = ns.tagsMatcher().path2tag(e.field);
 						   }
 						   if (jns.fields.contains(tagsPath)) [[unlikely]] {
-							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
+							   throw Error(errQueryExec, errMsgSameFieldOrdering, e.data.expression);
 						   }
 						   insert.fields(jns, std::move(tagsPath));
 						   insert.joined(e.nsIdx, e.data.desc);
@@ -177,13 +178,13 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 								   const auto f = fields[i];
 								   if (f != IndexValueType::SetByJsonPath) {
 									   if (jns.fields.contains(f)) [[unlikely]] {
-										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
+										   throw Error(errQueryExec, errMsgSameFieldOrdering, e.data.expression);
 									   }
 									   insert.fields(jns, f);
 								   } else {
 									   TagsPath tagsPath = jns.fields.getTagsPath(jsonPathsIndex++);
 									   if (jns.fields.contains(tagsPath)) [[unlikely]] {
-										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
+										   throw Error(errQueryExec, errMsgSameFieldOrdering, e.data.expression);
 									   }
 									   insert.fields(jns, std::move(tagsPath));
 								   }
@@ -192,7 +193,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 							   }
 						   } else {
 							   if (jns.fields.contains(fieldIdx)) [[unlikely]] {
-								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.field);
+								   throw Error(errQueryExec, errMsgSameFieldOrdering, e.field);
 							   }
 							   insert.fields(jns, fieldIdx);
 							   insert.joined(e.nsIdx, e.data.desc);
@@ -212,7 +213,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 							   tagsPath = ns_.tagsMatcher().path2tag(e.data.expression);
 						   }
 						   if (fields_.contains(tagsPath)) [[unlikely]] {
-							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
+							   throw Error(errQueryExec, errMsgSameFieldOrdering, e.data.expression);
 						   }
 						   insert.fields(std::move(tagsPath));
 						   insert.index(e.data.desc);
@@ -225,7 +226,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 								   const auto field(fields[i]);
 								   if (field != SetByJsonPath) {
 									   if (fields_.contains(field)) [[unlikely]] {
-										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
+										   throw Error(errQueryExec, errMsgSameFieldOrdering, e.data.expression);
 									   }
 									   insert.fields(field);
 								   } else {
@@ -233,7 +234,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 									   assertrx_dbg(IsFullText(ns_.indexes()[fieldIdx]->Type()));
 									   TagsPath tagsPath = fields.getTagsPath(jsonPathsIndex++);
 									   if (fields_.contains(tagsPath)) [[unlikely]] {
-										   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
+										   throw Error(errQueryExec, errMsgSameFieldOrdering, e.data.expression);
 									   }
 									   insert.fields(std::move(tagsPath));
 								   }
@@ -242,7 +243,7 @@ void ItemComparator::bindOne(const SortingContext::Entry& sortingEntry, Inserter
 							   }
 						   } else {
 							   if (fields_.contains(fieldIdx)) [[unlikely]] {
-								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: {}", e.data.expression);
+								   throw Error(errQueryExec, errMsgSameFieldOrdering, e.data.expression);
 							   }
 							   insert.fields(fieldIdx);
 							   insert.index(e.data.desc);

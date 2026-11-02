@@ -5,6 +5,7 @@
 
 #include "args/args.hpp"
 #include "ft_fixture.h"
+#include "ft_media_items.h"
 
 namespace reindexer_benchmarks {
 
@@ -14,6 +15,9 @@ const int kItemsInBenchDataset = 1'000;
 const int kItemsInBenchDataset = 10'000;
 #else
 const int kItemsInBenchDataset = 100'000;
+#endif
+#ifndef RX_WITH_SLOW_RUNTIME
+constexpr size_t kMediaItemsInBenchDataset = 400'000;
 #endif
 
 int BenchMain(int argc, char** argv) {
@@ -25,11 +29,20 @@ int BenchMain(int argc, char** argv) {
 	auto DB = InitBenchDB("ft_bench_test"sv);
 
 	FullText ft(DB.get(), "fulltext", kItemsInBenchDataset);
+#ifndef RX_WITH_SLOW_RUNTIME
+	FullTextMediaItems ftMediaItems(DB.get(), "fulltext_media_items", kMediaItemsInBenchDataset);
+#endif
 
 	auto err = ft.Initialize();
 	if (!err.ok()) {
 		return err.code();
 	}
+#ifndef RX_WITH_SLOW_RUNTIME
+	err = ftMediaItems.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+#endif
 
 	::benchmark::Initialize(&argc, argv);
 	std::optional<size_t> verySlowIterationCount, slowIterationCount, fastIterationCount;
@@ -61,6 +74,9 @@ int BenchMain(int argc, char** argv) {
 		}
 	}
 	ft.RegisterAllCases(fastIterationCount, slowIterationCount, verySlowIterationCount);
+#ifndef RX_WITH_SLOW_RUNTIME
+	ftMediaItems.RegisterAllCases();
+#endif
 
 	// Disabled bench for large merge limits
 	// FullTextMergeLimit ftMergeLimit(DB.get(), "merge_limit", 100000);

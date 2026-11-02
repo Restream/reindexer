@@ -38,13 +38,12 @@
 // "%code top" blocks.
 #line 15 "expression.y"
 
-	#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 15
-	// GCC 15 reports false-positive maybe-uninitialized warnings in Bison 3.8.2's variant symbol move/destruction code.
+	#if defined(__GNUC__) && !defined(__clang__)
 	#pragma GCC diagnostic push
 	#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 	#endif
 
-#line 47 "expression_yy.cc"
+#line 46 "expression_yy.cc"
 
 
 
@@ -53,14 +52,14 @@
 
 
 // Unqualified %code blocks.
-#line 30 "expression.y"
+#line 29 "expression.y"
 
 	#include <utility>
 	namespace reindexer::expr_yy {
 	Parser::symbol_type yylex(reindexer::ExprParseContext& ctx);
 	}  // namespace reindexer::expr_yy
 
-#line 63 "expression_yy.cc"
+#line 62 "expression_yy.cc"
 
 
 #ifndef YY_
@@ -134,7 +133,7 @@
 
 #line 6 "expression.y"
 namespace reindexer { namespace expr_yy {
-#line 137 "expression_yy.cc"
+#line 136 "expression_yy.cc"
 
   /// Build a parser object.
   Parser::Parser (reindexer::ExprParseContext& ctx_yyarg)
@@ -659,206 +658,206 @@ namespace reindexer { namespace expr_yy {
           switch (yyn)
             {
   case 2: // input: expr "end of expression"
-#line 68 "expression.y"
+#line 67 "expression.y"
                    {
 		ctx.SetResult(std::move(yystack_[1].value.as < reindexer::ExprNodePtr > ()));
 	}
-#line 666 "expression_yy.cc"
+#line 665 "expression_yy.cc"
     break;
 
   case 3: // expr: expr "+" expr
-#line 74 "expression.y"
+#line 73 "expression.y"
                          {
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprBinary>(reindexer::ExprBinOp::Add, std::move(yystack_[2].value.as < reindexer::ExprNodePtr > ()), std::move(yystack_[0].value.as < reindexer::ExprNodePtr > ()));
 	}
-#line 674 "expression_yy.cc"
+#line 673 "expression_yy.cc"
     break;
 
   case 4: // expr: expr "-" expr
-#line 77 "expression.y"
+#line 76 "expression.y"
                           {
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprBinary>(reindexer::ExprBinOp::Sub, std::move(yystack_[2].value.as < reindexer::ExprNodePtr > ()), std::move(yystack_[0].value.as < reindexer::ExprNodePtr > ()));
 	}
-#line 682 "expression_yy.cc"
+#line 681 "expression_yy.cc"
     break;
 
   case 5: // expr: expr "*" expr
-#line 80 "expression.y"
+#line 79 "expression.y"
                         {
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprBinary>(reindexer::ExprBinOp::Mul, std::move(yystack_[2].value.as < reindexer::ExprNodePtr > ()), std::move(yystack_[0].value.as < reindexer::ExprNodePtr > ()));
 	}
-#line 690 "expression_yy.cc"
+#line 689 "expression_yy.cc"
     break;
 
   case 6: // expr: expr "/" expr
-#line 83 "expression.y"
+#line 82 "expression.y"
                         {
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprBinary>(reindexer::ExprBinOp::Div, std::move(yystack_[2].value.as < reindexer::ExprNodePtr > ()), std::move(yystack_[0].value.as < reindexer::ExprNodePtr > ()));
 	}
-#line 698 "expression_yy.cc"
+#line 697 "expression_yy.cc"
     break;
 
   case 7: // expr: expr "||" expr
-#line 86 "expression.y"
+#line 85 "expression.y"
                          {
 		if (ctx.WhereMode()) {
 			ctx.ThrowError("Unsupported construct in WHERE arithmetic expression: '||'");
 		}
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprBinary>(reindexer::ExprBinOp::Concat, std::move(yystack_[2].value.as < reindexer::ExprNodePtr > ()), std::move(yystack_[0].value.as < reindexer::ExprNodePtr > ()));
 	}
-#line 709 "expression_yy.cc"
+#line 708 "expression_yy.cc"
     break;
 
   case 8: // expr: "-" expr
-#line 92 "expression.y"
+#line 91 "expression.y"
                                   {
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprUnaryMinus>(std::move(yystack_[0].value.as < reindexer::ExprNodePtr > ()));
 	}
-#line 717 "expression_yy.cc"
+#line 716 "expression_yy.cc"
     break;
 
   case 9: // expr: primary
-#line 95 "expression.y"
+#line 94 "expression.y"
                   { yylhs.value.as < reindexer::ExprNodePtr > () = std::move(yystack_[0].value.as < reindexer::ExprNodePtr > ()); }
-#line 723 "expression_yy.cc"
+#line 722 "expression_yy.cc"
     break;
 
   case 10: // primary: NUMBER
-#line 99 "expression.y"
+#line 98 "expression.y"
                  {
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprNumber>(std::move(yystack_[0].value.as < reindexer::Variant > ()));
 	}
-#line 731 "expression_yy.cc"
+#line 730 "expression_yy.cc"
     break;
 
   case 11: // primary: STRING
-#line 102 "expression.y"
+#line 101 "expression.y"
                  {
 		if (ctx.WhereMode() && ctx.InternFieldNames()) {
 			ctx.ThrowError("Unsupported construct in WHERE arithmetic expression: string literal");
 		}
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprNumber>(reindexer::Variant{std::move(yystack_[0].value.as < std::string > ())});
 	}
-#line 742 "expression_yy.cc"
+#line 741 "expression_yy.cc"
     break;
 
   case 12: // primary: TRUE
-#line 108 "expression.y"
+#line 107 "expression.y"
                {
 		if (ctx.WhereMode() && ctx.InternFieldNames()) {
 			ctx.ThrowError("Unsupported construct in WHERE arithmetic expression: boolean literal");
 		}
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprNumber>(reindexer::Variant{true});
 	}
-#line 753 "expression_yy.cc"
+#line 752 "expression_yy.cc"
     break;
 
   case 13: // primary: FALSE
-#line 114 "expression.y"
+#line 113 "expression.y"
                 {
 		if (ctx.WhereMode() && ctx.InternFieldNames()) {
 			ctx.ThrowError("Unsupported construct in WHERE arithmetic expression: boolean literal");
 		}
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprNumber>(reindexer::Variant{false});
 	}
-#line 764 "expression_yy.cc"
+#line 763 "expression_yy.cc"
     break;
 
   case 14: // primary: NULL_VALUE
-#line 120 "expression.y"
+#line 119 "expression.y"
                      {
 		if (ctx.WhereMode() && ctx.InternFieldNames()) {
 			ctx.ThrowError("Unsupported construct in WHERE arithmetic expression: null literal");
 		}
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprNumber>(reindexer::Variant{});
 	}
-#line 775 "expression_yy.cc"
+#line 774 "expression_yy.cc"
     break;
 
   case 15: // primary: NAME
-#line 126 "expression.y"
+#line 125 "expression.y"
                {
 		yylhs.value.as < reindexer::ExprNodePtr > () = ctx.MakeField(std::move(yystack_[0].value.as < std::string > ()));
 	}
-#line 783 "expression_yy.cc"
+#line 782 "expression_yy.cc"
     break;
 
   case 16: // primary: QUOTED_NAME
-#line 129 "expression.y"
+#line 128 "expression.y"
                       {
 		yylhs.value.as < reindexer::ExprNodePtr > () = ctx.MakeField(std::move(yystack_[0].value.as < std::string > ()), true);
 	}
-#line 791 "expression_yy.cc"
+#line 790 "expression_yy.cc"
     break;
 
   case 17: // primary: FUNCTION "(" opt_expr_args ")"
-#line 132 "expression.y"
+#line 131 "expression.y"
                                                {
 		yylhs.value.as < reindexer::ExprNodePtr > () = ctx.MakeFunction(std::move(yystack_[3].value.as < std::string > ()), std::move(yystack_[1].value.as < reindexer::ExprNodeArgs > ()));
 	}
-#line 799 "expression_yy.cc"
+#line 798 "expression_yy.cc"
     break;
 
   case 18: // primary: "(" expr ")"
-#line 135 "expression.y"
+#line 134 "expression.y"
                              { yylhs.value.as < reindexer::ExprNodePtr > () = std::move(yystack_[1].value.as < reindexer::ExprNodePtr > ()); }
-#line 805 "expression_yy.cc"
+#line 804 "expression_yy.cc"
     break;
 
   case 19: // primary: array_lit
-#line 136 "expression.y"
+#line 135 "expression.y"
                     {
 		if (ctx.WhereMode()) {
 			ctx.ThrowError("Unsupported construct in WHERE arithmetic expression: '['");
 		}
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::move(yystack_[0].value.as < reindexer::ExprNodePtr > ());
 	}
-#line 816 "expression_yy.cc"
+#line 815 "expression_yy.cc"
     break;
 
   case 20: // array_lit: "[" opt_array_elems "]"
-#line 145 "expression.y"
+#line 144 "expression.y"
                                         {
 		yylhs.value.as < reindexer::ExprNodePtr > () = std::make_unique<reindexer::ExprArrayLiteral>(std::move(yystack_[1].value.as < reindexer::VariantArray > ()));
 	}
-#line 824 "expression_yy.cc"
+#line 823 "expression_yy.cc"
     break;
 
   case 21: // opt_array_elems: %empty
-#line 151 "expression.y"
+#line 150 "expression.y"
                  { yylhs.value.as < reindexer::VariantArray > () = reindexer::VariantArray{}; }
-#line 830 "expression_yy.cc"
+#line 829 "expression_yy.cc"
     break;
 
   case 22: // opt_array_elems: array_elems
-#line 152 "expression.y"
+#line 151 "expression.y"
                       { yylhs.value.as < reindexer::VariantArray > () = std::move(yystack_[0].value.as < reindexer::VariantArray > ()); }
-#line 836 "expression_yy.cc"
+#line 835 "expression_yy.cc"
     break;
 
   case 23: // array_elems: array_elem
-#line 156 "expression.y"
+#line 155 "expression.y"
                      {
 		yylhs.value.as < reindexer::VariantArray > () = reindexer::VariantArray{};
 		yylhs.value.as < reindexer::VariantArray > ().emplace_back(std::move(yystack_[0].value.as < reindexer::Variant > ()));
 	}
-#line 845 "expression_yy.cc"
+#line 844 "expression_yy.cc"
     break;
 
   case 24: // array_elems: array_elems "," array_elem
-#line 160 "expression.y"
+#line 159 "expression.y"
                                        { yylhs.value.as < reindexer::VariantArray > () = std::move(yystack_[2].value.as < reindexer::VariantArray > ()); yylhs.value.as < reindexer::VariantArray > ().emplace_back(std::move(yystack_[0].value.as < reindexer::Variant > ())); }
-#line 851 "expression_yy.cc"
+#line 850 "expression_yy.cc"
     break;
 
   case 25: // array_elem: NUMBER
-#line 164 "expression.y"
+#line 163 "expression.y"
                  { yylhs.value.as < reindexer::Variant > () = std::move(yystack_[0].value.as < reindexer::Variant > ()); }
-#line 857 "expression_yy.cc"
+#line 856 "expression_yy.cc"
     break;
 
   case 26: // array_elem: "-" NUMBER
-#line 165 "expression.y"
+#line 164 "expression.y"
                        {
 		if (yystack_[0].value.as < reindexer::Variant > ().Type().IsOneOf<reindexer::KeyValueType::Int, reindexer::KeyValueType::Int64>()) {
 			yylhs.value.as < reindexer::Variant > () = reindexer::Variant{-yystack_[0].value.as < reindexer::Variant > ().As<int64_t>()};
@@ -866,68 +865,68 @@ namespace reindexer { namespace expr_yy {
 			yylhs.value.as < reindexer::Variant > () = reindexer::Variant{-yystack_[0].value.as < reindexer::Variant > ().As<double>()};
 		}
 	}
-#line 869 "expression_yy.cc"
+#line 868 "expression_yy.cc"
     break;
 
   case 27: // array_elem: "+" NUMBER
-#line 172 "expression.y"
+#line 171 "expression.y"
                       { yylhs.value.as < reindexer::Variant > () = std::move(yystack_[0].value.as < reindexer::Variant > ()); }
-#line 875 "expression_yy.cc"
+#line 874 "expression_yy.cc"
     break;
 
   case 28: // array_elem: STRING
-#line 173 "expression.y"
+#line 172 "expression.y"
                  { yylhs.value.as < reindexer::Variant > () = reindexer::Variant{std::move(yystack_[0].value.as < std::string > ())}; }
-#line 881 "expression_yy.cc"
+#line 880 "expression_yy.cc"
     break;
 
   case 29: // array_elem: TRUE
-#line 174 "expression.y"
+#line 173 "expression.y"
                { yylhs.value.as < reindexer::Variant > () = reindexer::Variant{true}; }
-#line 887 "expression_yy.cc"
+#line 886 "expression_yy.cc"
     break;
 
   case 30: // array_elem: FALSE
-#line 175 "expression.y"
+#line 174 "expression.y"
                 { yylhs.value.as < reindexer::Variant > () = reindexer::Variant{false}; }
-#line 893 "expression_yy.cc"
+#line 892 "expression_yy.cc"
     break;
 
   case 31: // array_elem: NULL_VALUE
-#line 176 "expression.y"
+#line 175 "expression.y"
                      { yylhs.value.as < reindexer::Variant > () = reindexer::Variant{}; }
-#line 899 "expression_yy.cc"
+#line 898 "expression_yy.cc"
     break;
 
   case 32: // opt_expr_args: %empty
-#line 180 "expression.y"
+#line 179 "expression.y"
                  { yylhs.value.as < reindexer::ExprNodeArgs > () = reindexer::ExprNodeArgs{}; }
-#line 905 "expression_yy.cc"
+#line 904 "expression_yy.cc"
     break;
 
   case 33: // opt_expr_args: expr_args
-#line 181 "expression.y"
+#line 180 "expression.y"
                     { yylhs.value.as < reindexer::ExprNodeArgs > () = std::move(yystack_[0].value.as < reindexer::ExprNodeArgs > ()); }
-#line 911 "expression_yy.cc"
+#line 910 "expression_yy.cc"
     break;
 
   case 34: // expr_args: expr
-#line 185 "expression.y"
+#line 184 "expression.y"
                {
 		yylhs.value.as < reindexer::ExprNodeArgs > () = reindexer::ExprNodeArgs{};
 		yylhs.value.as < reindexer::ExprNodeArgs > ().emplace_back(std::move(yystack_[0].value.as < reindexer::ExprNodePtr > ()));
 	}
-#line 920 "expression_yy.cc"
+#line 919 "expression_yy.cc"
     break;
 
   case 35: // expr_args: expr_args "," expr
-#line 189 "expression.y"
+#line 188 "expression.y"
                                { yylhs.value.as < reindexer::ExprNodeArgs > () = std::move(yystack_[2].value.as < reindexer::ExprNodeArgs > ()); yylhs.value.as < reindexer::ExprNodeArgs > ().emplace_back(std::move(yystack_[0].value.as < reindexer::ExprNodePtr > ())); }
-#line 926 "expression_yy.cc"
+#line 925 "expression_yy.cc"
     break;
 
 
-#line 930 "expression_yy.cc"
+#line 929 "expression_yy.cc"
 
             default:
               break;
@@ -1259,10 +1258,10 @@ namespace reindexer { namespace expr_yy {
   const unsigned char
   Parser::yyrline_[] =
   {
-       0,    68,    68,    74,    77,    80,    83,    86,    92,    95,
-      99,   102,   108,   114,   120,   126,   129,   132,   135,   136,
-     145,   151,   152,   156,   160,   164,   165,   172,   173,   174,
-     175,   176,   180,   181,   185,   189
+       0,    67,    67,    73,    76,    79,    82,    85,    91,    94,
+      98,   101,   107,   113,   119,   125,   128,   131,   134,   135,
+     144,   150,   151,   155,   159,   163,   164,   171,   172,   173,
+     174,   175,   179,   180,   184,   188
   };
 
   void
@@ -1295,9 +1294,9 @@ namespace reindexer { namespace expr_yy {
 
 #line 6 "expression.y"
 } } // reindexer::expr_yy
-#line 1298 "expression_yy.cc"
+#line 1297 "expression_yy.cc"
 
-#line 192 "expression.y"
+#line 191 "expression.y"
 
 
 void reindexer::expr_yy::Parser::error(const std::string& msg) {

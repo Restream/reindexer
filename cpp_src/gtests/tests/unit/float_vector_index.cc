@@ -1364,16 +1364,19 @@ void FloatVector::TestSelectFilters() try {
 			const auto fldIdx = rand() % kIndexesCount;
 			vectors[id][fldIdx] = rndFVField<kDimension, isArray>();
 			const auto& itemVectors(vectors[id][fldIdx]);
+			const auto fldPath = fieldPath(fldIdx);
+			const bool canUseIndexName = !isArray || fldPath.find('.') == std::string::npos;
+			const auto updateField = canUseIndexName && rand() % 2 != 0 ? indexName(fldIdx) : fldPath;
 
 			auto query = reindexer::Query(kNsName).Where(kFieldNameId, CondEq, id).SelectAllFields();
 			if (itemVectors.size() == 1 && rand() % 3 != 0) {
-				query.Set(rand() % 2 == 0 ? fieldPath(fldIdx) : indexName(fldIdx), itemVectors[0].View());
+				query.Set(updateField, itemVectors[0].View());
 			} else {
 				reindexer::VariantArray views;
 				views.reserve(itemVectors.size());
 				std::ranges::copy(std::views::transform(itemVectors, [](const auto& v) { return reindexer::Variant{v.View()}; }),
 								  std::back_inserter(views));
-				query.Set(rand() % 2 == 0 ? fieldPath(fldIdx) : indexName(fldIdx), views);
+				query.Set(updateField, views);
 			}
 			reindexer::QueryResults qr;
 			rt.Update(query, qr);

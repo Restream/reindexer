@@ -177,7 +177,7 @@ void ThreadedIndex<IndexT>::waitAndHandleFutures(
         auto& fut = v[i];
 
         try {
-            fut.get();
+            (void)fut.get();
         } catch (...) {
             exceptions.emplace_back(
                     std::make_pair(i, std::current_exception()));

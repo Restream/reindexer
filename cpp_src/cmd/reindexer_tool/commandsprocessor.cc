@@ -695,7 +695,7 @@ Error CommandsProcessor<DBInterface>::Run(const std::string& command, const std:
 
 static std::string indexDefDiffDescription(const reindexer::IndexDef& dumpIdx, const reindexer::IndexDef& targetIdx) {
 	const auto diff = dumpIdx.Compare(targetIdx);
-	// Mirror NamespaceImpl::checkIfSameIndexExists() — restore considers two indexes the same when only
+	// Mirror ns_indexes::Validator::CheckIfSameIndexExists() — restore considers two indexes the same when only
 	// "non-structural" options differ (dense flag, sort_order_letters, FT config, etc.). Anything that
 	// would actually break re-creation of the index is reported below.
 	if (reindexer::IndexDef::IsBasicCompatibility(diff)) {
@@ -1220,6 +1220,9 @@ Error CommandsProcessor<DBInterface>::interactive() noexcept {
 		rx.history_load(history_file);
 		rx.set_max_history_size(1000);
 		rx.set_max_hint_rows(8);
+		// '\' stays inside the completed word, so command suggestions can include it
+		// without shifting the replacement away from a partial SQL token.
+		rx.set_word_break_characters(" \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}|;:'\",<.>/?");
 		setCompletionCallback(rx, &replxx::Replxx::set_completion_callback);
 
 		std::string prompt = "\x1b[1;32mReindexer\x1b[0m> ";
@@ -1489,10 +1492,27 @@ void CommandsProcessor<DBInterface>::fromDumpFile(std::ifstream& infile, DumpFil
 template <typename DBInterface>
 Error CommandsProcessor<DBInterface>::getSuggestions(const std::string& input, reindexer::SQLSuggestions& suggestions) noexcept {
 	try {
-		if (!input.empty() && input[0] != '\\') {
+		// One completion is written into the line. A second, different entry keeps the menu
+		// path used for several suggestions: the text is shown, then the prompt is opened
+		// again with the partial command.
+		const auto showMessage = [&suggestions](std::string message) {
+			suggestions.suggestions.clear();
+			suggestions.suggestions.emplace_back(std::move(message));
+			suggestions.suggestions.emplace_back();
+		};
+		// Spaces alone, and a leading space before '\', are not an SQL query: " \namespaces " is a local command.
+		const auto commandPos = input.find_first_not_of(" \t");
+		const bool localCommand = commandPos != std::string::npos && input[commandPos] == '\\';
+		if (commandPos != std::string::npos && !localCommand) {
 			Error err = db().GetSqlSuggestions(input, input.length() - 1, suggestions);
 			if (!err.ok()) {
-				return err;
+				showMessage(std::string("ERROR: ").append(err.what()));
+				return errOK;
+			}
+			// Same text HTTP returns as "error", for example "Expected 'FROM', but found 'fom'".
+			if (suggestions.suggestions.empty() && !suggestions.errorMessage.empty()) {
+				showMessage(std::move(suggestions.errorMessage));
+				return errOK;
 			}
 		}
 		if (suggestions.suggestions.empty()) {
@@ -1592,8 +1612,8 @@ void CommandsProcessor<DBInterface>::addCommandsSuggestions(const std::string& c
 	} else {
 		for (const CommandDefinition& cmdDef : cmds_) {
 			if (token.empty() || reindexer::isBlank(token) ||
-				((token.length() < cmdDef.command.length()) && reindexer::checkIfStartsWith(token, cmdDef.command))) {
-				suggestions.emplace_back(cmdDef.command[0] == '\\' ? cmdDef.command.substr(1) : cmdDef.command);
+				(token.length() < cmdDef.command.length() && reindexer::checkIfStartsWith(token, cmdDef.command))) {
+				suggestions.emplace_back(cmdDef.command);
 			}
 		}
 	}

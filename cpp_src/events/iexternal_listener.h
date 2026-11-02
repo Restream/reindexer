@@ -15,7 +15,6 @@ public:
 	explicit EventRecord(updates::UpdateRecord&& rec) noexcept : updates::UpdateRecord(std::move(rec)), ts_(ClockT::now()) {}
 
 	ClockT::time_point Timestamp() const noexcept { return ts_; }
-	void UpdateTimestamp() noexcept { ts_ = ClockT::now(); }
 
 private:
 	ClockT::time_point ts_;

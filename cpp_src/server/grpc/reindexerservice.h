@@ -4,10 +4,9 @@
 #include "reindexer.grpc.pb.h"
 
 #include "core/transaction/transaction.h"
-#include "estl/mutex.h"
 #include "net/ev/ev.h"
 #include "server/loggerwrapper.h"
-#include "tools/clock.h"
+#include "txregistry.h"
 
 namespace reindexer_server {
 class DBManager;
@@ -80,10 +79,25 @@ private:
 		::grpc::Status grpcStatus{::grpc::Status::OK};
 	};
 
-	struct [[nodiscard]] TxData {
-		std::shared_ptr<Transaction> tx;
-		steady_clock_w::time_point txDeadline;
-		std::string dbName, nsName;
+	class [[nodiscard]] TxGuard {
+	public:
+		TxGuard() = default;
+		TxGuard(TxRegistry& registry, uint64_t id, TxRegistry::TxData data) noexcept;
+		~TxGuard() { Release(); }
+		TxGuard(TxGuard&& o) noexcept;
+		TxGuard& operator=(TxGuard&& o) noexcept;
+		TxGuard(const TxGuard&) = delete;
+		TxGuard& operator=(const TxGuard&) = delete;
+
+		void Release();
+		std::shared_ptr<Transaction>& tx() noexcept { return data_.tx; }
+		const std::string& dbName() const noexcept { return data_.dbName; }
+		const std::string& nsName() const noexcept { return data_.nsName; }
+
+	private:
+		TxRegistry* registry_ = nullptr;
+		uint64_t id_ = 0;
+		TxRegistry::TxData data_;
 	};
 
 	Error execSqlQueryByType(QueryResults& res, const SqlRequest& request);
@@ -103,7 +117,7 @@ private:
 	static void packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr);
 
 	Error executeQuery(const std::string& dbName, const Query& q, QueryType type, reindexer::QueryResults& qr);
-	Error getTx(uint64_t id, TxData& txData);
+	Error getTx(uint64_t id, TxGuard& tx);
 
 	::grpc::Status log(::grpc::ServerContext* context, std::string_view method, std::string_view dbName, const RequestResult& result) const;
 	::grpc::Status log(::grpc::ServerContext* context, std::string_view method, std::string_view dbName,
@@ -127,10 +141,7 @@ private:
 
 	reindexer_server::DBManager& dbMgr_;
 	reindexer_server::LoggerWrapper logger_;
-	mutex m_;
-	std::unordered_map<uint64_t, TxData> transactions_;
-	uint64_t txID_ = {0};
-	const std::chrono::seconds txIdleTimeout_;
+	TxRegistry txRegistry_;
 	reindexer::net::ev::timer expirationChecker_;
 };
 

@@ -97,24 +97,6 @@ public:
 				status.result = error ? std::move(err) : Error();
 				return status;
 			}
-			// Simplified version to just count replicas and check erasure condition
-			UpdatesStatus handledNoResult(uint32_t requiredReplicas) noexcept {
-				auto expected = replication_.load(std::memory_order_acquire);
-				Counters repl;
-				UpdatesStatus status;
-				do {
-					status = UpdatesStatus();
-					repl = expected;
-					assertrx_dbg(!repl.requireResult);
-					assertrx_dbg(repl.replicatedToEmitter);
-					assertrx_dbg(repl.replicas < kMaxReplicas);
-					if (++repl.replicas == requiredReplicas) {
-						status.requireErasure = true;
-					}
-				} while (!replication_.compare_exchange_strong(expected, repl, std::memory_order_acquire));
-				return status;
-			}
-
 			U data_;
 			// steady_clock_w::time_point deadline;  // TODO: Implement deadline logic
 			std::atomic<Counters> replication_ = Counters{0, 0, 0, 1, 0};
@@ -150,20 +132,6 @@ public:
 				res = status.hasEnoughApproves ? ReplicationResult::Approved : ReplicationResult::Error;
 			}
 			return res;
-		}
-		void OnUpdateHandledSimple(uint32_t nodeId, uint32_t requiredReplicas, uint16_t offset) {
-			if (offset >= count_.load(std::memory_order_acquire)) {
-				throw Error(errParams, "Unexpected offset: {}", offset);
-			}
-			auto status = data_[offset].handledNoResult(requiredReplicas);
-			stats_.OnUpdateApplied(nodeId, id_ + offset);
-			if (status.requireErasure) {
-				erased_.fetch_add(1, std::memory_order_release);
-				stats_.OnUpdateHandled(id_ + offset);
-				if (IsFullyErased()) {
-					owner_.eraseReplicated();
-				}
-			}
 		}
 		const Value& GetUpdate(uint16_t offset) const {
 			if (offset >= count_.load(std::memory_order_acquire)) {
@@ -251,6 +219,14 @@ public:
 	uint64_t GetNextUpdateID() const noexcept {
 		lock_guard lck(mtx_);
 		return getNextUpdateID();
+	}
+	// Erases full chunks with IDs below 'id' regardless of their replicas counters.
+	// Results are not sent here, so it is only valid for the updates without results awaiting (PushAsync<true>).
+	// Chunks pushed during the call are not erased: the lock is released between chunks, so writes could prolong the loop forever
+	void EraseUntil(uint64_t id) noexcept {
+		unique_lock lck(mtx_);
+		id = std::min(id, getNextUpdateID());
+		eraseFront(lck, [id](const UpdateT& upd) noexcept { return upd.isFull() && upd.NextUpdateID() <= id; });
 	}
 	UpdatePtr Read(uint64_t id, std::optional<std::thread::id> notifier) {
 		lock_guard lck(mtx_);
@@ -491,8 +467,14 @@ private:
 		eraseReplicated(lck);
 	}
 	void eraseReplicated(unique_lock<mutex>& lck) noexcept RX_NO_THREAD_SAFETY_ANALYSIS {
-		while (queue_.size() && queue_.front()->isAllResultsSent() && queue_.front()->IsFullyErased()) {
+		eraseFront(lck, [](const UpdateT& upd) noexcept { return upd.isAllResultsSent() && upd.IsFullyErased(); });
+	}
+	template <typename PredT>
+	void eraseFront(unique_lock<mutex>& lck, PredT&& pred) noexcept RX_NO_THREAD_SAFETY_ANALYSIS {
+		while (queue_.size() && pred(*queue_.front())) {
 			auto updPtr = queue_.front();
+			// Erased chunk can not have pending results: their awaiters would never be notified
+			assertrx_dbg(updPtr->isAllResultsSent());
 			queue_.pop_front();
 			const auto updTotalSizeBytes = updPtr->TotalSizeBytes();
 			dataSize_ -= updTotalSizeBytes;

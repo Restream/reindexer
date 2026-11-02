@@ -1,11 +1,17 @@
+#include <thread>
 #include "cluster/config.h"
 #include "cluster/logger.h"
 #include "cluster/raftmanager.h"
 #include "cluster/stats/relicationstatscollector.h"
 #include "core/dbconfig.h"
+#include "estl/gift_str.h"
 #include "gtest/gtest.h"
 #include "gtests/tools.h"
+#include "net/cproto/dispatcher.h"
+#include "net/cproto/serverconnection.h"
 #include "net/ev/ev.h"
+#include "net/listener.h"
+#include "reindexer_version.h"
 #include "tools/serilize/wrserializer.h"
 
 namespace reindexer_tests {
@@ -33,6 +39,80 @@ NodeData MakePing(int serverId, int term, LeaderCommitState state) {
 	ping.leaderCommitState = state;
 	return ping;
 }
+
+class [[nodiscard]] RaftPeerServer {
+public:
+	explicit RaftPeerServer(std::function<reindexer::Error()> onSecondPing) : onSecondPing_(std::move(onSecondPing)) {}
+	~RaftPeerServer() { Stop(); }
+
+	void Start(std::string addr) {
+		thread_ = std::thread([this, addr = std::move(addr)] {
+			stop_.set(loop_);
+			stop_.set([](reindexer::net::ev::async& signal) { signal.loop.break_loop(); });
+			stop_.start();
+			dispatcher_.Register(reindexer::net::cproto::kCmdLogin, this, &RaftPeerServer::Login);
+			dispatcher_.Register(reindexer::net::cproto::kCmdSuggestLeader, this, &RaftPeerServer::SuggestLeader);
+			dispatcher_.Register(reindexer::net::cproto::kCmdLeadersPing, this, &RaftPeerServer::LeadersPing);
+			listener_ = std::make_unique<reindexer::net::Listener<reindexer::net::ListenerType::Mixed>>(
+				loop_, reindexer::net::cproto::ServerConnection::NewFactory(dispatcher_, false), nullptr);
+			listener_->Bind(addr, reindexer::net::socket_domain::tcp);
+			ready_ = true;
+			while (!terminate_) {
+				loop_.run();
+			}
+			ready_ = false;
+			stop_.stop();
+			listener_->Stop();
+			listener_.reset();
+		});
+		while (!ready_) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+	}
+
+	void Stop() {
+		if (thread_.joinable()) {
+			terminate_ = true;
+			stop_.send();
+			thread_.join();
+		}
+	}
+
+private:
+	reindexer::Error Login(reindexer::net::cproto::Context& ctx, reindexer::p_string, reindexer::p_string, reindexer::p_string) {
+		const int64_t startTs =
+			std::chrono::duration_cast<std::chrono::seconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
+		ctx.Return({reindexer::net::cproto::Arg(reindexer::p_string(REINDEX_VERSION)), reindexer::net::cproto::Arg(startTs)});
+		return {};
+	}
+
+	reindexer::Error SuggestLeader(reindexer::net::cproto::Context& ctx, reindexer::p_string data) {
+		NodeData suggestion;
+		auto err = suggestion.FromJSON(reindexer::giftStr(data));
+		if (!err.ok()) {
+			return err;
+		}
+		WrSerializer ser;
+		suggestion.GetJSON(ser);
+		auto json = ser.Slice();
+		ctx.Return({reindexer::net::cproto::Arg(reindexer::p_string(&json))});
+		return {};
+	}
+
+	reindexer::Error LeadersPing(reindexer::net::cproto::Context&, reindexer::p_string) {
+		return ++pingCount_ == 2 ? onSecondPing_() : reindexer::Error{};
+	}
+
+	std::function<reindexer::Error()> onSecondPing_;
+	std::atomic<int> pingCount_{0};
+	std::atomic<bool> terminate_{false};
+	std::atomic<bool> ready_{false};
+	reindexer::net::ev::dynamic_loop loop_;
+	reindexer::net::ev::async stop_;
+	reindexer::net::cproto::Dispatcher dispatcher_;
+	std::unique_ptr<reindexer::net::IListener> listener_;
+	std::thread thread_;
+};
 
 }  // namespace
 
@@ -344,6 +424,53 @@ TEST(RaftLeaderPing, StartNewTermDropsElectionLeaseButRetainsCommitted) {
 		EXPECT_EQ(*elected, reindexer::cluster::RaftInfo::Role::Follower);
 		EXPECT_EQ(mgr.GetLeaderId(), 1);
 		EXPECT_TRUE(mgr.LeaderIsCommittedAvailable(RaftManager::ClockT::now()));
+	}));
+	loop.run();
+}
+
+TEST(RaftLeaderPing, HigherTermDuringLeaderCommitPublishesFollower) {
+	reindexer::net::ev::dynamic_loop loop;
+	ReplicationStatsCollector stats;
+	Logger log(LogNone);
+	RaftManager mgr(loop, stats, log, [](uint32_t, bool) {});
+
+	constexpr int kThisServerId = 3;
+	constexpr int kNewLeaderId = 0;
+	constexpr int kNewTerm = 2;
+	const std::string peerAddr = "127.0.0.1:25699";
+	RaftPeerServer peer([&mgr] {
+		try {
+			NodeData response;
+			mgr.SuggestLeader(MakePing(kNewLeaderId, kNewTerm, LeaderCommitState::Unspecified), response);
+			mgr.LeadersPing(MakePing(kNewLeaderId, kNewTerm, LeaderCommitState::Committed));
+			return reindexer::Error{};
+		} catch (const reindexer::Error& err) {
+			return err;
+		}
+	});
+	peer.Start(peerAddr);
+
+	reindexer::ReplicationConfigData base;
+	base.serverID = kThisServerId;
+	base.clusterID = 1;
+	reindexer::cluster::ClusterConfigData cluster;
+	for (int serverId = 0; serverId < 5; ++serverId) {
+		reindexer::cluster::ClusterNodeConfig node;
+		node.serverId = serverId;
+		node.dsn = reindexer::DSN("cproto://" + peerAddr + "/db");
+		cluster.nodes.emplace_back(std::move(node));
+	}
+	mgr.Configure(base, cluster);
+
+	loop.spawn(reindexer_tests_tools::exceptionWrapper([&] {
+		const auto elected = mgr.RunElectionsRound();
+		ASSERT_TRUE(elected.has_value());
+		EXPECT_EQ(*elected, reindexer::cluster::RaftInfo::Role::Follower);
+		EXPECT_EQ(mgr.GetLeaderId(), kNewLeaderId);
+		EXPECT_TRUE(mgr.LeaderIsCommittedAvailable(RaftManager::ClockT::now()));
+
+		mgr.SetTerminateFlag(true);
+		mgr.AwaitTermination();
 	}));
 	loop.run();
 }

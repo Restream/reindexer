@@ -246,12 +246,11 @@ public:
 	PayloadType GetPayloadType(int nsid) const;
 	TagsMatcher GetTagsMatcher(int nsid) const;
 	// For local qr only
-	const FieldsFilter& GetFieldsFilter(int nsid) const noexcept {
+	const std::shared_ptr<const FieldsFilter>& GetFieldsFilter(int nsid) const noexcept {
 		if (type_ == Type::Local) {
 			return localUnsafe().qr.getFieldsFilter(nsid);
 		}
-		static const FieldsFilter kEmpty;
-		return kEmpty;
+		return FieldsFilter::EmptyPtr();
 	}
 	std::shared_ptr<const Schema> GetSchema(int nsid) const noexcept {
 		if (type_ == Type::Local) {
@@ -495,7 +494,7 @@ public:
 		template <typename QrItT>
 		Item getItem(QrItT&, std::unique_ptr<ItemImpl>&& itemImpl, bool convertViaJSON);
 		template <typename QrItT>
-		Item getItem(QrItT&, std::unique_ptr<ItemImpl>&& itemImpl, const FieldsFilter&, bool convertViaJSON);
+		Item getItem(QrItT&, std::unique_ptr<ItemImpl>&& itemImpl, std::shared_ptr<const FieldsFilter>, bool convertViaJSON);
 		template <typename QrItT>
 		Error getCJSONviaJSON(WrSerializer& wrser, bool withHdrLen, QrItT&);
 		void validateProxiedIterator() const {

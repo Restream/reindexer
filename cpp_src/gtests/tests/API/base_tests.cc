@@ -6,6 +6,7 @@
 #include "reindexer_api.h"
 
 #include "cluster/config.h"
+#include "core/cjson/csvbuilder.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/defnsconfigs.h"
@@ -2448,7 +2449,7 @@ TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
 		constexpr std::string_view sql = "UPDATE test_namespace SET v1=125, id = 3 WHERE id = 2";
 		Query query = Query::FromSQL(sql);
 		auto err = rt.reindexer->Update(query, qr);
-		ASSERT_EQ(err.code(), errLogic);
+		ASSERT_EQ(err.code(), errLogic) << err.what();
 		EXPECT_STREQ(err.what(), "Duplicate Primary Key {id: {3}} for rows [2, 3]!");
 	}
 
@@ -2594,6 +2595,45 @@ TEST_F(ReindexerApi, QueryResultsLSNTest) {
 		auto lsn = (local.begin() + i).GetLSN();
 		ASSERT_EQ(lsn, lsns[i]) << i;
 	}
+}
+
+// Raw WAL records (index/meta changes etc) are not documents, so they have to be handled via IsRaw()/GetRaw() only
+TEST_F(ReindexerApi, WALRawRecordsGetters) {
+	rt.OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	rt.AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	rt.AddIndex(default_namespace, {"name", "hash", "string", IndexOpts()});
+	rt.UpsertJSON(default_namespace, R"j({"id":1,"name":"name_1"})j");
+
+	auto qr = rt.Select(Query(default_namespace).Where("#lsn", CondGt, 0));
+	ASSERT_TRUE(qr.IsWALQuery());
+	EXPECT_THROW(std::ignore = qr.ToLocalQr().MakeCSVTagOrdering(qr.Count(), 0), Error);
+
+	const auto checkRawError = [](const Error& err, std::string_view method) {
+		EXPECT_EQ(err.code(), errParams) << method << ": " << err.what();
+		EXPECT_NE(err.whatStr().find("raw WAL record"), std::string::npos) << method << ": " << err.what();
+	};
+	size_t rawCount = 0, docsCount = 0;
+	for (auto it : qr) {
+		reindexer::WrSerializer ser;
+		if (!it.IsRaw()) {
+			++docsCount;
+			const auto err = it.GetJSON(ser, false);
+			ASSERT_TRUE(err.ok()) << err.what();
+			EXPECT_EQ(ser.Slice(), R"j({"id":1,"name":"name_1"})j");
+			continue;
+		}
+		++rawCount;
+		EXPECT_FALSE(it.GetRaw().empty());
+		checkRawError(it.GetJSON(ser, false), "GetJSON");
+		checkRawError(it.GetCJSON(ser, false), "GetCJSON");
+		checkRawError(it.GetMsgPack(ser, false), "GetMsgPack");
+		checkRawError(it.GetProtobuf(ser), "GetProtobuf");
+		reindexer::CsvOrdering ordering{{}};
+		checkRawError(it.GetCSV(ser, ordering), "GetCSV");
+		checkRawError(it.GetItem().Status(), "GetItem");
+	}
+	EXPECT_EQ(docsCount, 1);
+	EXPECT_GT(rawCount, 0);
 }
 
 TEST_F(ReindexerApi, SelectNull) {

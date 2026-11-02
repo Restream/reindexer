@@ -1,6 +1,7 @@
 #include "core/index/indexfastupdate.h"
 #include "core/formatters/namespacesname_fmt.h"
 #include "core/index/index.h"
+#include "core/namespace/indexes/validator.h"
 #include "core/namespace/namespaceimpl.h"
 #include "tools/logger.h"
 
@@ -10,6 +11,7 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 		return false;
 	}
 
+	const ns_indexes::Validator validator{ns.indexRegistry_};
 	auto indexDiff = from.Compare(to);
 	logFmt(LogInfo, "[{}]:{} Start fast update index '{}'", ns.name_, ns.wal_.GetServer(), from.Name());
 	if (needRecreateIndex(indexDiff)) {
@@ -19,7 +21,7 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 		// The fast update never changes the JSON-paths, so the verification has nothing to register. The throwaway copy
 		// here just keeps the namespace tags matcher out of reach of the checks
 		TagsMatcher tmCopy{ns.tagsMatcher()};
-		ns.verifyUpdateIndex(to, tmCopy);
+		validator.VerifyUpdateIndex(to, tmCopy, ns.indexUpdateContext());
 
 		const auto idxNo = ns.getIndexByName(from.Name());
 		const auto& index = ns.indexes()[idxNo];
@@ -59,7 +61,6 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 				ConstPayload(ns.payloadType(), item).Get(idxNo, keys);
 			}
 
-			resKeys.resize(0);
 			bool needClearCacheUnused = false;
 			newIndex->Upsert(resKeys, keys, rowId, needClearCacheUnused);
 		}
@@ -83,11 +84,11 @@ bool IndexFastUpdate::Try(NamespaceImpl& ns, const IndexDef& from, const IndexDe
 		// Every verification has to run before the first mutation below (reloadNonQuantizedIndex/ReplaceFieldType are not
 		// reversible), so a failed check here leaves the live index untouched
 		if (quantizationChanged) {
-			ns.verifyUpsertQuantizationConfigHNSWIndex("update", to);
-			ns.verifyUpdateQuantizationConfigHNSWIndex(index, to);
+			validator.VerifyUpsertQuantizationConfigHNSWIndex("update", to);
+			validator.VerifyUpdateQuantizationConfigHNSWIndex(*index, to, ns.itemsCount());
 		}
 		if (embeddingChanged) {
-			ns.verifyUpsertEmbedder("update", to);
+			validator.VerifyUpsertEmbedder("update", to);
 		}
 
 		if (quantizationChanged && !to.Opts().FloatVector().QuantizationConfig()) {

@@ -452,64 +452,94 @@ TEST(EmbedderCircuitBreaker, ConcurrentFailuresOpenBreaker) {
 }
 
 TEST(EmbedderCircuitBreaker, ConcurrentMixedTrafficStress) {
-	EmbedderCircuitBreaker::Config cfg{
+	const EmbedderCircuitBreaker::Config cfg{
 		.threshold = 8,
 		.thresholdTimeout = 15s,
 		.cooldown = 7500ms,
 	};
-	EmbedderCircuitBreaker breaker{cfg};
 
 	constexpr int kThreads = 8;
 	constexpr int kIters = 2'000;
 	constexpr uint64_t kTotal = static_cast<uint64_t>(kThreads) * kIters;
-	std::atomic<uint64_t> allowed{0};
-	std::atomic<uint64_t> blocked{0};
-	std::atomic<uint64_t> successes{0};
-	std::atomic<uint64_t> failures{0};
 
-	std::vector<std::thread> threads;
-	threads.reserve(kThreads);
-	for (int t = 0; t < kThreads; ++t) {
-		threads.emplace_back([&, t] {
-			for (int i = 0; i < kIters; ++i) {
-				try {
-					auto permit = breaker.Acquire("vec");
-					allowed.fetch_add(1, std::memory_order_relaxed);
-					// Deterministic mix: 80% of failures to exercise open/half-open paths.
-					if (((t + i) % 5) == 0) {
-						permit.ReportSuccess();
-						successes.fetch_add(1, std::memory_order_relaxed);
-					} else {
-						permit.ReportFailure();
-						failures.fetch_add(1, std::memory_order_relaxed);
+	struct [[nodiscard]] Counters {
+		std::atomic<uint64_t> allowed{0};
+		std::atomic<uint64_t> blocked{0};
+		std::atomic<uint64_t> successes{0};
+		std::atomic<uint64_t> failures{0};
+	};
+	// Runs kThreads concurrent threads with kIters attempts each and joins them before returning.
+	auto runConcurrently = [&](EmbedderCircuitBreaker& breaker, Counters& counters, auto isSuccess) {
+		std::vector<std::thread> threads;
+		threads.reserve(kThreads);
+		for (int t = 0; t < kThreads; ++t) {
+			threads.emplace_back([&, t] {
+				for (int i = 0; i < kIters; ++i) {
+					try {
+						auto permit = breaker.Acquire("vec");
+						counters.allowed.fetch_add(1, std::memory_order_relaxed);
+						if (isSuccess(t, i)) {
+							permit.ReportSuccess();
+							counters.successes.fetch_add(1, std::memory_order_relaxed);
+						} else {
+							permit.ReportFailure();
+							counters.failures.fetch_add(1, std::memory_order_relaxed);
+						}
+					} catch (const Error& e) {
+						EXPECT_EQ(e.code(), errNetwork);
+						counters.blocked.fetch_add(1, std::memory_order_relaxed);
 					}
-				} catch (const Error& e) {
-					EXPECT_EQ(e.code(), errNetwork);
-					blocked.fetch_add(1, std::memory_order_relaxed);
 				}
-			}
-		});
+			});
+		}
+		for (auto& th : threads) {
+			th.join();
+		}
+	};
+
+	EmbedderCircuitBreaker breaker{cfg};
+	{
+		Counters successOnly;
+		runConcurrently(breaker, successOnly, [](int, int) { return true; });
+		EXPECT_EQ(successOnly.allowed.load(), kTotal);
+		EXPECT_EQ(successOnly.successes.load(), kTotal);
+		EXPECT_EQ(successOnly.blocked.load(), 0u);
+		EXPECT_FALSE(breaker.IsOpen());
+		EXPECT_EQ(breaker.ConsecutiveErrors(), 0u);
 	}
-	for (auto& th : threads) {
-		th.join();
+	{
+		Counters failureOnly;
+		runConcurrently(breaker, failureOnly, [](int, int) { return false; });
+		EXPECT_EQ(failureOnly.allowed.load() + failureOnly.blocked.load(), kTotal);
+		EXPECT_EQ(failureOnly.successes.load(), 0u);
+		EXPECT_EQ(failureOnly.allowed.load(), failureOnly.failures.load());
+		EXPECT_GE(failureOnly.failures.load(), cfg.threshold);
+		EXPECT_GT(failureOnly.blocked.load(), 0u);
+		EXPECT_TRUE(breaker.IsOpen());
+		// Permits acquired before the trip belong to the old generation and are ignored.
+		EXPECT_EQ(breaker.ConsecutiveErrors(), cfg.threshold);
 	}
 
-	const auto allowedN = allowed.load(std::memory_order_relaxed);
-	const auto blockedN = blocked.load(std::memory_order_relaxed);
-	const auto successesN = successes.load(std::memory_order_relaxed);
-	const auto failuresN = failures.load(std::memory_order_relaxed);
+	// The first breaker stays open for the whole cooldown, so mixed traffic needs a fresh one.
+	EmbedderCircuitBreaker mixedBreaker{cfg};
+	Counters mixed;
+	runConcurrently(mixedBreaker, mixed, [](int t, int i) { return ((t + i) % 5) == 0; });
+	const auto allowedN = mixed.allowed.load();
+	const auto blockedN = mixed.blocked.load();
+	const auto successesN = mixed.successes.load();
+	const auto failuresN = mixed.failures.load();
 
 	// Every attempt is either admitted or rejected; every admission reports exactly once.
+	// Successes and rejections depend on scheduling: the breaker may open before any success is admitted,
+	// or never open at all.
 	EXPECT_EQ(allowedN + blockedN, kTotal);
 	EXPECT_EQ(allowedN, successesN + failuresN);
 	EXPECT_GT(allowedN, 0u);
-	EXPECT_GT(blockedN, 0u);
-	EXPECT_GT(successesN, 0u);
 	EXPECT_GT(failuresN, 0u);
 
-	const auto errors = breaker.ConsecutiveErrors();
+	const auto errors = mixedBreaker.ConsecutiveErrors();
 	EXPECT_LE(errors, cfg.threshold);
-	if (!breaker.IsOpen()) {
+	if (!mixedBreaker.IsOpen()) {
 		// Closed ⇒ counter must be strictly below the trip threshold.
 		EXPECT_LT(errors, cfg.threshold);
 	}

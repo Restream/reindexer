@@ -188,6 +188,9 @@ public:
 	bool HoldsStrings() const noexcept override { return std::is_same_v<StoreType, key_string>; }
 
 	bool RefreshCompositeKey(const Variant& key, IdType id) noexcept override;
+#if REINDEX_WITH_STRHOLDER_CHECKS
+	void CollectOwnedStringPtrs(OwnedStringPtrCollector& collector) const override;
+#endif	// REINDEX_WITH_STRHOLDER_CHECKS
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, const Index::SelectContext&, const RdxContext&) override final;
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, const Index::SelectContext&, FtPreselectT&&, const RdxContext&) override;
 
@@ -279,6 +282,7 @@ public:
 		return vdocMergeInfo_[vdocId].wordCounts_[fieldIdx];
 	}
 	size_t NumLiveDocs() const noexcept { return vdocSet_.size(); }
+	uint64_t NumDeletedDocs() const noexcept { return numDeletedDocs_; }
 
 	float AvgWordsCount(uint32_t fieldIdx) const noexcept {
 		const size_t n = NumLiveDocs();
@@ -369,18 +373,21 @@ private:
 		return static_cast<size_t>(rowId.ToNumber()) < rowId2VdocId_.size() ? rowId2VdocId_[rowId.ToNumber()] : kEmptyVDocId;
 	}
 	void clearVdocSlot(uint32_t vdocId) {
-		const VDocVersion version = vdocMergeInfo_[vdocId].version_;
 		vdocs_[vdocId] = {};
-		vdocMergeInfo_[vdocId] = {};
-		vdocMergeInfo_[vdocId].version_ = version;
+		vdocMergeInfoHeapSize_ -= vdocMergeInfo_[vdocId].heap_size();
+		// Swap also resets the capacity reported by pedantic debug vectors after move assignment.
+		VDocWordCounts{}.swap(vdocMergeInfo_[vdocId].wordCounts_);
 	}
 	void retireVdocSlot(uint32_t vdocId) {
+		// Word counts are populated only after successful indexing.
+		if (!vdocMergeInfo_[vdocId].wordCounts_.empty()) {
+			++numDeletedDocs_;
+			++deletedDocsSinceOptimization_;
+		}
 		const VDocVersion prev = vdocMergeInfo_[vdocId].version_;
-		vdocs_[vdocId] = {};
-		vdocMergeInfo_[vdocId] = {};
+		clearVdocSlot(vdocId);
 		if (prev >= kMaxVDocVersion) {
 			vdocMergeInfo_[vdocId].version_ = kMaxVDocVersion;
-			++deletedDocsSinceOptimization_;
 			return;
 		}
 		const VDocVersion next = prev + 1;
@@ -388,7 +395,6 @@ private:
 		if (next < kMaxVDocVersion) {
 			freeVdocIds_.push_back(vdocId);
 		}
-		++deletedDocsSinceOptimization_;
 	}
 
 	uint32_t appendVdocSlot() {
@@ -446,10 +452,12 @@ private:
 
 	std::vector<VDoc<StoreType>> vdocs_;
 	std::vector<VDocMergeInfo> vdocMergeInfo_;
+	size_t vdocMergeInfoHeapSize_ = 0;
 	std::vector<uint32_t> freeVdocIds_;
 	std::vector<VDocPosting> unindexedVdocs_;
 	std::vector<uint64_t> sumWordsCount_;
 	size_t deletedDocsSinceOptimization_ = 0;
+	uint64_t numDeletedDocs_ = 0;  // Monotonic across cleanup sweeps and full rebuilds.
 	VDocSetType vdocSet_;
 };
 

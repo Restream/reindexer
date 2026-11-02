@@ -4,11 +4,14 @@
 #include "core/namespace/namespace.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/explaincalc.h"
+#include "core/nsselecter/joins/items_processor.h"
+#include "core/sorting/sortexpression.h"
 #include "sort/pdqsort.hpp"
 
 namespace reindexer {
 
 class FtFunctionsHolder;
+class JoinedQuery;
 
 class [[nodiscard]] RxSelector {
 	class [[nodiscard]] NsLockerItem {
@@ -285,7 +288,6 @@ public:
 	template <typename LockerType>
 	static void DoSelect(ConstQueryImpl q, std::optional<Query>& queryCopy, LocalQueryResults& result, LockerType& locks,
 						 FtFunctionsHolder& func, const RdxContext& ctx);
-
 	static void DoPreSelectForUpdateDelete(ConstQueryImpl q, std::optional<Query>& queryCopy, LocalQueryResults& result, NsLockerW& locks,
 										   FloatVectorsHolderMap* fvHolder, const RdxContext& ctx);
 
@@ -307,6 +309,42 @@ private:
 	template <typename LockerType>
 	static void preselectSubQueriesInJoins(QueryImpl q, std::vector<LocalQueryResults>& queryResultsHolder, LockerType& locks,
 										   FtFunctionsHolder& func, std::vector<SubQueryExplain>& subQueryExplains, const RdxContext& ctx);
+
+	// Root sort is copied onto every merge subquery and bound again inside that namespace.
+	static void copyParentSorting(JoinedQuery& dst, ConstQueryImpl parent);
+	// Keeps the earlier row when the same namespace and the same fields filter return one item twice.
+	// rowsPerNs is the number of rows each namespace appended. It only sizes the hash set.
+	static void deduplicateMergedItems(ItemRefVector& items, std::span<NamespaceImpl* const> namespaces, std::span<const size_t> rowsPerNs,
+									   const LocalQueryResults& result);
+	struct [[nodiscard]] MergedSortColumn {
+		bool isExpr = false;
+		double expr = 0;
+		// One array per compared field. A scalar, array, JSON path or sparse index has one.
+		// A composite index has one array per constituent field, in index order.
+		h_vector<VariantArray, 1> values;
+		const CollateOpts* opts = nullptr;
+		bool desc = false;
+		bool inForced = false;
+		ptrdiff_t forcedPos = 0;
+	};
+	// Sparse indexes have no payload field: their values live at the index JSON path.
+	// Composite indexes are compared as their constituent fields, in index order.
+	static h_vector<VariantArray, 1> mergedFieldValues(const NamespaceImpl& ns, int index, std::string_view column, const PayloadValue& pv);
+	// Match forced values the same way as NsSelecter::applyForcedSortImpl, using this namespace's index.
+	static void markMergedForced(MergedSortColumn& key, const NamespaceImpl& ns, int index, const PayloadValue& pv,
+								 const VariantArray& forcedSort);
+	// Equal columns fall through to nsid. Its order follows the first entry, the same way a single namespace breaks ties by id.
+	static bool mergedSortLess(std::span<const MergedSortColumn> lhs, std::span<const MergedSortColumn> rhs,
+							   std::span<const MergedSortColumn> collateRow, bool useForced, uint16_t lhsNs, uint16_t rhsNs);
+	static void sortMergedItems(ItemRefVector& items, std::span<NamespaceImpl* const> namespaces,
+								std::span<const SortExpressions> parsedSort, const SortingEntries& entries, const VariantArray& forcedSort,
+								std::span<const joins::ItemsProcessors> joinProcs, const joins::Results& joined);
+	// Sum, count and count_cached were accumulated before duplicate rows were removed.
+	static void adjustAggregationsAfterDedup(LocalQueryResults& result, std::span<NamespaceImpl* const> namespaces,
+											 size_t itemsBeforeDedup);
+	// Sum of one field over the rows left after dedup. Empty when none of those rows has the field.
+	static std::optional<double> sumMergedField(const ItemRefVector& items, std::span<NamespaceImpl* const> namespaces,
+												std::string_view field);
 };
 
 }  // namespace reindexer

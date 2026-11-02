@@ -64,6 +64,19 @@ bool IndexStore<T>::RefreshCompositeKey(const Variant& /*key*/, IdType /*id*/) n
 	return false;
 }
 
+#if REINDEX_WITH_STRHOLDER_CHECKS
+template <typename T>
+void IndexStore<T>::CollectOwnedStringPtrs(OwnedStringPtrCollector& collector) const {
+	if constexpr (std::is_same_v<T, key_string>) {
+		for (auto it = str_map.begin(), end = str_map.end(); it != end; ++it) {
+			collector.Add(it->first.get());
+		}
+	} else {
+		(void)collector;
+	}
+}
+#endif	// REINDEX_WITH_STRHOLDER_CHECKS
+
 template <>
 Variant IndexStore<key_string>::Upsert(const Variant& key, IdType id, bool& /*clearCache*/) {
 	if (key.Type().Is<KeyValueType::Null>()) {
@@ -110,6 +123,7 @@ Variant IndexStore<T>::Upsert(const Variant& key, IdType id, bool& /*clearCache*
 
 template <typename T>
 void IndexStore<T>::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
+	result.Clear();
 	if (keys.IsObjectValue()) {
 		return;
 	}

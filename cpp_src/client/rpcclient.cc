@@ -619,10 +619,22 @@ Error RPCClient::EnumDatabases(std::vector<std::string>& dbList, const InternalR
 
 Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, SQLSuggestions& suggests) {
 	try {
-		auto ret = conn_.Call(mkCommand(cproto::kCmdGetSQLSuggestions), query, pos);
+		// An old server ignores withError and returns strings only.
+		auto ret = conn_.Call(mkCommand(cproto::kCmdGetSQLSuggestions), query, pos, true);
 		if (ret.Status().ok()) {
 			auto rargs = ret.GetArgs();
 			suggests.suggestions.clear();
+			suggests.errorMessage.clear();
+			// The Error pair is recognized by types: an int code followed by a string. Two suggestion strings do not match.
+			if (rargs.size() >= 2 && rargs[rargs.size() - 2].Type().Is<KeyValueType::Int>() &&
+				rargs.back().Type().Is<KeyValueType::String>()) {
+				const int code = rargs[rargs.size() - 2].As<int>();
+				if (code != errOK) {
+					suggests.errorMessage = rargs.back().As<std::string>();
+				}
+				rargs.pop_back();
+				rargs.pop_back();
+			}
 			suggests.suggestions.reserve(rargs.size());
 
 			for (auto& rarg : rargs) {

@@ -57,7 +57,7 @@ private:
 		void shrinkCache() {
 			// Shrink cache size to force cache invalidation
 			auto q = reindexer::Query(reindexer::kConfigNamespace)
-						 .Set("namespaces.cache.index_idset_cache_size", 1024)
+						 .Set("namespaces[*].cache.index_idset_cache_size", 1024)
 						 .Where("type", CondEq, "namespaces");
 			reindexer::QueryResults qr;
 			auto err = db_.Update(q, qr);
@@ -67,8 +67,8 @@ private:
 		void setHitsCount(unsigned hitsCount) {
 			// Set required hits count and default cache size
 			auto q = reindexer::Query(reindexer::kConfigNamespace)
-						 .Set("namespaces.cache.index_idset_cache_size", kDefaultCacheSize)
-						 .Set("namespaces.cache.index_idset_hits_to_cache", int64_t(hitsCount))
+						 .Set("namespaces[*].cache.index_idset_cache_size", kDefaultCacheSize)
+						 .Set("namespaces[*].cache.index_idset_hits_to_cache", int64_t(hitsCount))
 						 .Where("type", CondEq, "namespaces");
 			reindexer::QueryResults qr;
 			auto err = db_.Update(q, qr);

@@ -127,25 +127,41 @@ protected:
 		rt.reindexer = std::make_shared<Reindexer>();
 		rt.Connect(getDSN());
 	}
-	void validateResults(const JsonResults& expected, const JsonResults& actual) {
-		ASSERT_EQ(expected.items.size(), actual.items.size());
-		if (expected.items.size() != actual.items.size()) {
-			TestCout() << "Expected:" << std::endl;
-			for (size_t i = 0; i < expected.items.size(); ++i) {
-				TestCout() << expected.items[i] << std::endl;
-				TestCout() << "Rank: " << expected.ranks[i].Value() << std::endl;
+	// `allowTiedRanks` is for KNN: equal distances do not define a unique neighbor, and the internal index order
+	// may change after reload. For array indexes k counts vectors before duplicate rows are dropped, so a tie on
+	// the k-th vector distance may also change the result size.
+	void validateResults(const JsonResults& expected, const JsonResults& actual, bool allowTiedRanks = false) {
+		if (!allowTiedRanks) {
+			ASSERT_EQ(expected.items.size(), actual.items.size());
+			for (size_t j = 0; j < expected.items.size(); ++j) {
+				EXPECT_EQ(expected.items[j], actual.items[j]);
 			}
-			TestCout() << std::endl;
-			TestCout() << "Actual:" << std::endl;
-			for (size_t i = 0; i < actual.items.size(); ++i) {
-				TestCout() << actual.items[i] << std::endl;
-				TestCout() << "Rank: " << actual.ranks[i].Value() << std::endl;
-			}
-			TestCout() << std::endl;
-			ASSERT_TRUE(false);
+			return;
 		}
-		for (size_t j = 0; j < expected.items.size(); ++j) {
-			EXPECT_EQ(expected.items[j], actual.items[j]);
+
+		const size_t common = std::min(expected.items.size(), actual.items.size());
+		for (size_t j = 0; j < common; ++j) {
+			if (expected.items[j] == actual.items[j] && expected.ranks[j] == actual.ranks[j]) {
+				continue;
+			}
+			EXPECT_FLOAT_EQ(expected.ranks[j].Value(), actual.ranks[j].Value())
+				<< "position " << j << "\nexpected: " << expected.items[j] << "\nactual: " << actual.items[j];
+			if (expected.ranks[j] != actual.ranks[j]) {
+				return;
+			}
+		}
+		if (expected.items.size() == actual.items.size()) {
+			return;
+		}
+		ASSERT_GT(common, 0u) << "Unexpected empty KNN result";
+		// A tie on the k-th vector distance may add rows on only one side, and all of them have that distance.
+		// The shorter side may have no row with this rank at all: its k-th vector may belong to a row that is
+		// already in the result with a better rank.
+		const auto& longer = expected.items.size() > actual.items.size() ? expected : actual;
+		const auto tied = longer.ranks[common].Value();
+		for (size_t j = common + 1; j < longer.items.size(); ++j) {
+			EXPECT_FLOAT_EQ(longer.ranks[j].Value(), tied)
+				<< "extra item is not tied with the k-boundary at position " << j << "\nitem: " << longer.items[j];
 		}
 	}
 	template <IsArray isArray>
@@ -172,7 +188,8 @@ protected:
 				prevRank = it.GetItemRefRanked().Rank();
 			}
 			if (hasDuplicatedRanks) {
-				// Avoiding query results with duplicated ranks for simplier further validation
+				// Ties inside the result are skipped. A tie exactly on the k-boundary is not visible here;
+				// validateResults accepts that case.
 				continue;
 			}
 
@@ -397,7 +414,8 @@ void VectorStorageApi::TestFloatStorageReload() try {
 
 		for (size_t i = 0; i < expected.size(); ++i) {
 			SCOPED_TRACE(fmt::format("Current query: {}", idx.queries[i].GetSQL()));
-			validateResults(expected[i], actual[i]);
+			constexpr bool allowTiedRanks = true;
+			validateResults(expected[i], actual[i], allowTiedRanks);
 		}
 	}
 }

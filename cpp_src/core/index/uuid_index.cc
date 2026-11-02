@@ -4,8 +4,9 @@ namespace reindexer {
 
 template <typename MapType>
 void UuidIndex<MapType>::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
+	result.Clear();
 	if (keys.empty() && !Index::Opts().IsArray()) {
-		result = {Upsert(Variant{Uuid{}}, id, clearCache)};
+		result.emplace_back(Upsert(Variant{Uuid{}}, id, clearCache));
 	} else {
 		return IndexStore<Uuid>::Upsert(result, keys, id, clearCache);
 	}

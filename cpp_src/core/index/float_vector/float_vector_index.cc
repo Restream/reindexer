@@ -114,6 +114,7 @@ SelectKeyResults FloatVectorIndex::SelectKey(const VariantArray&, CondType condi
 }
 
 void FloatVectorIndex::Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) {
+	result.Clear();
 	if (keys.empty()) {
 		const auto [it, inserted] = emptyValues_.insert(id);
 		assertrx_dbg(inserted);

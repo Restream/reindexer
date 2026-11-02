@@ -343,6 +343,11 @@ void ServerConnection::sendUpdates() {
 	assertrx_dbg(BaseConnT::wrBuf_.capacity() >= BaseConnT::wrBuf_.size_atomic() + updates.size());
 	WrSerializer ser(BaseConnT::wrBuf_.get_chunk());
 	for (cnt = 0; cnt < updates.size(); ++cnt) {
+		// Checked before the write, so updates returned to the queue (starting from 'cnt') are never sent twice
+		if (BaseConnT::wrBuf_.size() + 2 >= BaseConnT::wrBuf_.capacity()) {
+			break;
+		}
+
 		args.clear<false>();
 		auto& upd = updates[cnt];
 		std::string_view updateData(upd);
@@ -352,16 +357,12 @@ void ServerConnection::sendUpdates() {
 		len += ser.Len();
 		BaseConnT::wrBuf_.write(ser.DetachChunk());
 
-		if (BaseConnT::wrBuf_.size() + 2 >= BaseConnT::wrBuf_.capacity()) {
-			break;
-		}
-
 		upd.clear();
 		ser = WrSerializer(std::move(upd));
 	}
 
 	// Single OnResponse call for multiple updates seems fine
-	if (dispatcher_.OnResponseRef()) {
+	if (cnt && dispatcher_.OnResponseRef()) {
 		ctx.stat.sizeStat.respSizeBytes = len;
 		dispatcher_.OnResponseRef()(ctx);
 	}
@@ -379,8 +380,6 @@ void ServerConnection::sendUpdates() {
 	if (BaseConnT::stats_) {
 		BaseConnT::stats_->update_send_buf_size(BaseConnT::wrBuf_.data_size());
 	}
-
-	callback(BaseConnT::io_, ev::WRITE);
 }
 
 }  // namespace reindexer::net::cproto

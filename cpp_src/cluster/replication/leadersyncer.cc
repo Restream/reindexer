@@ -238,45 +238,59 @@ void LeaderSyncThread::sync() {
 void LeaderSyncThread::syncNamespaceImpl(bool forced, const LeaderSyncQueue::Entry& syncEntry, std::string& tmpNsName) {
 	logInfo("{}: '{}'. Trying to synchronize namespace {}", cfg_.serverId, syncEntry.nsName, forced ? "forced" : "by wal");
 	SyncTimeCounter timeCounter(SyncTimeCounter::Type::InitialWalSync, statsCollector_);
-	client::Snapshot snapshot;
-	auto err = client_.GetSnapshot(syncEntry.nsName, SnapshotOpts(forced ? ExtendedLsn() : syncEntry.localLsn, cfg_.maxWALDepthOnForceSync),
-								   snapshot);
-	if (!err.ok()) {
-		throw err;
-	}
-	if (const auto clStat = snapshot.ClusterOperationStat(); clStat.has_value()) {
-		if (clStat->role != ClusterOperationStatus::Role::ClusterReplica) {
-			throw Error(errReplParams, "Unable to sync leader's namespace {} via snapshot - target namespace has unexpected role: '{}'",
-						syncEntry.nsName, clStat->RoleStr());
-		}
-		if (clStat->leaderId != cfg_.serverId) {
-			throw Error(errReplParams,
-						"Unable to sync leader's namespace {} via snapshot - target namespace has unexpected leader: {} ({} was expected)",
-						syncEntry.nsName, clStat->leaderId, cfg_.serverId);
-		}
-	}
+	// ~Snapshot closes the remote snapshot with a coroutine RPC. resume/suspend is illegal while an exception is in flight, so the
+	// snapshot must be destroyed after the error is caught and before it is rethrown.
+	Error caught;
+	{
+		client::Snapshot snapshot;
+		try {
+			auto err = client_.GetSnapshot(
+				syncEntry.nsName, SnapshotOpts(forced ? ExtendedLsn() : syncEntry.localLsn, cfg_.maxWALDepthOnForceSync), snapshot);
+			if (!err.ok()) {
+				throw err;
+			}
+			if (const auto clStat = snapshot.ClusterOperationStat(); clStat.has_value()) {
+				if (clStat->role != ClusterOperationStatus::Role::ClusterReplica) {
+					throw Error(errReplParams,
+								"Unable to sync leader's namespace {} via snapshot - target namespace has unexpected role: '{}'",
+								syncEntry.nsName, clStat->RoleStr());
+				}
+				if (clStat->leaderId != cfg_.serverId) {
+					throw Error(errReplParams,
+								"Unable to sync leader's namespace {} via snapshot - target namespace has unexpected leader: {} ({} was "
+								"expected)",
+								syncEntry.nsName, clStat->leaderId, cfg_.serverId);
+				}
+			}
 
-	RdxContext ctx;
-	ctx.WithNoWaitSync();
-	const RdxDeadlineContext deadlineCtx(kLocalCallsTimeout);
-	auto ns = thisNode_.getNamespaceNoThrow(syncEntry.nsName, ctx.WithCancelCtx(deadlineCtx));
-	if (!ns || snapshot.HasRawData()) {
-		timeCounter.SetType(SyncTimeCounter::Type::InitialForceSync);
-		// TODO: Allow tmp ns without storage via config
-		err = thisNode_.CreateTemporaryNamespace(syncEntry.nsName, tmpNsName, StorageOpts().Enabled(), syncEntry.latestLsn.NsVersion(),
-												 RdxContext());
-		if (!err.ok()) {
-			throw err;
-		}
-		ns = thisNode_.getNamespaceNoThrow(tmpNsName, ctx.WithCancelCtx(deadlineCtx));
-		assert(ns);
-	}
+			RdxContext ctx;
+			ctx.WithNoWaitSync();
+			const RdxDeadlineContext deadlineCtx(kLocalCallsTimeout);
+			auto ns = thisNode_.getNamespaceNoThrow(syncEntry.nsName, ctx.WithCancelCtx(deadlineCtx));
+			if (!ns || snapshot.HasRawData()) {
+				timeCounter.SetType(SyncTimeCounter::Type::InitialForceSync);
+				// TODO: Allow tmp ns without storage via config
+				err = thisNode_.CreateTemporaryNamespace(syncEntry.nsName, tmpNsName, StorageOpts().Enabled(),
+														 syncEntry.latestLsn.NsVersion(), RdxContext());
+				if (!err.ok()) {
+					throw err;
+				}
+				ns = thisNode_.getNamespaceNoThrow(tmpNsName, ctx.WithCancelCtx(deadlineCtx));
+				assert(ns);
+			}
 
-	for (auto& ch : snapshot) {
-		if (terminate_) {
-			return;
+			for (auto& ch : snapshot) {
+				if (terminate_) {
+					return;
+				}
+				ns->ApplySnapshotChunk(ch.Chunk(), true, ctx.WithCancelCtx(deadlineCtx));
+			}
+		} catch (std::exception& err) {
+			caught = Error(std::move(err));
 		}
-		ns->ApplySnapshotChunk(ch.Chunk(), true, ctx.WithCancelCtx(deadlineCtx));
+	}
+	if (!caught.ok()) {
+		throw caught;
 	}
 }
 

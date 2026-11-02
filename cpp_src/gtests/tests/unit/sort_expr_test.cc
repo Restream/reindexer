@@ -510,4 +510,31 @@ TEST(StringFunctions, SortExpressionParse) {
 	}
 }
 
+TEST(StringFunctions, SortExpressionEquality) {
+	const std::vector<JoinedNsNameMock> noJoins;
+	const std::span<const JoinedNsNameMock> joins{noJoins};
+	const auto parse = [&](std::string_view expr) { return SortExpression::Parse(expr, joins); };
+
+	EXPECT_EQ(parse("year + 1"), parse("( year + 1 )"));
+	EXPECT_EQ(parse("2 * year"), parse("year * 2"));
+	EXPECT_EQ(parse("year + 1 + 2"), parse("year + 3"));
+	EXPECT_NE(parse("year + 1"), parse("1 + year"));
+
+	auto leftId = parse("merged_query_id()");
+	auto rightId = parse("(merged_query_id())");
+	leftId.Get<SortExprFuncs::MergedQueryId>(0).SetId(0);
+	rightId.Get<SortExprFuncs::MergedQueryId>(0).SetId(1);
+	EXPECT_EQ(leftId, rightId);
+	EXPECT_NE(parse("merged_query_id()"), parse("-merged_query_id()"));
+
+	auto byName = parse("idxname + 1");
+	auto byPath = parse("idxjson + 1");
+	EXPECT_NE(byName, byPath);
+	byName.Get<SortExprFuncs::Index>(0).index = 4;
+	byPath.Get<SortExprFuncs::Index>(0).index = 4;
+	EXPECT_EQ(byName, byPath);
+	byPath.Get<SortExprFuncs::Index>(0).index = 5;
+	EXPECT_NE(byName, byPath);
+}
+
 }  // namespace reindexer_tests

@@ -136,6 +136,7 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams& opts, const Args& 
 	auto& call = rpcCalls_[seq % rpcCalls_.size()];
 	call.seq = seq;
 	call.used = true;
+	call.connectAttempt = connectAttempt_;
 	call.deadline = deadline;
 	call.cancelCtx = opts.cancelCtx;
 	call.system = (opts.cmd == kCmdPing || opts.cmd == kCmdLogin);
@@ -229,6 +230,7 @@ Error CoroClientConnection::login(std::vector<char>& buf) {
 	if (conn_.state() == manual_connection::conn_state::init) {
 		assertrx(buf.size() == 0);
 		readWg_.wait();
+		++connectAttempt_;
 		int ret = 0;
 		std::string dbName;
 		if (auto err = conn_.with_tls(connectData_.uri.scheme() == "cprotos"); !err.ok()) {
@@ -315,10 +317,10 @@ void CoroClientConnection::handleFatalErrorFromReader(const Error& err) noexcept
 }
 
 // NOLINTNEXTLINE(bugprone-exception-escape) No good ways to recover
-void CoroClientConnection::handleFatalErrorImpl(const Error& err) noexcept {
+void CoroClientConnection::handleFatalErrorImpl(const Error& err, uint64_t failedConnectAttempt) noexcept {
 	setLoggedIn(false);
 	for (auto& c : rpcCalls_) {
-		if (c.used && c.rspCh.opened() && !c.rspCh.full()) {
+		if (c.used && c.connectAttempt < failedConnectAttempt && c.rspCh.opened() && !c.rspCh.full()) {
 			c.rspCh.push(err);
 		}
 	}
@@ -331,7 +333,7 @@ void CoroClientConnection::handleFatalErrorImpl(const Error& err) noexcept {
 }
 
 // NOLINTNEXTLINE(bugprone-exception-escape) No good ways to recover
-void CoroClientConnection::handleFatalErrorFromWriter(const Error& err) noexcept {
+void CoroClientConnection::handleFatalErrorFromWriter(const Error& err, uint64_t failedConnectAttempt) noexcept {
 	if (!terminate_) {
 		if (errSyncCh_.opened()) {
 			std::ignore = errSyncCh_.pop();
@@ -341,7 +343,7 @@ void CoroClientConnection::handleFatalErrorFromWriter(const Error& err) noexcept
 		}
 		conn_.close_conn(k_sock_closed_err);
 		readWg_.wait();
-		handleFatalErrorImpl(err);
+		handleFatalErrorImpl(err, failedConnectAttempt);
 	}
 }
 
@@ -390,7 +392,8 @@ void CoroClientConnection::writerRoutine() {
 			auto status = login(buf);
 			if (!status.ok()) {
 				recycleChunk(std::move(mch.first.data));
-				handleFatalErrorFromWriter(status);
+				// Requests, queued while this attempt was in progress, will trigger the next one
+				handleFatalErrorFromWriter(status, connectAttempt_);
 				continue;
 			}
 			const auto& rpcData = rpcCalls_[mch.first.seq % rpcCalls_.size()];

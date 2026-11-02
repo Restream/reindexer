@@ -23,6 +23,12 @@ std::string_view Activity::DescribeState(State st) noexcept {
 			return "proxied_via_cluster_proxy";
 		case ProxiedViaShardingProxy:
 			return "proxied_via_sharding_proxy";
+		case ItemsDeletion:
+			return "items_deletion";
+		case ItemsModification:
+			return "items_modification";
+		case WaitReplication:
+			return "wait_replication";
 		default:
 			abort();
 	}

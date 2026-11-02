@@ -107,7 +107,7 @@ type EmbedderInfo struct {
 	Status EmbedderStatus `json:"status"`
 }
 
-// TextIndexStats fulltext-specific virtual documents statistics from '#memstats'
+// TextIndexStats fulltext-specific dictionary, typo and virtual document statistics from '#memstats'
 type TextIndexStats struct {
 	// Number of live virtual documents currently stored in the fulltext index
 	TotalVdocs int64 `json:"total_vdocs"`
@@ -115,6 +115,51 @@ type TextIndexStats struct {
 	RemovedVdocs int64 `json:"removed_vdocs"`
 	// Number of permanently retired virtual-document slots that cannot be reused
 	DeadVdocs int64 `json:"dead_vdocs"`
+	// Number of dictionary words, including words with only stale postings or empty lists.
+	// Pending documents are not included until the index is built.
+	WordsCount int64 `json:"words_count"`
+	// Number of distinct typo variants, including variants without skipped characters.
+	// Counts persist until dictionary rebuild.
+	TyposGroupsCount int64 `json:"typos_groups_count"`
+	// Sum of key counts across all typo groups, including variants without skipped characters.
+	// Multiple references to the same word are counted separately. Counts persist until dictionary rebuild.
+	TyposKeysCount int64 `json:"typos_keys_count"`
+}
+
+// TextIndexMemoryStats breaks down indexing_struct_size in bytes.
+// All fields except PostingsCapacitySize and PackedDataSize add up to indexing_struct_size.
+// These are accounting estimates, not allocator/RSS measurements; source strings and query cache are reported separately.
+type TextIndexMemoryStats struct {
+	// UTF-16 word storage, including metadata and reserved capacity.
+	WordsSize int64 `json:"words_size"`
+	// Word hash table and its UTF-8 strings.
+	WordsMapSize int64 `json:"words_map_size"`
+	// Reserved word ID array.
+	WordIDsSize int64 `json:"word_ids_size"`
+	// Suffix trees and their container.
+	SuffixesSize int64 `json:"suffixes_size"`
+	// Typo tables, key group buffers and their container, including reserved capacity.
+	TyposSize int64 `json:"typos_size"`
+	// Posting lists, their buffers, containers and publication locks. Excludes shared_ptr control blocks.
+	PostingsSize int64 `json:"postings_size"`
+	// Subset of postings_size: allocated posting buffers. In CPU mode includes heap allocations for positions.
+	PostingsCapacitySize int64 `json:"postings_capacity_size"`
+	// Subset of postings_capacity_size: used packed bytes, including stale postings. Present only in Memory mode. The difference is unused buffer capacity.
+	PackedDataSize *int64 `json:"packed_data_size,omitempty"`
+	// Virtual document array and its row/data-reference buffers. Excludes source strings.
+	VdocsSize int64 `json:"vdocs_size"`
+	// Virtual document versions and per-field word counts.
+	VdocMergeInfoSize int64 `json:"vdoc_merge_info_size"`
+	// Reserved row ID to virtual document ID mapping.
+	VdocIDMapSize int64 `json:"vdoc_id_map_size"`
+	// Reserved free virtual document ID array.
+	FreeVdocIDsSize int64 `json:"free_vdoc_ids_size"`
+	// Reserved pending indexing queue, including unused capacity after commits.
+	PendingVdocsSize int64 `json:"pending_vdocs_size"`
+	// Estimated deduplication set key bytes; excludes hash table overhead.
+	VdocSetSize int64 `json:"vdoc_set_size"`
+	// Accounted term boosts, synonym and variant helpers, stemmer language strings and field word-count sums.
+	AuxiliarySize int64 `json:"auxiliary_size"`
 }
 
 // Operation counter and server id
@@ -213,8 +258,10 @@ type NamespaceMemStat struct {
 		IDSetPlainSize int64 `json:"idset_plain_size"`
 		// Total memory consumption (in bytes) of reverse index b-tree structures. For `dense` and `store` indexes always 0
 		IDSetBTreeSize int64 `json:"idset_btree_size"`
-		// Total memory consumption (in bytes) of the main indexing structures (fulltext, ANN, etc.)
+		// Accounted memory (in bytes) of the main indexing structures (fulltext, ANN, etc.).
 		IndexingStructSize int64 `json:"indexing_struct_size"`
+		// Breakdown of indexing_struct_size. Present only for fast fulltext indexes.
+		IndexingStructDetails *TextIndexMemoryStats `json:"indexing_struct_details,omitempty"`
 		// Total memory consumation (in bytes) of shared vectors keeper structures (ANN indexes only)
 		VectorsKeeperSize int64 `json:"vectors_keeper_size"`
 		// Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
@@ -229,7 +276,7 @@ type NamespaceMemStat struct {
 		TrackedUpdatesOverflow int64 `json:"tracked_updates_overflow"`
 		// Shows whether KNN/fulltext indexing structure is fully built. If this field is nil, index does not require any specific build steps
 		IsBuilt *bool `json:"is_built,omitempty"`
-		// Fulltext-specific virtual documents statistics. Present only for text indexes
+		// Fulltext-specific dictionary, typo and virtual document statistics. Present only for text indexes
 		TextIndexStats *TextIndexStats `json:"text_index_stats,omitempty"`
 		// Shows whether HNSW-index quantized. If this field is nil, index does not support quantization
 		IsQuantized *bool `json:"is_quantized,omitempty"`

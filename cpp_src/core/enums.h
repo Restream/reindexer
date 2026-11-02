@@ -91,6 +91,7 @@ BOOL_ENUM(WasCanceled)
 BOOL_ENUM(HasExpression)
 BOOL_ENUM(ReverseNsOrder)
 BOOL_ENUM(IsWalQuery)
+BOOL_ENUM(RequireTtlUpdate)
 
 #undef BOOL_ENUM
 

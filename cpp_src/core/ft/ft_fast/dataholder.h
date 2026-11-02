@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -14,6 +15,7 @@
 #include <utility>
 #include <vector>
 #include "core/ft/config/ftconfig.h"
+#include "core/ft/ft_fast/memorystatcache.h"
 #include "core/ft/ft_fast/splitter.h"
 #include "core/ft/ft_fast/suffixesholder.h"
 #include "core/ft/ft_fast/typosholder.h"
@@ -23,6 +25,7 @@
 #include "core/ft/variants/synonyms.h"
 #include "core/ft/variants/translit.h"
 #include "core/index/auxiliary_interfaces.h"
+#include "core/namespace/namespacestat.h"
 #include "estl/h_vector.h"
 #include "estl/intrusive_ptr.h"
 #include "estl/lock.h"
@@ -77,6 +80,11 @@ using NewWordsOccurencesPtr = std::shared_ptr<NewWordsOccurences>;
 
 class [[nodiscard]] IDataHolder {
 public:
+	struct [[nodiscard]] MemStat {
+		TextIndexStats text;
+		TextIndexMemoryStats memory;
+	};
+
 	static constexpr size_t kSuffixTreesCount = 64;
 	static constexpr size_t kSuffixTreeMask = kSuffixTreesCount - 1;
 	static constexpr size_t kTypoSetsCount = 64;
@@ -84,12 +92,12 @@ public:
 
 	IDataHolder() : words_(), wordsMap_(), suffixes_(kSuffixTreesCount), typos_(kTypoSetsCount) {}
 	virtual ~IDataHolder() = default;
-	virtual void Process(VDocsTexts& vdocsTexts, const std::vector<VDocPosting>& vdocs, size_t numDocsTotal, size_t numFields,
-						 std::vector<VDocWordCounts>& vdocsWordsCountsByFields, bool multithreaded) = 0;
-	virtual DeletedScanStat OptimizeDeleted(const std::function<bool(uint32_t /*vdocId*/, VDocVersion)>& isDeleted,
+	virtual void Process(VDocsTexts& vdocsTexts, const std::vector<VDocPosting>& vdocs, size_t numDocsTotal, uint64_t numDeletedDocs,
+						 size_t numFields, std::vector<VDocWordCounts>& vdocsWordsCountsByFields, bool multithreaded) = 0;
+	virtual DeletedScanStat OptimizeDeleted(const std::function<bool(uint32_t /*vdocId*/, VDocVersion)>& isDeleted, uint64_t numDeletedDocs,
 											const index::ICancelable& cancelable) = 0;
 	virtual bool HasPendingOptimization() const noexcept = 0;
-	virtual size_t GetMemStat() = 0;
+	virtual MemStat GetMemStat() = 0;
 	virtual void Clear() = 0;
 	intrusive_ptr<const ISplitter> GetSplitter() const noexcept { return splitter_; }
 
@@ -142,27 +150,31 @@ public:
 
 	FTConfig* cfg_{nullptr};
 	intrusive_ptr<const ISplitter> splitter_;
+
+protected:
+	FtMemoryStatCache memoryStats_;
 };
 
 template <typename IdCont>
 class [[nodiscard]] DataHolder : public IDataHolder {
 public:
 	explicit DataHolder(FTConfig* c);
-	void Process(VDocsTexts& vdocsTexts, const std::vector<VDocPosting>& vdocs, size_t numDocsTotal, size_t numFields,
-				 std::vector<VDocWordCounts>& vdocsWordsCountsByFields, bool multithreaded) final;
-	DeletedScanStat OptimizeDeleted(const std::function<bool(uint32_t /*vdocId*/, VDocVersion)>& isDeleted,
+	void Process(VDocsTexts& vdocsTexts, const std::vector<VDocPosting>& vdocs, size_t numDocsTotal, uint64_t numDeletedDocs,
+				 size_t numFields, std::vector<VDocWordCounts>& vdocsWordsCountsByFields, bool multithreaded) final;
+	DeletedScanStat OptimizeDeleted(const std::function<bool(uint32_t /*vdocId*/, VDocVersion)>& isDeleted, uint64_t numDeletedDocs,
 									const index::ICancelable& cancelable) final;
 	bool HasPendingOptimization() const noexcept final { return optimizeResumePending_; }
-	size_t GetMemStat() override final;
+	MemStat GetMemStat() override final;
 	void Clear() override final;
-	std::shared_ptr<const IdCont> GetWordOccurences(WordIdType id) const noexcept {
-		const size_t ordinal = words_.GetWordOrdinal(id);
-		assertrx(ordinal < wordOccurences_.size());
-		return loadOccurences(ordinal);
+	WordOccurences<const IdCont> GetWordOccurences(WordIdType id) const noexcept {
+		return GetWordOccurencesByOrdinal(words_.GetWordOrdinal(id));
 	}
-	std::shared_ptr<const IdCont> GetWordOccurencesByOrdinal(size_t ordinal) const noexcept {
+	WordOccurences<const IdCont> GetWordOccurencesByOrdinal(size_t ordinal) const noexcept {
 		assertrx(ordinal < wordOccurences_.size());
-		return loadOccurences(ordinal);
+		// Read the completed sweep watermark first to avoid pairing a stale snapshot with a newer watermark.
+		const uint64_t swept = sweptDeletedDocs_.load(std::memory_order_acquire);
+		auto snapshot = loadOccurences(ordinal);
+		return {.ids = std::move(snapshot.ids), .deletedDocsAtCleanup = std::max(snapshot.deletedDocsAtCleanup, swept)};
 	}
 
 private:
@@ -181,30 +193,23 @@ private:
 	static_assert(sizeof(PaddedOccurencePtrLock) == kOccurencePtrLockStride);
 	static_assert(alignof(PaddedOccurencePtrLock) <= __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 
-	std::shared_ptr<IdCont> makeEmptyOccurences() const {
+	WordOccurences<IdCont> makeEmptyOccurences(uint64_t numDeletedDocs) const {
 		if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
-			return std::make_shared<IdCont>(fieldBits_);
+			return {.ids = std::make_shared<IdCont>(fieldBits_), .deletedDocsAtCleanup = numDeletedDocs};
 		} else {
-			return std::make_shared<IdCont>();
+			return {.ids = std::make_shared<IdCont>(), .deletedDocsAtCleanup = numDeletedDocs};
 		}
 	}
 	read_write_spinlock& occurencePtrLock(size_t ordinal) const noexcept {
 		return occurencePtrLocks_[ordinal & kOccurencePtrShardMask].mtx;
 	}
-	std::shared_ptr<IdCont> loadOccurences(size_t ordinal) const noexcept {
+	WordOccurences<IdCont> loadOccurences(size_t ordinal) const noexcept {
 		shared_lock lck(occurencePtrLock(ordinal));
 		return wordOccurences_[ordinal];
 	}
-	void storeOccurences(size_t ordinal, std::shared_ptr<IdCont> ptr) noexcept {
+	void storeOccurences(size_t ordinal, WordOccurences<IdCont> snapshot) noexcept {
 		lock_guard lck(occurencePtrLock(ordinal));
-		wordOccurences_[ordinal].swap(ptr);
-	}
-	void adjustOccurencesHeapSize(size_t oldHeapSize, size_t newHeapSize) noexcept {
-		if (newHeapSize >= oldHeapSize) {
-			wordOccurencesHeapSize_.fetch_add(newHeapSize - oldHeapSize, std::memory_order_relaxed);
-		} else {
-			wordOccurencesHeapSize_.fetch_sub(oldHeapSize - newHeapSize, std::memory_order_relaxed);
-		}
+		std::swap(wordOccurences_[ordinal], snapshot);
 	}
 	template <bool Multithreaded>
 	void processNewSuffixes(size_t start, size_t end);
@@ -212,14 +217,14 @@ private:
 	void processNewTypos(size_t start, size_t end);
 	template <bool Multithreaded>
 	void shrinkWordOccurences();
+	void updateSuffixShard(size_t shard, std::vector<SuffixKey>& suffixes);
 	void collectSuffixes(size_t start, size_t end, std::vector<std::vector<SuffixKey>>& suffixesByFirstCh) const;
-	TypoSet& getOrCreateTypoSet(char16_t firstCh);
 	bool addExactAndSingleMissingTypos(WordIdType wordId, std::u16string_view word, size_t maxTyposInWord,
 									   std::vector<std::vector<TypoKey>>& packedKeysByFirstCh);
 	void addTwoMissingTyposWithFirstMissing(WordIdType wordId, std::u16string_view word,
 											std::vector<std::vector<TypoKey>>& packedKeysByFirstCh);
-	void addTwoMissingTyposWithoutFirstMissing(WordIdType wordId, std::u16string_view word, TypoSet& typoSet);
-	void fillTypoSetShard(TypoSet& typoSet, const std::vector<TypoKey>& packedKeys, const std::vector<size_t>& wordIndexes);
+	void addTwoMissingTyposWithoutFirstMissing(WordIdType wordId, std::u16string_view word, TypoSet& typoSet, TypoStatDelta& delta);
+	void fillTypoSetShard(size_t shard, const std::vector<TypoKey>& packedKeys, const std::vector<size_t>& wordIndexes);
 
 	static constexpr size_t kOccurenceUpdateShards = 64;
 	static constexpr size_t kOccurenceUpdateShardMask = kOccurenceUpdateShards - 1;
@@ -232,16 +237,16 @@ private:
 	std::vector<NewWordsOccurencesPtr> buildWordsMapParallel(VDocsTexts& vdocsTexts, const std::vector<VDocPosting>& vdocs,
 															 size_t numFields, std::vector<VDocWordCounts>& vdocsWordsCountsByFields,
 															 std::atomic<size_t>* tooLongWordsSkipped);
-	void updateOccurences(const NewWordsOccurencesPtr& nwo, std::vector<size_t>* updatedWordOrdinals);
-	void updateOccurencesParallel(const std::vector<NewWordsOccurencesPtr>& nwos, std::vector<size_t>* updatedWordOrdinals);
-	size_t appendOccurenceChain(const std::vector<Occurence>& occurrences, uint32_t firstIdx, IdRelSet& chain, IdCont& dst);
+	void updateOccurences(const NewWordsOccurencesPtr& nwo, uint64_t numDeletedDocs, std::vector<size_t>* updatedWordOrdinals);
+	void updateOccurencesParallel(const std::vector<NewWordsOccurencesPtr>& nwos, uint64_t numDeletedDocs,
+								  std::vector<size_t>* updatedWordOrdinals);
+	static void buildOccurenceChain(const std::vector<Occurence>& occurrences, uint32_t firstIdx, IdRelSet& chain);
+	PostingsMemSize appendOccurenceChain(const std::vector<Occurence>& occurrences, uint32_t firstIdx, IdRelSet& chain, IdCont& dst);
 	void logPotentialStopWords(std::vector<size_t>& updatedWordOrdinals, size_t numDocsTotal) const;
 
 	// Documents for each word, addressable by word ordinal.
-	std::vector<std::shared_ptr<IdCont>> wordOccurences_;
+	std::vector<WordOccurences<IdCont>> wordOccurences_;
 	mutable std::array<PaddedOccurencePtrLock, kOccurencePtrShards> occurencePtrLocks_{};
-	// Updated from OptimizeDeleted under ns shared lock; read by GetMemStat concurrently.
-	std::atomic<size_t> wordOccurencesHeapSize_{0};
 	// Bits reserved for field id inside PackedIdRelVec simple records.
 	unsigned fieldBits_ = 0;
 	// Progress cursor for incremental postings cleanup.
@@ -250,6 +255,9 @@ private:
 	// interrupted ordinal is stored here for the next sweep.
 	size_t optimizeNextWordOrdinal_ = 0;
 	bool optimizeResumePending_ = false;
+	// Keep the starting deletion count across resumptions; publish it only after a complete sweep.
+	uint64_t sweepStartDeletedDocs_ = 0;
+	std::atomic<uint64_t> sweptDeletedDocs_{0};
 	BS::thread_pool<>& threadPool_ = GetBackgroundThreadPool();
 };
 

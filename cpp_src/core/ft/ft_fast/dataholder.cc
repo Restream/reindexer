@@ -9,6 +9,7 @@
 #include "core/ft/ft_fast/frisosplitter.h"
 #include "core/ft/limits.h"
 #include "core/ft/numtotext.h"
+#include "estl/fast_hash_map.h"
 #include "sort/pdqsort.hpp"
 #include "tools/clock.h"
 #include "tools/logger.h"
@@ -85,58 +86,60 @@ DataHolder<IdCont>::DataHolder(FTConfig* c) {
 	}
 }
 
-size_t IDataHolder::GetMemStat() {
-	size_t res =
-		words_.heap_size() + suffixes_.capacity() * sizeof(decltype(suffixes_)::value_type) + wordIds_.capacity() * sizeof(WordIdType);
-
-	res += wordsMap_.allocated_mem_size() + wordsMapStringsHeapSize_;
-
-	for (const auto& suffixTree : suffixes_) {
-		if (suffixTree) {
-			res += sizeof(*suffixTree) + suffixTree->bytes_used();
+IDataHolder::MemStat IDataHolder::GetMemStat() {
+	MemStat stats;
+	stats.text.wordsCount = wordsMap_.size();
+	for (const auto& set : typos_) {
+		if (set) {
+			stats.text.typosGroupsCount += set->size();
 		}
 	}
-
-	res += typos_.capacity() * sizeof(decltype(typos_)::value_type);
-	for (const auto& typoSet : typos_) {
-		if (typoSet) {
-			res += sizeof(*typoSet) + typoSet->allocated_mem_size();
-			for (const auto& typoGroup : *typoSet) {
-				res += typoGroup.heap_size();
-			}
+	auto& mem = stats.memory;
+	mem.wordsSize = words_.heap_size();
+	mem.wordIdsSize = wordIds_.capacity() * sizeof(WordIdType);
+	mem.wordsMapSize = wordsMap_.allocated_mem_size() + wordsMapStringsHeapSize_;
+	const auto cached = memoryStats_.Get();
+	stats.text.typosKeysCount = cached.typosKeys;
+	mem.typosSize = typos_.capacity() * sizeof(decltype(typos_)::value_type) + cached.typos;
+	mem.suffixesSize = suffixes_.capacity() * sizeof(decltype(suffixes_)::value_type);
+	for (const auto& tree : suffixes_) {
+		if (tree) {
+			mem.suffixesSize += sizeof(*tree) + tree->bytes_used();
 		}
 	}
+	mem.postingsCapacitySize = cached.postings.capacity;
+	mem.packedDataSize = cached.postings.packed;
 
-	res += stemmedTermsBoost.allocated_mem_size();
-	for (const auto& [term, boost] : stemmedTermsBoost) {
-		(void)boost;
-		res += term.capacity() * sizeof(typename std::string::value_type);
+	mem.auxiliarySize = sizeof(memoryStats_) + stemmedTermsBoost.allocated_mem_size();
+	for (const auto& [term, _] : stemmedTermsBoost) {
+		mem.auxiliarySize += term.capacity() * sizeof(typename std::string::value_type);
 	}
-
-	for (const auto& [lang, stemmerObj] : stemmers_) {
-		(void)stemmerObj;
-		res += lang.capacity() * sizeof(typename std::string::value_type);
+	for (const auto& [lang, _] : stemmers_) {
+		mem.auxiliarySize += lang.capacity() * sizeof(typename std::string::value_type);
 	}
 	if (translit_) {
-		res += sizeof(*translit_);
+		mem.auxiliarySize += sizeof(*translit_);
 	}
 	if (kbLayout_) {
-		res += sizeof(*kbLayout_);
+		mem.auxiliarySize += sizeof(*kbLayout_);
 	}
 	if (synonyms_) {
-		res += sizeof(*synonyms_) + synonyms_->heap_size();
+		mem.auxiliarySize += sizeof(*synonyms_) + synonyms_->heap_size();
 	}
 
-	return res;
+	return stats;
 }
 
 template <typename IdCont>
-size_t DataHolder<IdCont>::GetMemStat() {
-	size_t res = IDataHolder::GetMemStat();
-	res += wordOccurences_.capacity() * sizeof(typename decltype(wordOccurences_)::value_type) + wordOccurences_.size() * sizeof(IdCont) +
-		   wordOccurencesHeapSize_.load(std::memory_order_relaxed);
-	res += sizeof(occurencePtrLocks_);
-	return res;
+IDataHolder::MemStat DataHolder<IdCont>::GetMemStat() {
+	auto stats = IDataHolder::GetMemStat();
+	auto& mem = stats.memory;
+	if constexpr (!std::is_same_v<IdCont, PackedIdRelVec>) {
+		mem.packedDataSize.reset();
+	}
+	mem.postingsSize = wordOccurences_.capacity() * sizeof(typename decltype(wordOccurences_)::value_type) +
+					   wordOccurences_.size() * sizeof(IdCont) + mem.postingsCapacitySize + sizeof(occurencePtrLocks_);
+	return stats;
 }
 
 template <typename IdCont>
@@ -153,20 +156,32 @@ void DataHolder<IdCont>::Clear() {
 	wordIds_.clear();
 	wordsProcessed_ = 0;
 	wordOccurences_.clear();
-	wordOccurencesHeapSize_.store(0, std::memory_order_relaxed);
+	memoryStats_.Clear();
 	optimizeNextWordOrdinal_ = 0;
 	optimizeResumePending_ = false;
+	sweepStartDeletedDocs_ = 0;
+	sweptDeletedDocs_.store(0, std::memory_order_relaxed);
 	needRebuild_ = true;
 }
 
 // See TypoSet contract in typosholder.h: append-only; hash/equal use first key only.
-static void AddTypoKey(TypoSet& typoSet, TypoKey key) {
+static void AddTypoKey(TypoSet& typoSet, TypoKey key, TypoStatDelta& delta) {
 	TypoKeyGroup group;
 	AppendTypoKey(group, key);
 	auto [it, inserted] = typoSet.insert(std::move(group));
-	if (!inserted) {
-		AppendTypoKey(*it, key);
+	if (inserted) {
+		delta.groupsHeapAdded += it->heap_size();
+	} else {
+		const size_t before = it->heap_size();
+		try {
+			AppendTypoKey(*it, key);
+		} catch (...) {
+			delta.groupsHeapAdded += it->heap_size() - before;
+			throw;
+		}
+		delta.groupsHeapAdded += it->heap_size() - before;
 	}
+	++delta.keysAdded;
 }
 
 template <typename IdCont>
@@ -178,15 +193,6 @@ void DataHolder<IdCont>::collectSuffixes(size_t start, size_t end, std::vector<s
 			suffixesByFirstCh[SuffixTreeIndex(word[offset])].emplace_back(PackSuffixKey(wordId, offset));
 		}
 	}
-}
-
-template <typename IdCont>
-TypoSet& DataHolder<IdCont>::getOrCreateTypoSet(char16_t firstCh) {
-	auto& typoSet = typos_[TypoSetIndex(firstCh)];
-	if (!typoSet) {
-		typoSet = std::make_unique<TypoSet>(0, TypoKeyHash(words_), TypoKeyEqual(words_));
-	}
-	return *typoSet;
 }
 
 template <typename IdCont>
@@ -219,25 +225,49 @@ void DataHolder<IdCont>::addTwoMissingTyposWithFirstMissing(WordIdType wordId, s
 }
 
 template <typename IdCont>
-void DataHolder<IdCont>::addTwoMissingTyposWithoutFirstMissing(WordIdType wordId, std::u16string_view word, TypoSet& typoSet) {
+void DataHolder<IdCont>::addTwoMissingTyposWithoutFirstMissing(WordIdType wordId, std::u16string_view word, TypoSet& typoSet,
+															   TypoStatDelta& delta) {
 	for (size_t firstMissingPos = 1; firstMissingPos + 1 < word.length(); ++firstMissingPos) {
 		for (size_t secondMissingPos = firstMissingPos + 1; secondMissingPos < word.length(); ++secondMissingPos) {
-			AddTypoKey(typoSet, PackTypoKey(wordId, TyposVec(uint8_t(firstMissingPos), uint8_t(secondMissingPos))));
+			AddTypoKey(typoSet, PackTypoKey(wordId, TyposVec(uint8_t(firstMissingPos), uint8_t(secondMissingPos))), delta);
 		}
 	}
 }
 
 template <typename IdCont>
-void DataHolder<IdCont>::fillTypoSetShard(TypoSet& typoSet, const std::vector<TypoKey>& packedKeys,
-										  const std::vector<size_t>& wordIndexes) {
+void DataHolder<IdCont>::fillTypoSetShard(size_t shard, const std::vector<TypoKey>& packedKeys, const std::vector<size_t>& wordIndexes) {
+	auto& set = typos_[shard];
+	const size_t tableBefore = set ? sizeof(*set) + set->allocated_mem_size() : 0;
+	if (!set) {
+		set = std::make_unique<TypoSet>(0, TypoKeyHash(words_), TypoKeyEqual(words_));
+	}
+	auto& typoSet = *set;
+	struct [[nodiscard]] TypoUpdate {
+		FtMemoryStatCache& stats;
+		TypoSet& set;
+		size_t tableBefore;
+		TypoStatDelta delta;
+	} update{.stats = memoryStats_, .set = typoSet, .tableBefore = tableBefore, .delta = {}};
+	auto statsGuard = MakeScopeGuard([&update]() noexcept {
+		update.stats.UpdateTypos(update.tableBefore, sizeof(update.set) + update.set.allocated_mem_size(), update.delta);
+	});
 	for (const TypoKey key : packedKeys) {
-		AddTypoKey(typoSet, key);
+		AddTypoKey(typoSet, key, update.delta);
 	}
 	for (const size_t wordIdx : wordIndexes) {
 		const auto wordId = wordIds_[wordIdx];
 		const auto word = words_.GetWord(wordId);
-		addTwoMissingTyposWithoutFirstMissing(wordId, word, typoSet);
+		addTwoMissingTyposWithoutFirstMissing(wordId, word, typoSet, update.delta);
 	}
+}
+
+template <typename IdCont>
+void DataHolder<IdCont>::updateSuffixShard(size_t shard, std::vector<SuffixKey>& suffixes) {
+	auto& tree = suffixes_[shard];
+	if (!tree) {
+		tree = std::make_unique<SuffixTree>(SuffixKeyCompare(words_));
+	}
+	InsertSuffixKeys(*tree, suffixes, words_);
 }
 
 template <typename IdCont>
@@ -250,6 +280,11 @@ void DataHolder<IdCont>::processNewSuffixes(size_t start, size_t end) {
 	std::vector<std::vector<SuffixKey>> suffixesByFirstCh(kSuffixTreesCount);
 	collectSuffixes(start, end, suffixesByFirstCh);
 
+	struct [[nodiscard]] SuffixContext {
+		DataHolder& holder;
+		std::vector<std::vector<SuffixKey>>& keys;
+	};
+	const SuffixContext context{.holder = *this, .keys = suffixesByFirstCh};
 	ExceptionPtrWrapper exwr;
 	std::vector<std::future<void>> tasks;
 	if constexpr (Multithreaded) {
@@ -271,15 +306,11 @@ void DataHolder<IdCont>::processNewSuffixes(size_t start, size_t end) {
 		if (suffixes.empty()) {
 			continue;
 		}
-		auto& suffixTree = suffixes_[firstCh];
-		if (!suffixTree) {
-			suffixTree = std::make_unique<SuffixTree>(SuffixKeyCompare(words_));
-		}
 		if constexpr (Multithreaded) {
-			tasks.emplace_back(threadPool_.submit_task(
-				[suffixTree = suffixTree.get(), &suffixes, &words = words_] { InsertSuffixKeys(*suffixTree, suffixes, words); }));
+			tasks.emplace_back(
+				threadPool_.submit_task([&context, firstCh] { context.holder.updateSuffixShard(firstCh, context.keys[firstCh]); }));
 		} else {
-			InsertSuffixKeys(*suffixTree, suffixes, words_);
+			updateSuffixShard(firstCh, suffixes);
 		}
 	}
 
@@ -313,6 +344,12 @@ void DataHolder<IdCont>::processNewTypos(size_t start, size_t end) {
 		}
 	}
 
+	struct [[nodiscard]] TypoContext {
+		DataHolder& holder;
+		const std::vector<std::vector<TypoKey>>& keys;
+		const std::vector<std::vector<size_t>>& words;
+	};
+	const TypoContext context{.holder = *this, .keys = packedKeysByFirstCh, .words = twoMissingLettersWordsByFirstCh};
 	ExceptionPtrWrapper exwr;
 	std::vector<std::future<void>> tasks;
 	if constexpr (Multithreaded) {
@@ -335,12 +372,11 @@ void DataHolder<IdCont>::processNewTypos(size_t start, size_t end) {
 		if (packedKeys.empty() && wordIndexes.empty()) {
 			continue;
 		}
-		auto& typoSet = getOrCreateTypoSet(char16_t(firstCh));
 		if constexpr (Multithreaded) {
 			tasks.emplace_back(threadPool_.submit_task(
-				[this, typoSet = &typoSet, &packedKeys, &wordIndexes] { fillTypoSetShard(*typoSet, packedKeys, wordIndexes); }));
+				[&context, firstCh] { context.holder.fillTypoSetShard(firstCh, context.keys[firstCh], context.words[firstCh]); }));
 		} else {
-			fillTypoSetShard(typoSet, packedKeys, wordIndexes);
+			fillTypoSetShard(firstCh, packedKeys, wordIndexes);
 		}
 	}
 
@@ -421,8 +457,7 @@ void NewWordsOccurences::Add(std::string word, uint32_t vdocId, VDocVersion vers
 }
 
 template <typename IdCont>
-size_t DataHolder<IdCont>::appendOccurenceChain(const std::vector<Occurence>& occurrences, uint32_t firstIdx, IdRelSet& chain,
-												IdCont& dst) {
+void DataHolder<IdCont>::buildOccurenceChain(const std::vector<Occurence>& occurrences, uint32_t firstIdx, IdRelSet& chain) {
 	chain.resize(0);
 
 	uint32_t idx = firstIdx;
@@ -431,13 +466,22 @@ size_t DataHolder<IdCont>::appendOccurenceChain(const std::vector<Occurence>& oc
 		chain.Add(occ.vdocId, occ.version, occ.pos.pos(), occ.pos.field(), occ.pos.arrayIdx());
 		idx = occ.link;
 	}
-	const size_t heapBefore = dst.heap_size();
+}
+
+template <typename IdCont>
+PostingsMemSize DataHolder<IdCont>::appendOccurenceChain(const std::vector<Occurence>& occurrences, uint32_t firstIdx, IdRelSet& chain,
+														 IdCont& dst) {
+	buildOccurenceChain(occurrences, firstIdx, chain);
+	const auto before = PostingsMemSize::Measure(dst);
 	if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
-		dst.insert_back(chain.begin(), chain.end());
+		PackedIdRelVec::AppendBuffer tail(dst);
+		tail.Append(chain.begin(), chain.end());
+		tail.Commit();
 	} else {
 		dst.insert(dst.end(), chain.begin(), chain.end());
 	}
-	return dst.heap_size() - heapBefore;
+	const auto after = PostingsMemSize::Measure(dst);
+	return {.capacity = after.capacity - before.capacity, .packed = after.packed - before.packed};
 }
 
 template <typename IdCont>
@@ -560,7 +604,8 @@ std::vector<NewWordsOccurencesPtr> DataHolder<IdCont>::buildWordsMapParallel(VDo
 }
 
 template <typename IdCont>
-void DataHolder<IdCont>::updateOccurences(const NewWordsOccurencesPtr& nwo, std::vector<size_t>* updatedWordOrdinals) {
+void DataHolder<IdCont>::updateOccurences(const NewWordsOccurencesPtr& nwo, uint64_t numDeletedDocs,
+										  std::vector<size_t>* updatedWordOrdinals) {
 	if (wordsMap_.empty()) {
 		const size_t n = nwo->Words().size();
 		wordsMap_.reserve(n);
@@ -569,6 +614,7 @@ void DataHolder<IdCont>::updateOccurences(const NewWordsOccurencesPtr& nwo, std:
 	}
 
 	IdRelSet chain;
+	PostingsMemSize added;
 	for (auto&& [word, indices] : nwo->Words()) {
 		auto [it, inserted] = wordsMap_.try_emplace(std::move(word), wordOccurences_.size());
 		const size_t wordOrdinal = it->second;
@@ -579,85 +625,132 @@ void DataHolder<IdCont>::updateOccurences(const NewWordsOccurencesPtr& nwo, std:
 			wordsMapStringsHeapSize_ += it->first.capacity() * sizeof(std::string::value_type);
 			const auto wordId = words_.Add(utf8_to_utf16(it->first), wordOrdinal);
 			wordIds_.emplace_back(wordId);
-			wordOccurences_.emplace_back(makeEmptyOccurences());
+			wordOccurences_.emplace_back(makeEmptyOccurences(numDeletedDocs));
 		}
-		wordOccurencesHeapSize_.fetch_add(appendOccurenceChain(nwo->Occurences(), indices.first, chain, *wordOccurences_[wordOrdinal]),
-										  std::memory_order_relaxed);
+		added += appendOccurenceChain(nwo->Occurences(), indices.first, chain, *wordOccurences_[wordOrdinal].ids);
 	}
+	memoryStats_.AddPostings(added);
 }
 
 template <typename IdCont>
-void DataHolder<IdCont>::updateOccurencesParallel(const std::vector<NewWordsOccurencesPtr>& nwos,
+void DataHolder<IdCont>::updateOccurencesParallel(const std::vector<NewWordsOccurencesPtr>& nwos, uint64_t numDeletedDocs,
 												  std::vector<size_t>* updatedWordOrdinals) {
+	constexpr uint32_t kInvalidJob = std::numeric_limits<uint32_t>::max();
 	struct [[nodiscard]] OccurenceJob {
 		size_t wordOrdinal;
 		uint32_t firstIdx;
+		uint32_t nextJob = kInvalidJob;
 		const NewWordsOccurences* nwo;
 	};
 
 	size_t totalJobs = 0;
+	size_t maxWordsPerTask = 0;
 	for (const auto& nwo : nwos) {
-		totalJobs += nwo->Words().size();
+		const size_t wordCount = nwo->Words().size();
+		assertrx_throw(wordCount <= kInvalidJob - totalJobs);
+		totalJobs += wordCount;
+		maxWordsPerTask = std::max(maxWordsPerTask, wordCount);
 	}
 	if (updatedWordOrdinals) {
 		updatedWordOrdinals->reserve(totalJobs);
 	}
 
 	if (wordsMap_.empty()) {
-		wordsMap_.reserve(totalJobs);
-		wordIds_.reserve(totalJobs);
-		wordOccurences_.reserve(totalJobs);
+		wordsMap_.reserve(2 * maxWordsPerTask);
+		wordIds_.reserve(2 * maxWordsPerTask);
+		wordOccurences_.reserve(2 * maxWordsPerTask);
 	}
 
 	std::vector<OccurenceJob> jobs;
 	jobs.reserve(totalJobs);
-	for (const auto& nwo : nwos) {
-		for (auto&& [word, indices] : nwo->Words()) {
-			auto [it, inserted] = wordsMap_.try_emplace(std::move(word), wordOccurences_.size());
-			const size_t wordOrdinal = it->second;
-			if (updatedWordOrdinals) {
-				updatedWordOrdinals->emplace_back(wordOrdinal);
-			}
-			if (inserted) {
-				wordsMapStringsHeapSize_ += it->first.capacity() * sizeof(std::string::value_type);
-				const auto wordId = words_.Add(utf8_to_utf16(it->first), wordOrdinal);
-				wordIds_.emplace_back(wordId);
-				wordOccurences_.emplace_back(makeEmptyOccurences());
-			}
-			jobs.push_back(OccurenceJob{wordOrdinal, indices.first, nwo.get()});
-		}
-	}
-
-	std::array<std::vector<OccurenceJob>, kOccurenceUpdateShards> shards;
-	const size_t shardReserve = totalJobs / kOccurenceUpdateShards + 1;
+	std::array<std::vector<uint32_t>, kOccurenceUpdateShards> shards;
+	const size_t shardReserve = maxWordsPerTask / kOccurenceUpdateShards + 1;
 	for (auto& shard : shards) {
 		shard.reserve(shardReserve);
 	}
-	for (const auto& job : jobs) {
-		shards[job.wordOrdinal & kOccurenceUpdateShardMask].push_back(job);
+	{
+		// Track only words touched by this update; release the lookup before packing starts.
+		fast_hash_map<size_t, uint32_t> lastJobs;
+		const bool multipleTasks = nwos.size() > 1;
+		if (multipleTasks) {
+			lastJobs.reserve(maxWordsPerTask);
+		}
+		for (const auto& nwo : nwos) {
+			for (auto&& [word, indices] : nwo->Words()) {
+				auto [it, inserted] = wordsMap_.try_emplace(std::move(word), wordOccurences_.size());
+				const size_t wordOrdinal = it->second;
+				if (updatedWordOrdinals) {
+					updatedWordOrdinals->emplace_back(wordOrdinal);
+				}
+				if (inserted) {
+					wordsMapStringsHeapSize_ += it->first.capacity() * sizeof(std::string::value_type);
+					const auto wordId = words_.Add(utf8_to_utf16(it->first), wordOrdinal);
+					wordIds_.emplace_back(wordId);
+					wordOccurences_.emplace_back(makeEmptyOccurences(numDeletedDocs));
+				}
+				const uint32_t jobIdx = static_cast<uint32_t>(jobs.size());
+				jobs.push_back(OccurenceJob{.wordOrdinal = wordOrdinal, .firstIdx = indices.first, .nwo = nwo.get()});
+				if (!multipleTasks) {
+					shards[wordOrdinal & kOccurenceUpdateShardMask].push_back(jobIdx);
+					continue;
+				}
+				auto [last, firstJob] = lastJobs.try_emplace(wordOrdinal, jobIdx);
+				if (firstJob) {
+					shards[wordOrdinal & kOccurenceUpdateShardMask].push_back(jobIdx);
+				} else {
+					// Link jobs in task order to preserve packed IDs and array metadata.
+					jobs[last->second].nextJob = jobIdx;
+					last->second = jobIdx;
+				}
+			}
+		}
 	}
 
+	struct [[nodiscard]] AppendContext {
+		DataHolder& holder;
+		const std::vector<OccurenceJob>& jobs;
+		const std::array<std::vector<uint32_t>, kOccurenceUpdateShards>& shards;
+	};
+	const AppendContext context{.holder = *this, .jobs = jobs, .shards = shards};
 	ExceptionPtrWrapper exwr;
-	std::vector<std::future<size_t>> appendTasks;
+	std::vector<std::future<void>> appendTasks;
 	appendTasks.reserve(kOccurenceUpdateShards);
 	auto tasksWaiter = MakeScopeGuard([&appendTasks] { waitForTasksOnException(appendTasks); });
 	for (size_t shard = 0; shard < kOccurenceUpdateShards; ++shard) {
 		if (shards[shard].empty()) {
 			continue;
 		}
-		appendTasks.emplace_back(threadPool_.submit_task([this, &shards, shard] {
+		appendTasks.emplace_back(threadPool_.submit_task([&context, shard] {
 			IdRelSet chain;
-			size_t heapAdded = 0;
-			for (const auto& job : shards[shard]) {
-				heapAdded += appendOccurenceChain(job.nwo->Occurences(), job.firstIdx, chain, *wordOccurences_[job.wordOrdinal]);
+			PackedIdRelVec::AppendBuffer tail;
+			PostingsMemSize added;
+			auto statsGuard = MakeScopeGuard([&context, &added]() noexcept { context.holder.memoryStats_.AddPostings(added); });
+			for (const uint32_t firstJob : context.shards[shard]) {
+				auto& dst = *context.holder.wordOccurences_[context.jobs[firstJob].wordOrdinal].ids;
+				if constexpr (std::is_same_v<IdCont, PackedIdRelVec>) {
+					const auto before = PostingsMemSize::Measure(dst);
+					tail.Reset(dst);
+					for (uint32_t idx = firstJob; idx != kInvalidJob; idx = context.jobs[idx].nextJob) {
+						const auto& job = context.jobs[idx];
+						buildOccurenceChain(job.nwo->Occurences(), job.firstIdx, chain);
+						tail.Append(chain.begin(), chain.end());
+					}
+					tail.Commit();
+					const auto after = PostingsMemSize::Measure(dst);
+					added += PostingsMemSize{.capacity = after.capacity - before.capacity, .packed = after.packed - before.packed};
+				} else {
+					for (uint32_t idx = firstJob; idx != kInvalidJob; idx = context.jobs[idx].nextJob) {
+						const auto& job = context.jobs[idx];
+						added += context.holder.appendOccurenceChain(job.nwo->Occurences(), job.firstIdx, chain, dst);
+					}
+				}
 			}
-			return heapAdded;
 		}));
 	}
 
 	for (auto& task : appendTasks) {
 		try {
-			wordOccurencesHeapSize_.fetch_add(task.get(), std::memory_order_relaxed);
+			task.get();
 		} catch (...) {
 			exwr.SetException(std::current_exception());
 		}
@@ -670,17 +763,17 @@ template <typename IdCont>
 template <bool Multithreaded>
 void DataHolder<IdCont>::shrinkWordOccurences() {
 	if (wordOccurences_.empty()) {
-		wordOccurencesHeapSize_.store(0, std::memory_order_relaxed);
+		memoryStats_.SetPostings({});
 		return;
 	}
 
 	if constexpr (!Multithreaded) {
-		size_t heap = 0;
+		PostingsMemSize size;
 		for (auto& occ : wordOccurences_) {
-			occ->shrink_to_fit();
-			heap += occ->heap_size();
+			occ.ids->shrink_to_fit();
+			size += PostingsMemSize::Measure(*occ.ids);
 		}
-		wordOccurencesHeapSize_.store(heap, std::memory_order_relaxed);
+		memoryStats_.SetPostings(size);
 		wordOccurences_.shrink_to_fit();
 		return;
 	}
@@ -690,25 +783,25 @@ void DataHolder<IdCont>::shrinkWordOccurences() {
 	const size_t threadCount = std::max<size_t>(1, threadPool_.get_thread_count());
 	const size_t chunkSize = (n + threadCount - 1) / threadCount;
 
-	std::vector<std::future<size_t>> tasks;
+	std::vector<std::future<PostingsMemSize>> tasks;
 	tasks.reserve((n + chunkSize - 1) / chunkSize);
 	auto tasksWaiter = MakeScopeGuard([&tasks] { waitForTasksOnException(tasks); });
 	for (size_t from = 0; from < n; from += chunkSize) {
 		const size_t to = std::min(from + chunkSize, n);
 		tasks.emplace_back(threadPool_.submit_task([this, from, to] {
-			size_t heap = 0;
+			PostingsMemSize size;
 			for (size_t i = from; i < to; ++i) {
-				wordOccurences_[i]->shrink_to_fit();
-				heap += wordOccurences_[i]->heap_size();
+				wordOccurences_[i].ids->shrink_to_fit();
+				size += PostingsMemSize::Measure(*wordOccurences_[i].ids);
 			}
-			return heap;
+			return size;
 		}));
 	}
 
-	size_t heap = 0;
+	PostingsMemSize size;
 	for (auto& task : tasks) {
 		try {
-			heap += task.get();
+			size += task.get();
 		} catch (...) {
 			exwr.SetException(std::current_exception());
 		}
@@ -716,11 +809,11 @@ void DataHolder<IdCont>::shrinkWordOccurences() {
 	tasksWaiter.Disable();
 	exwr.RethrowException();
 
-	wordOccurencesHeapSize_.store(heap, std::memory_order_relaxed);
+	memoryStats_.SetPostings(size);
 }
 
 template <typename IdCont>
-DeletedScanStat DataHolder<IdCont>::OptimizeDeleted(const std::function<bool(uint32_t, VDocVersion)>& isDeleted,
+DeletedScanStat DataHolder<IdCont>::OptimizeDeleted(const std::function<bool(uint32_t, VDocVersion)>& isDeleted, uint64_t numDeletedDocs,
 													const index::ICancelable& cancelable) {
 	// Cancel roughly every few hundred microseconds of scrub work on hot namespaces.
 	constexpr size_t kCancelCheckPostings = 512;
@@ -733,6 +826,9 @@ DeletedScanStat DataHolder<IdCont>::OptimizeDeleted(const std::function<bool(uin
 	};
 
 	DeletedScanStat stat;
+	if (!optimizeResumePending_) {
+		sweepStartDeletedDocs_ = numDeletedDocs;
+	}
 	optimizeResumePending_ = true;
 
 	const auto listBytes = [](const std::shared_ptr<IdCont>& sp) noexcept -> size_t {
@@ -746,8 +842,10 @@ DeletedScanStat DataHolder<IdCont>::OptimizeDeleted(const std::function<bool(uin
 		}
 	};
 
-	const auto scrubWord = [this, &isDeleted, &cancelable](size_t wordOrdinal, size_t& checked, DeletedScanStat& localStat) -> bool {
-		const auto oldSp = loadOccurences(wordOrdinal);
+	const auto scrubWord = [this, &isDeleted, &cancelable, numDeletedDocs](size_t wordOrdinal, size_t& checked, DeletedScanStat& localStat,
+																		   PostingsMemDelta& delta) -> bool {
+		auto snapshot = loadOccurences(wordOrdinal);
+		const auto& oldSp = snapshot.ids;
 		if (!oldSp) {
 			return false;
 		}
@@ -865,20 +963,27 @@ DeletedScanStat DataHolder<IdCont>::OptimizeDeleted(const std::function<bool(uin
 			}
 		}
 
+		// Keep unchanged lists and their watermarks untouched to avoid taking the publication lock.
+		// A completed sweep advances their effective watermark without publishing each list.
 		if (needPublish) {
-			const size_t oldHeapSize = oldSp->heap_size();
-			const size_t newHeapSize = rebuilt.heap_size();
-			storeOccurences(wordOrdinal, std::make_shared<IdCont>(std::move(rebuilt)));
-			adjustOccurencesHeapSize(oldHeapSize, newHeapSize);
+			rebuilt.shrink_to_fit();
+			const auto before = PostingsMemSize::Measure(*oldSp);
+			const auto after = PostingsMemSize::Measure(rebuilt);
+			snapshot.ids = std::make_shared<IdCont>(std::move(rebuilt));
+			snapshot.deletedDocsAtCleanup = numDeletedDocs;
+			storeOccurences(wordOrdinal, std::move(snapshot));
+			delta.Replace(before, after);
 		}
 		return false;
 	};
 
-	const auto scrubRange = [&scrubWord](size_t from, size_t to) -> RangeResult {
+	const auto scrubRange = [this, &scrubWord](size_t from, size_t to) -> RangeResult {
+		PostingsMemDelta delta;
+		auto statsGuard = MakeScopeGuard([this, &delta]() noexcept { memoryStats_.ApplyPostings(delta); });
 		RangeResult result;
 		size_t checked = 0;
 		for (size_t wordOrdinal = from; wordOrdinal < to; ++wordOrdinal) {
-			if (scrubWord(wordOrdinal, checked, result.stat)) {
+			if (scrubWord(wordOrdinal, checked, result.stat, delta)) {
 				result.stat.canceled = WasCanceled_True;
 				result.resumeOrdinal = wordOrdinal;
 				return result;
@@ -902,7 +1007,7 @@ DeletedScanStat DataHolder<IdCont>::OptimizeDeleted(const std::function<bool(uin
 			const size_t rangeFrom = rangePos;
 			size_t bytes = 0;
 			do {
-				bytes += listBytes(loadOccurences(rangePos));
+				bytes += listBytes(loadOccurences(rangePos).ids);
 				++rangePos;
 			} while (rangePos < wordsCount && bytes < kTargetChunkBytes);
 			ranges.emplace_back(rangeFrom, rangePos);
@@ -946,15 +1051,30 @@ DeletedScanStat DataHolder<IdCont>::OptimizeDeleted(const std::function<bool(uin
 		optimizeNextWordOrdinal_ = cursor;
 	}
 
+	sweptDeletedDocs_.store(sweepStartDeletedDocs_, std::memory_order_release);
 	optimizeNextWordOrdinal_ = 0;
 	optimizeResumePending_ = false;
 	return stat;
 }
 
 template <typename IdCont>
-void DataHolder<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<VDocPosting>& vdocs, size_t numDocsTotal, size_t numFields,
-								 std::vector<VDocWordCounts>& vdocsWordsCountsByFields, bool multithreaded) {
+void DataHolder<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<VDocPosting>& vdocs, size_t numDocsTotal,
+								 uint64_t numDeletedDocs, size_t numFields, std::vector<VDocWordCounts>& vdocsWordsCountsByFields,
+								 bool multithreaded) {
 	using namespace std::chrono;
+
+	// Failed builds may have changed a buffer before throwing. Recover counters only
+	// on this exceptional path, after all nested task waiters have finished.
+	const StackUnwinding unwinding;
+	auto statsGuard = MakeScopeGuard([this, &unwinding]() noexcept {
+		if (unwinding()) {
+			PostingsMemSize size;
+			for (const auto& occ : wordOccurences_) {
+				size += PostingsMemSize::Measure(*occ.ids);
+			}
+			memoryStats_.SetPostings(size);
+		}
+	});
 
 	const auto tm0 = system_clock_w::now();
 	system_clock_w::time_point tm1, tm2, tm3, tm4, tm5;
@@ -969,7 +1089,7 @@ void DataHolder<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<VDocP
 		if (updatedWordOrdinalsPtr) {
 			updatedWordOrdinals.reserve(nwo->Words().size());
 		}
-		updateOccurences(std::move(nwo), updatedWordOrdinalsPtr);
+		updateOccurences(std::move(nwo), numDeletedDocs, updatedWordOrdinalsPtr);
 		tm2 = system_clock_w::now();
 		const size_t newWordsStart = wordsProcessed_;
 		const size_t newWordsEnd = wordIds_.size();
@@ -985,7 +1105,7 @@ void DataHolder<IdCont>::Process(VDocsTexts& vdocsTexts, const std::vector<VDocP
 	} else {
 		auto nwos = buildWordsMapParallel(vdocsTexts, vdocs, numFields, vdocsWordsCountsByFields, &tooLongWordsSkipped);
 		tm1 = system_clock_w::now();
-		updateOccurencesParallel(nwos, updatedWordOrdinalsPtr);
+		updateOccurencesParallel(nwos, numDeletedDocs, updatedWordOrdinalsPtr);
 		tm2 = system_clock_w::now();
 		const size_t newWordsStart = wordsProcessed_;
 		const size_t newWordsEnd = wordIds_.size();
@@ -1028,7 +1148,7 @@ void DataHolder<IdCont>::logPotentialStopWords(std::vector<size_t>& updatedWordO
 	const auto end = std::unique(updatedWordOrdinals.begin(), updatedWordOrdinals.end());
 	for (auto it = updatedWordOrdinals.begin(); it != end; ++it) {
 		const size_t wordOrdinal = *it;
-		const auto sp = loadOccurences(wordOrdinal);
+		const auto sp = loadOccurences(wordOrdinal).ids;
 		const size_t docsCount = sp ? sp->size() : 0;
 		if (docsCount > 1000 && docsCount * 5 >= numDocsTotal) {
 			out << utf16_to_utf8(words_.GetWord(wordIds_[wordOrdinal])) << "(" << docsCount << ") ";

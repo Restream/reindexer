@@ -106,14 +106,40 @@ The format of query is:
 
 ### Field selection
 
-A query may start with a field selector:
+A field selector may appear before any term or phrase:
 
 `@field[,field2...] term`
 
-- `@` - starts a comma-separated list of full-text fields to search.
-- `*` - selects all fields that were not specified explicitly.
-- `^x` - applies field boost `x` to matches in this field. Default boost is 1.
-- `+field` - marks this field for rank summation. This `+` is different from the `+term` binary operator.
+The most common case is to select fields for all following terms: `@name,title hello world`.
+This searches for both `hello` and `world` in the fields `name` and `title`.
+
+Named field selection applies to composite full-text indexes. For the examples using `@name` and `@title`,
+the composite index must include both fields, for example with `json_paths: ["name", "title"]`.
+Non-composite indexes do not support named field selectors.
+
+The last field selector applies to all subsequent terms and phrases until another selector appears.
+Each new selector replaces the previous field list and field boosts; it does not affect earlier terms.
+Before the first selector, all fields of the full-text index are searched with the default field boost of 1.
+
+For example, `@name^2 hello @title world 123` searches for `hello` 
+only in `name` with boost 2, and for `world` and `123` only in `title` with the default boost of 1 
+(the new selector resets the previous boost).
+These terms are optional; a document need not contain all three.
+`@name,title hello @title world` searches for `hello` in either field, but for `world` only in `title`.
+Use `@*` to select all fields again, for example: `@name hello @* world`.
+
+ - `@` - starts a comma-separated list of full-text fields to search.
+ - `@*` - selects all fields of the full-text index.
+ - `+field` - marks a field as mandatory for the term's rank calculation. Matches in this field will always contribute to the final rank of the word, even if another field has a better match.
+ - `^x` - applies field boost `x` to matches in this field. Default boost is 1. Any float value is supported.
+
+Example of use with all the mentioned above: `@field1^2,+field2 hello @* my world^1.5`
+
+In phrases, specify the field selector and field boosts before the opening quote, for example:
+`@name^2 "hello world" @title "good morning" 123`.
+The first phrase is searched in `name` with field boost 2; the second phrase and `123` are searched in `title`
+with the default field boost of 1. The selected fields apply to the entire phrase.
+Field selectors inside a phrase are not supported and will cause an error.
 
 By default, when the same query term matches several fields, the term rank is the maximum rank among those fields.
 
@@ -290,7 +316,7 @@ result: `{term_rank:97, term:маша, pattern:маша, bm25_norm:0.98, term_le
 
 ## Merging queries results
 
-It is possible to merge multiple queries results and sort final result by relevancy.
+Fulltext queries can be merged. Without an explicit sort the merged rows are ordered by relevancy, higher rank first. An explicit `Sort()` / `ORDER BY` on the main query replaces that order. Tie-break, deduplication and the other merge rules are described in [Merge](readme.md#merge). An inner fulltext query must not have its own sort.
 
 ```go
     query := db.Query("items").

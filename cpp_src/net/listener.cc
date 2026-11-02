@@ -442,6 +442,12 @@ void Listener<LT>::Stop() noexcept {
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		lck.lock();
 	}
+
+	// Idle connections refer to the owner's dispatcher, while Shared may be destroyed later by a detached thread
+	std::vector<std::unique_ptr<IServerConnection>> idle;
+	idle.swap(shared_->idle_);
+	lck.unlock();
+	idle.clear();
 }
 
 template <ListenerType LT>

@@ -95,10 +95,33 @@ void EmbedderStatus::GetJSON(JsonBuilder& builder) const {
 	}
 }
 
+void TextIndexMemoryStats::GetJSON(JsonBuilder& builder) const {
+	builder.Put("words_size", wordsSize);
+	builder.Put("words_map_size", wordsMapSize);
+	builder.Put("word_ids_size", wordIdsSize);
+	builder.Put("suffixes_size", suffixesSize);
+	builder.Put("typos_size", typosSize);
+	builder.Put("postings_size", postingsSize);
+	builder.Put("postings_capacity_size", postingsCapacitySize);
+	if (packedDataSize.has_value()) {
+		builder.Put("packed_data_size", *packedDataSize);
+	}
+	builder.Put("vdocs_size", vdocsSize);
+	builder.Put("vdoc_merge_info_size", vdocMergeInfoSize);
+	builder.Put("vdoc_id_map_size", vdocIdMapSize);
+	builder.Put("free_vdoc_ids_size", freeVdocIdsSize);
+	builder.Put("pending_vdocs_size", pendingVdocsSize);
+	builder.Put("vdoc_set_size", vdocSetSize);
+	builder.Put("auxiliary_size", auxiliarySize);
+}
+
 void TextIndexStats::GetJSON(JsonBuilder& builder) const {
 	builder.Put("total_vdocs", totalVdocs);
 	builder.Put("removed_vdocs", removedVdocs);
 	builder.Put("dead_vdocs", deadVdocs);
+	builder.Put("words_count", wordsCount);
+	builder.Put("typos_groups_count", typosGroupsCount);
+	builder.Put("typos_keys_count", typosKeysCount);
 }
 
 void IndexMemStat::GetJSON(JsonBuilder& builder) const {
@@ -134,6 +157,10 @@ void IndexMemStat::GetJSON(JsonBuilder& builder) const {
 	}
 	if (indexingStructSize) {
 		builder.Put("indexing_struct_size", indexingStructSize);
+	}
+	if (indexingStructDetails.has_value()) {
+		auto obj = builder.Object("indexing_struct_details");
+		indexingStructDetails->GetJSON(obj);
 	}
 	if (vectorsKeeperSize) {
 		builder.Put("vectors_keeper_size", vectorsKeeperSize);

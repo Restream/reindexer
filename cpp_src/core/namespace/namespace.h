@@ -53,15 +53,18 @@ class [[nodiscard]] Namespace {
 				auto wlck = ns->dataWLock(nsCtx.rdxContext);
 				cg.Reset();
 				qr.AddNamespace(ns, true);
+				std::shared_ptr<const FieldsFilter> allFieldsFilter;
 				if (ns->haveFloatVectorsIndexes()) {
-					qr.addNSContext(ns->payloadType(), ns->tagsMatcher(), FieldsFilter::AllFields(), ns->schema_, ns->incarnationTag_);
+					allFieldsFilter = FieldsFilter::AllFieldsPtr();
+					qr.addNSContext(ns->payloadType(), ns->tagsMatcher(), allFieldsFilter, ns->schema_, ns->incarnationTag_);
 				}
 				added = true;
 				(*ns.*fn)(v, mode, pendedRepl, nsCtx);
 				qr.AddItemNoHold(v, ns->incarnationTag_, true);
 				if constexpr (mode != ModeDelete) {
 					if (ns->haveFloatVectorsIndexes()) {
-						qr.GetFloatVectorsHolder().Add(*ns, qr.begin() + (qr.Count() - 1), qr.end(), FieldsFilter::AllFields());
+						assertrx(allFieldsFilter);
+						qr.GetFloatVectorsHolder().Add(*ns, qr.begin() + (qr.Count() - 1), qr.end(), *allFieldsFilter);
 					}
 				}
 				ns->replicate(std::move(pendedRepl), std::move(wlck), true, nullptr, nsCtx);

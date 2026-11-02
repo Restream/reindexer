@@ -79,7 +79,7 @@ Expected values range for the `rank(ft_idx)` expression is [1, 255], where 1 is 
 The values range for the `rank(vec_idx)` expressions depends on the specified similarity metric. For example, in case of the `cosine`-metric it would be [-1.0, 1.0], where -1.0 corresponds to the least relevant vectors and 1.0 corresponds to the most relevant vectors.
 
 # Merging queries results
-It is possible to merge multiple queries results and sort final result by ranks calculated by their own rerankers.
+Hybrid queries can be merged. Each query is ordered by its own reranker: `RRF()` by default, or the linear combination of `rank()` written in `ORDER BY`. The merged rows are ordered by those ranks. A field sort is not applied. Tie-break, deduplication and the other merge rules are described in [Merge](readme.md#merge).
 ```SQL
 SELECT * FROM ns WHERE ft_idx = 'search_str' OR KNN(vec_idx, [2.4, 3.5, ...], k=100)
    ORDER BY '30 * rank(ft_idx) + 50 * rank(vec_idx, 100.0) + 100'

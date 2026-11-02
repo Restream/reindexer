@@ -17,8 +17,10 @@ class ActivityContainer;
 ///		BeforeSelectLoop
 ///		CheckConnectionId
 class [[nodiscard]] RdxActivityContext {
-	constexpr static unsigned kStateShift = 3u;
+	// Lower bits hold Activity::State. WaitLock stores MutexMark above them.
+	constexpr static unsigned kStateShift = 4u;
 	constexpr static unsigned kStateMask = (1u << kStateShift) - 1u;
+	static_assert(static_cast<unsigned>(Activity::WaitReplication) < (1u << kStateShift));
 	friend class RdxContext;
 
 	class [[nodiscard]] Ward {
@@ -58,6 +60,9 @@ public:
 	Ward BeforeSelectLoop() noexcept { return Ward(this, Activity::SelectLoop); }
 	Ward BeforeClusterProxy() noexcept { return Ward(this, Activity::ProxiedViaClusterProxy); }
 	Ward BeforeShardingProxy() noexcept { return Ward(this, Activity::ProxiedViaShardingProxy); }
+	Ward BeforeItemsDeletion() noexcept { return Ward(this, Activity::ItemsDeletion); }
+	Ward BeforeItemsModification() noexcept { return Ward(this, Activity::ItemsModification); }
+	Ward BeforeReplication() noexcept { return Ward(this, Activity::WaitReplication); }
 
 	bool CheckConnectionId(int connectionId) const noexcept { return data_.connectionId == connectionId; }
 

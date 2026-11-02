@@ -242,10 +242,7 @@ public:
 		tm_ = qr_.GetTagsMatcher(getJoinedNsID(nsid_, joinedField));
 		return tm_;
 	}
-	const FieldsFilter& GetItemFieldsFilter(size_t /*joinedField*/) & noexcept override {
-		static const FieldsFilter empty;
-		return empty;
-	}
+	const FieldsFilter& GetItemFieldsFilter(size_t /*joinedField*/) & noexcept override { return FieldsFilter::Empty(); }
 	const std::string& GetItemNamespace(size_t joinedField) & noexcept override {
 		if (!hasJoinedDataForField(joinedField)) {
 			static const std::string empty;

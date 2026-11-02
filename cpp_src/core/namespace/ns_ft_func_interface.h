@@ -5,13 +5,14 @@
 
 namespace reindexer {
 
-class NamespaceImpl;
-class Index;
+namespace ns_indexes {
+class Registry;
+}
 class FieldsSet;
 
 class [[nodiscard]] NsFtFuncInterface {
 public:
-	explicit NsFtFuncInterface(const NamespaceImpl& nm) noexcept : nm_(nm) {}
+	explicit NsFtFuncInterface(const ns_indexes::Registry& registry) noexcept : registry_(registry) {}
 	bool getIndexByName(std::string_view name, int& index) const noexcept;
 	int getIndexesCount() const noexcept;
 	const std::string& getIndexName(int id) const noexcept;
@@ -20,7 +21,7 @@ public:
 	TagsPath getTagsPathForField(std::string_view jsonPath) const noexcept;
 
 private:
-	const NamespaceImpl& nm_;
+	const ns_indexes::Registry& registry_;
 };
 
 }  // namespace reindexer

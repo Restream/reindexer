@@ -8,13 +8,14 @@
 
 namespace reindexer {
 
-Item::Item(ItemImpl* impl, const FieldsFilter& fieldsFilter) : Item{impl} {
+Item::Item(ItemImpl* impl, std::shared_ptr<const FieldsFilter> fieldsFilter) : Item{impl} {
 	if (impl_) {
-		impl_->fieldsFilter_ = &fieldsFilter;
+		impl_->fieldsFilter_ = std::move(fieldsFilter);
 	}
 }
-Item::Item(PayloadType pt, PayloadValue pv, const TagsMatcher& tm, std::shared_ptr<const Schema> schema, const FieldsFilter& fieldsFilter)
-	: Item(new ItemImpl(std::move(pt), std::move(pv), tm, std::move(schema), fieldsFilter)) {}
+Item::Item(PayloadType pt, PayloadValue pv, const TagsMatcher& tm, std::shared_ptr<const Schema> schema,
+		   std::shared_ptr<const FieldsFilter> fieldsFilter)
+	: Item(new ItemImpl(std::move(pt), std::move(pv), tm, std::move(schema), std::move(fieldsFilter))) {}
 
 Item& Item::operator=(Item&& other) noexcept {
 	if (&other != this) {
@@ -249,8 +250,9 @@ Item::FieldRef Item::operator[](int field) const {
 	if (field < 0 || field >= impl_->Type().NumFields()) [[unlikely]] {
 		throw Error(errLogic, "Item::operator[] requires indexed field. Values range: [0; {}]", impl_->Type().NumFields());
 	}
-	const bool notSet = impl_->Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl_->fieldsFilter_ &&
-						!impl_->fieldsFilter_->ContainsVector(field);
+	const auto& fieldsFilter = impl_->fieldsFilter_;
+	const bool notSet =
+		impl_->Type().Field(field).Type().Is<KeyValueType::FloatVector>() && fieldsFilter && !fieldsFilter->ContainsVector(field);
 	return FieldRef(field, impl_, notSet);
 }
 
@@ -265,8 +267,9 @@ Item::FieldRef Item::FieldRefByNameOrJsonPath(std::string_view name, ItemImpl& i
 	}
 
 	if (field > 0) {
-		const bool notSet = impl.Type().Field(field).Type().Is<KeyValueType::FloatVector>() && impl.fieldsFilter_ &&
-							!impl.fieldsFilter_->ContainsVector(field);
+		const auto& fieldsFilter = impl.fieldsFilter_;
+		const bool notSet =
+			impl.Type().Field(field).Type().Is<KeyValueType::FloatVector>() && fieldsFilter && !fieldsFilter->ContainsVector(field);
 		return FieldRef(field, &impl, notSet);
 	} else {
 		const auto& sparseIndexes = impl.tagsMatcher().SparseIndexes();
@@ -298,8 +301,6 @@ Item& Item::Unsafe(bool enable) & noexcept {
 
 lsn_t Item::GetLSN() { return impl_->RealValue().IsFree() ? impl_->Value().GetLSN() : impl_->RealValue().GetLSN(); }
 void Item::setLSN(lsn_t lsn) { impl_->RealValue().IsFree() ? impl_->Value().SetLSN(lsn) : impl_->RealValue().SetLSN(lsn); }
-void Item::setFieldsFilter(const FieldsFilter& fieldsFilter) noexcept { impl_->fieldsFilter_ = &fieldsFilter; }
-
 template Item::FieldRef& Item::FieldRef::operator=(std::span<const int> arr);
 template Item::FieldRef& Item::FieldRef::operator=(std::span<const int64_t> arr);
 template Item::FieldRef& Item::FieldRef::operator=(std::span<const std::string> arr);

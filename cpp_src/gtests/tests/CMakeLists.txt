@@ -121,6 +121,10 @@ if (WITH_UBSAN)
 endif()
 
 add_definitions(-DREINDEXER_TESTS_DATA_PATH="${REINDEXER_SOURCE_PATH}/gtests/tests_data")
+
+# The ABI tests load the stub at run time. The generator expression gives the path but creates no build dependency, hence the explicit one.
+target_compile_definitions(${TARGET} PRIVATE RX_EMBEDDING_STUB_PATH="$<TARGET_FILE:embedding_stub>")
+add_dependencies(${TARGET} embedding_stub)
 if (ENABLE_SERVER_AS_PROCESS_IN_TEST)
     if (CMAKE_SYSTEM_NAME MATCHES "Linux")
         add_definitions(-DREINDEXER_WITH_SC_AS_PROCESS)

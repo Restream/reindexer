@@ -1,8 +1,11 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
+#include "core/enums.h"
 #include "estl/fast_hash_map.h"
 #include "index_names.h"
 #include "indexes_storage.h"
@@ -10,6 +13,7 @@
 
 namespace reindexer {
 class Index;
+class IndexDef;
 class PayloadFieldType;
 }  // namespace reindexer
 
@@ -39,9 +43,9 @@ public:
 	const IndexesStorage& Indexes() const& noexcept { return indexes_; }
 	const CompositesMap& Composites() const& noexcept { return composites_; }
 	/**
-	 * @brief Looks up an index by name, or by the '#pk' PK alias.
+	 * @brief Looks up an index by case-insensitive name, or by the '#pk' PK alias.
 	 * @param name - index name.
-	 * @param pos - set to the index position in Indexes() if found.
+	 * @param pos - set to the index position in Indexes() if found; unchanged otherwise.
 	 * @return false if there is no such name.
 	 */
 	bool TryGetIndexPos(std::string_view name, int& pos) const noexcept {
@@ -52,6 +56,51 @@ public:
 		pos = it->second;
 		return true;
 	}
+
+	/**
+	 * @brief Looks up an index using the same name and PK alias rules as TryGetIndexPos().
+	 * @param name - index name or the '#pk' alias.
+	 * @return the index position in Indexes().
+	 * @throws Error with errParams if the index is not found.
+	 */
+	int GetIndexPos(std::string_view name) const;
+	/**
+	 * @brief Looks up a non-composite index using the same name and PK alias rules as TryGetIndexPos().
+	 * @param name - index name or the '#pk' alias.
+	 * @param pos - set to the index position if found; unchanged otherwise.
+	 * @return false if the index is not found or is composite.
+	 */
+	bool TryGetNonCompositeIndexPos(std::string_view name, int& pos) const noexcept;
+	/**
+	 * @brief Tries TryGetIndexPos() first, then falls back to TryGetIndexPosByJsonPath().
+	 * @param name - index name, the '#pk' alias, or a JSON-path.
+	 * @param pos - set to the index position if found; unchanged otherwise.
+	 * @param multi - allows indexes with multiple JSON-paths during the JSON-path lookup only.
+	 * @return false if neither lookup finds a matching index.
+	 */
+	bool TryGetIndexPosByNameOrJsonPath(std::string_view name, int& pos, EnableMultiJsonPath multi = EnableMultiJsonPath_False) const;
+	/**
+	 * @brief Looks up a regular or sparse index by JSON-path.
+	 * @param jsonPath - JSON-path to look up.
+	 * @param pos - set to the index position if found; unchanged otherwise.
+	 * @param multi - allows indexes with multiple JSON-paths; they are excluded by default.
+	 * @return false if no matching index is found.
+	 */
+	bool TryGetIndexPosByJsonPath(std::string_view jsonPath, int& pos,
+								  EnableMultiJsonPath multi = EnableMultiJsonPath_False) const noexcept;
+	/**
+	 * @brief Returns an index definition by case-insensitive name without resolving the '#pk' alias.
+	 * @param name - index name; the returned definition preserves the stored spelling.
+	 * @throws Error with errParams if the index is not found.
+	 */
+	IndexDef GetIndexDefinition(std::string_view name) const;
+	/**
+	 * @brief Reconstructs an index definition from its current index and metadata.
+	 * @param pos - index position in Indexes().
+	 * @pre pos is less than Indexes().size().
+	 */
+	IndexDef GetIndexDefinition(size_t pos) const;
+
 	/** @brief Ascending positions of the float vector indexes in Indexes(). */
 	const std::vector<size_t>& FloatVectorsPositions() const& noexcept { return floatVectorsPositions_; }
 	bool HasFloatVectorIndexes() const noexcept { return !floatVectorsPositions_.empty(); }

@@ -28,8 +28,7 @@ ExprScalar invokeUpdateScalarFunction(ExprEvalContext& ctx, const functions::Fun
 	if (!ctx.functionInvoker || !ctx.ctx) [[unlikely]] {
 		throw Error(errLogic, "FunctionInvoker and NsContext are required to invoke UPDATE functions");
 	}
-	assertrx_throw(ctx.payload.Value());
-	return scalarFromVariant(ctx.functionInvoker->Invoke(fn, *ctx.ctx, *ctx.payload.Value()));
+	return scalarFromVariant(ctx.functionInvoker->Invoke(fn, *ctx.ctx, ctx.dataExtractor));
 }
 
 std::optional<ExprParseContext::FunctionArg> identFromArg(const ExprNode& node) {
@@ -87,8 +86,7 @@ public:
 	ExprScalar ExecuteScalar(ExprEvalContext& ctx, const ExprFunction& func) const override {
 		assertrx_throw(func.stringArgs.size() == 1);
 		functions::FlatArrayLen fn{func.stringArgs.front().value};
-		assertrx_throw(ctx.payload.Value());
-		return ExprScalar::FromInt(static_cast<int64_t>(fn.Evaluate(*ctx.payload.Value(), PayloadTypeOf(ctx.ns), TagsMatcherOf(ctx.ns))));
+		return ExprScalar::FromInt(static_cast<int64_t>(fn.Evaluate(ctx.dataExtractor, PayloadTypeOf(ctx.ns))));
 	}
 
 	void CollectReferencedFields(const ExprFunctionArgs& args, ExprReferencedFields& fields) const override {
@@ -205,8 +203,6 @@ constexpr auto kBuiltinFunctions = MakeFunctionsMap({
 }  // namespace
 
 const PayloadType& BuiltinFunction::PayloadTypeOf(const NamespaceImpl& ns) noexcept { return ns.payloadType(); }
-
-const TagsMatcher& BuiltinFunction::TagsMatcherOf(const NamespaceImpl& ns) noexcept { return ns.tagsMatcher(); }
 
 void BuiltinFunction::CollectReferencedFields(const ExprFunctionArgs&, ExprReferencedFields&) const {}
 

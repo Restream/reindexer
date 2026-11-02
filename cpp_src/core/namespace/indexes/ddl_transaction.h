@@ -24,8 +24,8 @@ namespace reindexer::ns_indexes {
  * Short-lived, one op under the namespace write lock. Two phases:
  *  - prepare builds TargetState aside and recodes items. Checks and throws live here, so a failure leaves registry,
  *    metadata and items as they were. Not rolled back on a failed prepare (pre-existing, not introduced here):
- *    embedding-config verify (verifyUpdateIndex()/prepareAdd()) may register a JSON-path in EmbeddersCache; recoding
- *    the tuple (prepareItems()) releases old string refs from StringsHolder per item before success is known;
+ *    embedding-config verify (Validator::VerifyUpdateIndex()/prepareAdd()) may register a JSON-path in EmbeddersCache;
+ *    recoding the tuple (prepareItems()) releases old string refs from StringsHolder per item before success is known;
  *  - commit swaps the prepared state into the registry (noexcept).
  *
  * Covers registry, metadata and items - not PK migration (migrations::PKMigrationService), which writes storage after

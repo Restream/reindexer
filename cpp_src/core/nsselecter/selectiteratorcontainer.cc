@@ -296,7 +296,7 @@ h_vector<SelectKeyResults, 2> SelectIteratorContainer::processQueryEntry(const Q
 	selectCtx.opts.inTransaction = ctx_->inTransaction;
 	selectCtx.opts.strictMode = strictMode;
 	if (ftFunc && isRanked) {
-		selectCtx.selectFuncCtx.emplace(*ftFunc, ranks, qe.IndexNo(), NsFtFuncInterface{ns});
+		selectCtx.selectFuncCtx.emplace(*ftFunc, ranks, qe.IndexNo(), NsFtFuncInterface{ns.indexRegistry_});
 	}
 
 	if (index->Opts().GetCollateMode() == CollateUTF8 || isRanked) {
@@ -1006,7 +1006,7 @@ ContainRanked SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPrepro
 				return ContainRanked_False;
 			},
 			[&](const QueryArithmeticEntry& qe) {
-				ArithmeticComparator comparator{QueryArithmeticEntry{qe}, ns.payloadType(), ns, nowNsec};
+				ArithmeticComparator comparator{QueryArithmeticEntry{qe}, ns.payloadType(), ns, ns.tagsMatcher(), nowNsec};
 				std::ignore = Append(op, std::move(comparator));
 				return ContainRanked_False;
 			},

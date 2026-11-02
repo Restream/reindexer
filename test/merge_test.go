@@ -291,6 +291,41 @@ func CheckTestItemsMergeQueries(t *testing.T) {
 	}
 }
 
+type mergeSortItem struct {
+	ID   int `reindex:"id,,pk" json:"id"`
+	Year int `reindex:"year,tree" json:"year"`
+}
+
+func TestMergeUserSort(t *testing.T) {
+	const (
+		nsA = "merge_user_sort_a"
+		nsB = "merge_user_sort_b"
+	)
+	opts := reindexer.DefaultNamespaceOptions().NoStorage()
+	require.NoError(t, DB.OpenNamespace(nsA, opts, mergeSortItem{}))
+	require.NoError(t, DB.OpenNamespace(nsB, opts, mergeSortItem{}))
+	t.Cleanup(func() {
+		require.NoError(t, DB.DropNamespace(nsA))
+		require.NoError(t, DB.DropNamespace(nsB))
+	})
+	for _, item := range []mergeSortItem{{ID: 1, Year: 2000}, {ID: 2, Year: 1990}, {ID: 3, Year: 2010}} {
+		require.NoError(t, DB.Upsert(nsA, item))
+	}
+	for _, item := range []mergeSortItem{{ID: 10, Year: 2005}, {ID: 11, Year: 1980}, {ID: 12, Year: 2010}} {
+		require.NoError(t, DB.Upsert(nsB, item))
+	}
+
+	it := DB.Query(nsA).Merge(DB.Query(nsB)).Sort("year", false).Exec(t)
+	defer it.Close()
+	require.NoError(t, it.Error())
+	var ids []int
+	for it.Next() {
+		ids = append(ids, it.Object().(*mergeSortItem).ID)
+	}
+	require.NoError(t, it.Error())
+	assert.Equal(t, []int{11, 2, 1, 10, 3, 12}, ids)
+}
+
 func TestMerge(t *testing.T) {
 	defer func() {
 		require.NoError(t, DB.TruncateNamespace(testFullTextItemNs1))

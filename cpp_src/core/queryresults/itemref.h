@@ -95,6 +95,7 @@ public:
 
 	IdType Id() const noexcept { return id_; }
 	uint16_t Nsid() const noexcept { return nsid_; }
+	// Value contains packed WAL record (see WALSelecter) instead of the document's payload
 	bool Raw() const noexcept { return raw_; }
 	const PayloadValue& Value() const noexcept {
 		assertrx(valueInitialized_);
@@ -473,6 +474,19 @@ public:
 				   variant_);
 	}
 	void Swap(ItemRefVector& other) noexcept { variant_.swap(other.variant_); }
+
+	void DropRanks() {
+		if (!IsRanked()) {
+			return;
+		}
+		RankedVec ranked{std::move(std::get<RankedVec>(variant_))};
+		NotRankedVec plain;
+		plain.reserve(ranked.size());
+		for (auto& item : ranked) {
+			plain.emplace_back(std::move(item.NotRanked()));
+		}
+		variant_.emplace<NotRankedVec>(std::move(plain));
+	}
 
 	reindexer::IsRanked IsRanked() const noexcept { return reindexer::IsRanked{std::holds_alternative<RankedVec>(variant_)}; }
 

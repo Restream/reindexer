@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "core/payload/fieldsset.h"
 #include "estl/concepts.h"
 
@@ -8,7 +10,6 @@ namespace reindexer {
 class FieldsNamesFilter;
 class NamespaceImpl;
 class PayloadType;
-
 class [[nodiscard]] FieldsFilter {
 public:
 	FieldsFilter() noexcept = default;
@@ -45,8 +46,12 @@ public:
 	}
 	const FieldsSet* TryVectorFields() const& noexcept { return allVectorFields_ ? nullptr : &vectorFields_; }
 
-	static FieldsFilter AllFields() noexcept { return FieldsFilter{true, true}; }
+	static const FieldsFilter& AllFields();
+	static std::shared_ptr<const FieldsFilter> AllFieldsPtr();
+	static std::shared_ptr<const FieldsFilter> Create(const FieldsNamesFilter&, const NamespaceImpl&);
 	static FieldsFilter FromFieldsSet(const FieldsSet&, const PayloadType&, const NamespaceImpl&);
+	static const FieldsFilter& Empty() noexcept;
+	static const std::shared_ptr<const FieldsFilter>& EmptyPtr() noexcept;
 
 	template <typename P>
 	static FieldsFilter FromPath(P&& path) {

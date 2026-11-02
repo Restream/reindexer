@@ -1110,15 +1110,20 @@ Error RPCServer::CloseResults(cproto::Context& ctx, int reqId, std::optional<int
 	return Error();
 }
 
-Error RPCServer::GetSQLSuggestions(cproto::Context& ctx, p_string query, int pos) {
+Error RPCServer::GetSQLSuggestions(cproto::Context& ctx, p_string query, int pos, std::optional<bool> withError) {
 	SQLSuggestions suggests;
 	Error err = getDB(ctx, kRoleDataRead).GetSqlSuggestions(query, pos, suggests);
 
 	if (err.ok()) {
+		const bool appendError = withError.value_or(false);
 		cproto::Args ret;
-		ret.reserve(suggests.suggestions.size());
+		ret.reserve(suggests.suggestions.size() + (appendError ? 2 : 0));
 		for (auto& suggest : suggests.suggestions) {
 			ret.emplace_back(std::move(suggest));
+		}
+		if (appendError) {
+			ret.emplace_back(int(suggests.errorMessage.empty() ? errOK : errParseSQL));
+			ret.emplace_back(std::move(suggests.errorMessage));
 		}
 		ctx.Return(ret);
 	}

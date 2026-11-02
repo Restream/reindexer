@@ -16,6 +16,7 @@
 #include "core/perfstatcounter.h"
 #include "core/querycache.h"
 #include "core/queryresults/fields_filter.h"
+#include "core/rdxcontext.h"
 #include "core/schema.h"
 #include "core/selectkeyresult.h"
 #include "core/storage/storagetype.h"
@@ -28,6 +29,7 @@
 #include "float_vectors_indexes.h"
 #include "index_optimizer.h"
 #include "indexes/registry.h"
+#include "indexes/validator.h"
 #include "namespacename.h"
 #include "stringsholder.h"
 #include "wal/waltracker.h"
@@ -42,8 +44,6 @@ class Index;
 class EmbeddersCache;
 class DBConfigProvider;
 class QueryPreprocessor;
-class RdxContext;
-class RdxActivityContext;
 class SortExpression;
 class FloatVectorIndex;
 class TransactionContext;
@@ -166,7 +166,6 @@ class [[nodiscard]] NamespaceImpl final : public intrusive_atomic_rc_base {	 // 
 	friend class NsSelecter;
 	friend class joins::ItemsProcessor;
 	friend class WALSelecter;
-	friend class NsFtFuncInterface;
 	friend class QueryPreprocessor;
 	friend class composite_substitution_helpers::CompositeSearcher;
 	friend class SelectIteratorContainer;
@@ -391,7 +390,8 @@ public:
 	std::string GetMeta(const std::string& key, const RdxContext& ctx);
 	void PutMeta(const std::string& key, std::string_view data, const RdxContext& ctx);
 	void DeleteMeta(const std::string& key, const RdxContext& ctx);
-	int64_t GetSerial(std::string_view field, UpdatesContainer& replUpdates, const NsContext& ctx);
+	int64_t GetSerial(std::string_view fieldName, std::string_view alternativeFieldName, UpdatesContainer& replUpdates,
+					  const NsContext& ctx);
 
 	PayloadType GetPayloadType(const RdxContext& ctx) const;
 
@@ -435,12 +435,6 @@ private:
 
 	friend struct IndexFastUpdate;
 
-	int getIndexByName(std::string_view index) const;
-	bool tryGetIndexByName(std::string_view name, int& index) const noexcept;
-	bool tryGetScalarIndexByName(std::string_view name, int& index) const noexcept;
-	// Those functions do not return indexes with multiple jsonpaths, when searching by jsonpath
-	bool tryGetIndexByNameOrJsonPath(std::string_view name, int& index, EnableMultiJsonPath multi = EnableMultiJsonPath_False) const;
-	bool tryGetIndexByJsonPath(std::string_view jsonPath, int& index, EnableMultiJsonPath multi = EnableMultiJsonPath_False) const noexcept;
 	FloatVectorsIndexes getVectorIndexes() const;
 	FloatVectorsIndexes getVectorIndexes(const PayloadType& pt) const;
 	bool haveFloatVectorsIndexes() const noexcept { return indexRegistry_.HasFloatVectorIndexes(); }
@@ -481,21 +475,10 @@ private:
 	void doTruncate(UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void optimizeIndexes(const NsContext&);
 	void tryCleanFulltextIndexes(bool skipTimeCheck, const index::ICancelable& cancelable);
+	/** @brief Borrows index update settings from this namespace; the caller must hold the namespace lock. */
+	ns_indexes::Validator::UpdateContext indexUpdateContext() const noexcept;
 	void addIndex(const IndexDef& indexDef, bool disableTmVersionInc, bool skipEqualityCheck = false);
 	void doAddIndex(const IndexDef& indexDef, bool skipEqualityCheck, UpdatesContainer& pendedRepl, const NsContext& ctx);
-	bool checkIfSameIndexExists(const IndexDef& indexDef, bool* requireTtlUpdate) const;
-	void verifyCompositeIndex(const IndexDef& indexDef) const;
-	void verifyEmbeddingFields(const h_vector<std::string, 1>& fields, std::string_view fieldName, std::string_view action) const;
-	void verifyUpsertEmbedder(std::string_view action, const IndexDef& indexDef) const;
-	void verifyUpsertIndex(std::string_view action, const IndexDef& indexDef) const;
-	// tm takes the JSON-paths, which the verification has to register. It is never the namespace tags matcher itself:
-	// registering a tag is irreversible, so a failed verification must not leave its tags behind
-	void verifyUpdateIndex(const IndexDef& indexDef, TagsMatcher& tm) const;
-	void verifyUpdateQuantizationConfigHNSWIndex(const Index* curIndex, const IndexDef& newIndexDef) const;
-	void verifyUpsertQuantizationConfigHNSWIndex(std::string_view action, const IndexDef& indexDef) const;
-	// Returns the position of the index being dropped
-	int verifyDropIndex(const IndexDef&) const;
-	bool isPkAffectingIndexChange(const IndexDef& indexDef) const noexcept;
 	// Must run first, before any other validation or side effect, for every PK-affecting Add/Update/Drop - throws if a
 	// previous PK migration is still incomplete (see migrations::PKMigrationService::HasIncompleteMigration()), since
 	// the storage may still hold items under a stale PK-derived key, and stacking another PK change on top isn't safe
@@ -512,11 +495,9 @@ private:
 	void setTagsMatcher(TagsMatcher&& tm, UpdatesContainer& pendedRepl, const NsContext& ctx);
 	void replicateItem(IdType itemId, const NsContext& ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity,
 					   int oldTmVersion, std::optional<PKModifyRevertData>&& modifyData, UpdatesContainer& pendedRepl,
-					   const FieldsFilter& pkFilter);
+					   const FieldsFilter& pkFilter, FloatVectorsIndexesValues vectorsBeforePkChange);
 
 	NamespaceDef getDefinition() const;
-	IndexDef getIndexDefinition(const std::string& indexName) const;
-	IndexDef getIndexDefinition(size_t i) const;
 
 	std::string getMeta(const std::string& key) const;
 	void putMeta(const std::string& key, std::string_view data, UpdatesContainer& pendedRepl, const NsContext& ctx);
@@ -594,6 +575,30 @@ private:
 	Locker locker_;
 	std::shared_ptr<Schema> schema_;
 
+	/** @brief Returns the index position by name or '#pk'; throws if the index is absent. */
+	int getIndexByName(std::string_view name) const { return indexRegistry_.GetIndexPos(name); }
+	/** @brief Looks up an index by name or '#pk'; leaves pos unchanged if the index is absent. */
+	bool tryGetIndexByName(std::string_view name, int& pos) const noexcept { return indexRegistry_.TryGetIndexPos(name, pos); }
+	/** @brief Like tryGetIndexByName(), but excludes composite indexes. */
+	bool tryGetNonCompositeIndexByName(std::string_view name, int& pos) const noexcept {
+		return indexRegistry_.TryGetNonCompositeIndexPos(name, pos);
+	}
+	/** @brief Looks up by name or '#pk', then by JSON-path; multi only affects the JSON-path lookup. */
+	bool tryGetIndexByNameOrJsonPath(std::string_view name, int& pos, EnableMultiJsonPath multi = EnableMultiJsonPath_False) const {
+		return indexRegistry_.TryGetIndexPosByNameOrJsonPath(name, pos, multi);
+	}
+	/** @brief Looks up a regular or sparse index by JSON-path, excluding multi-path indexes unless enabled. */
+	bool tryGetIndexByJsonPath(std::string_view jsonPath, int& pos, EnableMultiJsonPath multi = EnableMultiJsonPath_False) const noexcept {
+		return indexRegistry_.TryGetIndexPosByJsonPath(jsonPath, pos, multi);
+	}
+	/** @brief Returns an index definition by case-insensitive name without resolving the '#pk' alias. */
+	IndexDef getIndexDefinition(std::string_view name) const { return indexRegistry_.GetIndexDefinition(name); }
+	/**
+	 * @brief Returns the definition of the index at pos.
+	 * @pre pos is less than indexes().size().
+	 */
+	IndexDef getIndexDefinition(size_t pos) const { return indexRegistry_.GetIndexDefinition(pos); }
+
 	const IndexesStorage& indexes() const& noexcept { return indexRegistry_.Indexes(); }
 	const ns_indexes::Registry::CompositesMap& indexesToComposites() const& noexcept { return indexRegistry_.Composites(); }
 	const PayloadType& payloadType() const& noexcept { return indexRegistry_.GetPayloadType(); }
@@ -623,6 +628,7 @@ private:
 	template <typename QueryStatsCalculatorT>
 	void replicate(UpdatesContainer&& recs, NamespaceImpl::Locker::WLockT&& wlck, bool tryForceFlush,
 				   QueryStatsCalculatorT&& statCalculator, const NsContext& ctx) {
+		const auto replWard = ctx.rdxContext.BeforeSimpleState(Activity::WaitReplication);
 		if (!isTemporary()) {
 			assertrx(!ctx.isCopiedNsRequest);
 			auto err = observers_.SendUpdates(

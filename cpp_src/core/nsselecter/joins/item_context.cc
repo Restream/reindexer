@@ -8,7 +8,7 @@ JoinedItemContext::JoinedItemContext(ItemIterator&& it, const joins::Results* re
 	: JoinedItemContext(std::move(it), res) {
 	contexts.reserve(qr.GetNamespacesCount());
 	for (size_t nsid = 0; nsid < qr.GetNamespacesCount(); ++nsid) {
-		contexts.emplace_back(qr.GetPayloadType(int(nsid)), qr.GetTagsMatcher(int(nsid)), FieldsFilter{}, std::shared_ptr<const Schema>{});
+		contexts.emplace_back(qr.GetPayloadType(int(nsid)), qr.GetTagsMatcher(int(nsid)), nullptr, std::shared_ptr<const Schema>{});
 	}
 }
 

@@ -5,12 +5,12 @@
 namespace reindexer {
 namespace functions {
 
-Variant FunctionInvoker::Invoke(const FunctionVariant& function, const NsContext& ctx, const PayloadValue& pv) const {
+Variant FunctionInvoker::Invoke(const FunctionVariant& function, const NsContext& ctx, const IItemValuesExtractor& de) const {
 	if (auto v = precomputedValues_.Get(function); v.has_value()) {
 		return v.value();
 	}
 	return std::visit(
-		overloaded{[&](const FlatArrayLen& flatArrayLen) { return Variant(static_cast<int>(flatArrayLen.Evaluate(pv, pt_, tm_))); },
+		overloaded{[&](const FlatArrayLen& flatArrayLen) { return Variant(static_cast<int>(flatArrayLen.Evaluate(de, pt_))); },
 				   [&](const Serial& serial) { return Variant(serial.Evaluate(ns_, replUpdates_, ctx)); },
 				   [&](const Now& now) { return Variant(now.Evaluate()); }},
 		function);

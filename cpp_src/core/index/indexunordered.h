@@ -30,6 +30,9 @@ public:
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override;
 	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	bool RefreshCompositeKey(const Variant& key, IdType id) noexcept override;
+#if REINDEX_WITH_STRHOLDER_CHECKS
+	void CollectOwnedStringPtrs(Index::OwnedStringPtrCollector& collector) const override;
+#endif	// REINDEX_WITH_STRHOLDER_CHECKS
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType cond, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
 	WasCanceled Commit(const index::ICancelable&) override;

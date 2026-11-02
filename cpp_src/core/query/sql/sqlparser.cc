@@ -624,7 +624,20 @@ void SQLParser::parseArray(Tokenizer& parser, const Token& tok, UpdateEntry* upd
 			const auto range = parser.Where(nextTok);
 			throw SqlParserError(range, "Expected field value, but found ']' in query, {}", range);
 		}
-		if (updateField) {
+		if (nextTok.Text() == "["sv) {
+			if (updateField) {
+				UpdateEntry nestedArray{"nested_array", {}};
+				std::ignore = nestedArray.Values().MarkArray();
+				parseArray(parser, nextTok, &nestedArray);
+				if (nestedArray.Mode() == FieldModeSetJson) {
+					const auto range = parser.Where(nextTok);
+					throw SqlParserError(range, "Objects in nested array literals are not supported, {}", range);
+				}
+				updateField->Values().emplace_back(nestedArray.Values());
+			} else {
+				parseArray(parser, nextTok, nullptr);
+			}
+		} else if (updateField) {
 			if (isFieldNameToken(nextTok)) {
 				const auto range = parser.Where(nextTok);
 				throw SqlParserError(range, "Field references are not supported in array literals, {}", range);

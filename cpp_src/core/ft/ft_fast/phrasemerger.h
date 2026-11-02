@@ -1,9 +1,16 @@
 #pragma once
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <utility>
+#include <vector>
 #include "core/ft/areaholder.h"
 #include "core/index/ft_preselect.h"
 #include "dataholder.h"
+#include "estl/id_offset_hash.h"
 #include "querymergedata.h"
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
@@ -59,8 +66,8 @@ int MergePositionsWithDist(const PositionsVector& positions, const PositionsVect
 			break;
 		}
 
-		while (rightIt != rightEnd && rightIt->fullField() == leftIt->fullField() && rightIt->fullPos() - leftIt->fullPos() <= dist) {
-			minDist = std::min(rightIt->fullPos() - leftIt->fullPos(), minDist);
+		while (rightIt != rightEnd && rightIt->fullField() == leftIt->fullField() && rightIt->pos() - leftIt->pos() <= dist) {
+			minDist = std::min(rightIt->pos() - leftIt->pos(), minDist);
 			if constexpr (std::is_same_v<PosTypeT, PositionsVector>) {
 				res.emplace_back(*rightIt);
 			} else if constexpr (std::is_same_v<PosTypeT, h_vector<std::pair<PosType, int>, 3>>) {
@@ -322,7 +329,7 @@ public:
 	using InfoType = typename MergeDataType::InfoType;
 	using DocumentDataType = PhraseMergerDocumentData<MergeDataType>;
 	using BitsetType = DynamicBitset<64>;
-	static constexpr MergeOffsetT kNotInMerge = std::numeric_limits<MergeOffsetT>::max();
+	static constexpr MergeOffsetT kNotInMerge = IdOffsetHash<VDocId, MergeOffsetT>::kEmpty;
 
 	PhraseMerger(size_t totalNumDocs, FTConfig* cfg, FtMergeStatuses::Statuses& docsExcluded, size_t fieldSize, int maxAreasInDoc,
 				 bool inTransaction, const RdxContext& ctx)
@@ -373,6 +380,8 @@ public:
 	}
 
 private:
+	MergeOffsetT& findOffsetSlot(VDocId vdocId) noexcept { return idoffsets_.FindSlot(vdocId); }
+
 	void init(PhraseResults<IdCont>& phrase) {
 		assertrx_throw(phrase.NumTerms() > 0);
 
@@ -384,7 +393,7 @@ private:
 		mergeData_.reserve(maxMergedDocs_);
 		mergeDataExtended_.reserve(maxMergedDocs_);
 
-		idoffsets_.assign(totalNumDocs_, kNotInMerge);
+		idoffsets_.Init(maxMergedDocs_, totalNumDocs_);
 
 		phraseProc_ = phrase.CalcProc16();
 	}
@@ -401,7 +410,7 @@ private:
 	MergeDataType mergeData_;
 	std::vector<DocumentDataType> mergeDataExtended_;
 
-	std::vector<MergeOffsetT> idoffsets_;
+	IdOffsetHash<VDocId, MergeOffsetT> idoffsets_;
 	BitsetType preselectedDocs_;
 	BitsetType nextTermDocs_;
 

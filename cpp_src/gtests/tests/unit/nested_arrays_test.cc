@@ -283,6 +283,38 @@ TEST_F(NestedArraysApi, UpdateSetByArrayIndex) {
 	testSetInt("[0]=2", "[2,[2,[3],[4,[5,6]]],7]");
 	testSetInt("[2]=9", "[2,[2,[3],[4,[5,6]]],9]");
 	testSetInt("[1][2][0]=9", "[2,[2,[3],[9,[5,6]]],9]");
+
+	// Continue after an array element that does not match the remainder of the path.
+	constexpr int id = 1000;
+	rt.UpsertJSON(nsName_, R"({"id":1000,"int_array_field":[[1,2],[3],[4,5]]})");
+	set(id, intArrayFld_, "[*][1]=9");
+	auto qr = rt.Select(reindexer::Query(nsName_).Where(idIdxName_, CondEq, id));
+	ASSERT_EQ(qr.Count(), 1);
+	reindexer::WrSerializer ser;
+	ASSERT_TRUE(qr.begin().GetJSON(ser, false).ok());
+	EXPECT_EQ(ser.Slice(), R"({"id":1000,"int_array_field":[[1,9],[3],[4,9]]})");
+}
+
+TEST_F(NestedArraysApi, UpdateSetNestedStringArray) {
+	constexpr std::string_view kNested = "mention president doctor individual low exist";
+	const std::string value = R"(["first",["second",["mention president doctor individual low exist"]]])";
+	for (const auto* indexType : {"tree", "hash", "-"}) {
+		SCOPED_TRACE(indexType);
+		rt.AddIndex(nsName_, {strArrayIdxName_, {strArrayIdxName_}, indexType, "string", IndexOpts().Array().Dense()});
+		rt.AddIndex(nsName_, {strSparseArrayIdxName_, {strSparseArrayIdxName_}, indexType, "string", IndexOpts().Array().Sparse()});
+		addItemForUpdate(std::nullopt, R"(["old"])");
+		const int id = jsons_.size() - 1;
+		for (int attempt = 0; attempt < 2; ++attempt) {
+			testSetStr("=['first',['second',['mention president doctor individual low exist']]]", value);
+			for (const auto& field : {strArrayFld_, strArrayIdxName_, strSparseArrayIdxName_}) {
+				SCOPED_TRACE(field);
+				EXPECT_EQ(rt.Select(reindexer::Query(nsName_).Where(idIdxName_, CondEq, id).Where(field, CondEq, kNested)).Count(), 1);
+				EXPECT_EQ(rt.Select(reindexer::Query(nsName_).Where(idIdxName_, CondEq, id).Where(field, CondEq, "old")).Count(), 0);
+			}
+		}
+		rt.DropIndex(nsName_, strArrayIdxName_);
+		rt.DropIndex(nsName_, strSparseArrayIdxName_);
+	}
 }
 
 TEST_F(NestedArraysApi, UpdateDropField) {
@@ -333,7 +365,11 @@ TEST_F(NestedArraysApi, UpdateDropArrayItem) {
 
 	addItemForUpdate("[1,[2,5],[[2],[3,4]]]", R"(["aaa",["bbb"],"ccc"])");
 	testDropInt("[*][0]", "[1,[5],[[3,4]]]");
-	testDropInt("[*][1]", "[1,[5],[[3,4]]]");
+	testDropInt("[*][*][1]", "[1,[5],[[3]]]");
+
+	// Continue after an array element that does not match the remainder of the path.
+	addItemForUpdate("[[1,2],[3],[4,5]]", R"(["aaa",["bbb"],"ccc"])");
+	testDropInt("[*][1]", "[[1],[3],[4]]");
 
 	addItemForUpdate(
 		"[[[111,112,113],[121,122,123],[131,132,133]],"

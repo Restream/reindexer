@@ -212,7 +212,8 @@ type FtFastConfig struct {
 	// It will try to guess the correct keyboard layout based on the search query and preselcted results.
 	// 'disable' mode will completely disable the keyboard layout variants generation.
 	// 'enable' mode will always generate all possible keyboard layout variants.
-	EnableKbLayout KbLayoutMode `json:"enable_kb_layout"`
+	// Empty value is omitted, so the server uses its default mode.
+	EnableKbLayout KbLayoutMode `json:"enable_kb_layout,omitempty"`
 	// List of objects of stop words. Words from this list will be ignored when building indexes
 	// but can be included in search results in queries such as 'word*', 'word~' etc. if for the stop-word attribute is_morpheme is true.
 	// The list item can be either a reindexer.StopWord, or string

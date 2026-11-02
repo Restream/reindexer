@@ -88,6 +88,21 @@ public:
 	virtual bool RefreshCompositeKey(const Variant& key, IdType id) noexcept = 0;
 	virtual void HashTablesStats(std::vector<char>& stats) const { stats.resize(0); }
 	virtual void ReserveHashTables(const std::vector<char>& /*stats*/) {}
+#if REINDEX_WITH_STRHOLDER_CHECKS
+	class [[nodiscard]] OwnedStringPtrCollector {
+	public:
+		using ContainsIdFn = bool (*)(const void* ids, IdType id) noexcept;
+
+		virtual ~OwnedStringPtrCollector() = default;
+		virtual void Add(const key_string_impl* impl) = 0;
+		virtual void Add(const key_string_impl* impl, const void* ids, ContainsIdFn containsId) {
+			(void)ids;
+			(void)containsId;
+			Add(impl);
+		}
+	};
+	virtual void CollectOwnedStringPtrs(OwnedStringPtrCollector& collector) const { (void)collector; }
+#endif	// REINDEX_WITH_STRHOLDER_CHECKS
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const SelectContext&,
 									   const RdxContext&) = 0;

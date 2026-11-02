@@ -17,7 +17,7 @@ constexpr size_t kUseBinarySearchBorder = 8;
 // See fulltext_ranking.md#score-of-one-subterm-occurrence, fulltext.md#field-selection,
 // fulltext.md#basic-document-ranking-algorithms
 template <typename Calculator, bool UseBinarySearch, typename OccurenceT, typename DocsStatsGetter>
-std::pair<float, uint8_t> calcTermRankImpl(const FtDslOpts& termOpts, Calculator bm25Calc, OccurenceT&& relid, uint32_t vdocId,
+std::pair<float, uint8_t> calcTermRankImpl(const FtDslOpts& termOpts, Calculator bm25Calc, OccurenceT&& relid, VDocId vdocId,
 										   TermRankInfo& termInf, const FTConfig* cfg, const DocsStatsGetter& docsStatsGetter) {
 	assertrx_dbg(vdocId != kEmptyVDocId);
 
@@ -89,7 +89,7 @@ std::pair<float, uint8_t> calcTermRankImpl(const FtDslOpts& termOpts, Calculator
 }
 
 template <typename Calculator, typename OccurenceT, typename DocsStatsGetter>
-std::pair<float, uint8_t> calcTermRankSimple(const FtDslOpts& termOpts, Calculator bm25Calc, const OccurenceT& relid, uint32_t vdocId,
+std::pair<float, uint8_t> calcTermRankSimple(const FtDslOpts& termOpts, Calculator bm25Calc, const OccurenceT& relid, VDocId vdocId,
 											 TermRankInfo& termInf, const FTConfig* cfg, const DocsStatsGetter& docsStatsGetter) {
 	assertrx_dbg(vdocId != kEmptyVDocId);
 	assertrx_dbg(relid.IsSimple());
@@ -119,7 +119,7 @@ std::pair<float, uint8_t> calcTermRankSimple(const FtDslOpts& termOpts, Calculat
 }
 
 template <typename Calculator, typename OccurenceT, typename DocsStatsGetter>
-std::pair<float, uint8_t> calcTermRank(const FtDslOpts& termOpts, Calculator bm25Calc, OccurenceT&& relid, uint32_t vdocId,
+std::pair<float, uint8_t> calcTermRank(const FtDslOpts& termOpts, Calculator bm25Calc, OccurenceT&& relid, VDocId vdocId,
 									   TermRankInfo& termInf, const FTConfig* cfg, const DocsStatsGetter& docsStatsGetter) {
 	if (relid.IsSimple()) {
 		return calcTermRankSimple(termOpts, bm25Calc, relid, vdocId, termInf, cfg, docsStatsGetter);
@@ -229,15 +229,17 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 			ThrowOnCancel(ctx_);
 		}
 
-		Bm25Calculator<Bm25T> bm25(docsStatsGetter.NumLiveDocs(), subterm.Occurences().size(), cfg_->bm25Config.bm25k1,
-								   cfg_->bm25Config.bm25b);
+		if (subterm.NumLiveDocs() == 0) {
+			continue;
+		}
+		Bm25Calculator<Bm25T> bm25(docsStatsGetter.NumLiveDocs(), subterm.NumLiveDocs(), cfg_->bm25Config.bm25k1, cfg_->bm25Config.bm25b);
 
 		for (auto&& occurence : subterm.Occurences()) {
 			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(occurence), const IdRelType&>) ||
 							  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(occurence), IdRelTypePacked&>),
 						  "Expecting occurence is movable for packed vector and not movable for simple vector");
 
-			const index_t vdocId = occurence.VdocId();
+			const VDocId vdocId = occurence.VdocId();
 			if (vdocId >= totalNumDocs_ || !preselectedDocs_[vdocId]) {
 				continue;
 			}
@@ -245,7 +247,8 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 				continue;
 			}
 
-			const MergeOffsetT mdIdx = idoffsets_[vdocId];
+			auto& offsetSlot = findOffsetSlot(vdocId);
+			const MergeOffsetT mdIdx = offsetSlot;
 			const bool added = mdIdx != kNotInMerge;
 			if (!added && (!isFirstTerm || NumDocsMerged() >= maxMergedDocs_)) {
 				continue;
@@ -282,7 +285,7 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::mergePhraseTerm(TermResu
 				mergeData_.emplace_back(std::move(info));
 				auto positions = TakeOccurencePos(occurence);
 				mergeDataExtended_.emplace_back(std::move(positions), termRank, term.Pattern(), termInf);
-				idoffsets_[vdocId] = MergeOffsetT(mergeData_.size() - 1);
+				offsetSlot = MergeOffsetT(mergeData_.size() - 1);
 			} else {
 				auto& md = GetMergeData(mdIdx);
 				auto& mdExt = GetMergeDataExtended(mdIdx);
@@ -337,9 +340,10 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingA
 				ThrowOnCancel(ctx_);
 			}
 
+			uint32_t numLiveDocs = 0;
 			auto& occurences = subterm.Occurences();
 			for (auto&& occurence : occurences) {
-				const index_t vdocId = occurence.VdocId();
+				const VDocId vdocId = occurence.VdocId();
 				if (vdocId >= totalNumDocs_) {
 					continue;
 				}
@@ -347,8 +351,10 @@ void PhraseMerger<IdCont, MergeDataType, MergeOffsetT>::preselectDocsContainingA
 					continue;
 				}
 
+				++numLiveDocs;
 				nextTermDocs_.set(vdocId);
 			}
+			subterm.SetNumLiveDocs(numLiveDocs);
 		}
 
 		preselectedDocs_ &= nextTermDocs_;

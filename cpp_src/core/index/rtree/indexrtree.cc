@@ -8,6 +8,17 @@
 
 namespace reindexer {
 
+namespace {
+
+Point pointFromKeys(const VariantArray& keys) {
+	if (keys.size() != 2) [[unlikely]] {
+		return static_cast<Point>(keys);
+	}
+	return Point{keys[0].IsNullValue() ? 0.0 : keys[0].As<double>(), keys[1].IsNullValue() ? 0.0 : keys[1].As<double>()};
+}
+
+}  // namespace
+
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
 SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::SelectKey(const VariantArray& keys, CondType condition,
@@ -66,14 +77,16 @@ template <typename KeyEntryT, template <typename, typename, typename, typename, 
 		  size_t MinEntries>
 void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArray& result, const VariantArray& keys, IdType id,
 																	 bool& clearCache) {
-	if (keys.empty() || keys.IsNullValue()) {
+	result.Clear();
+	if (keys.empty()) {
 		std::ignore = Upsert(Variant{}, id, clearCache);
 		return;
 	}
-	if (keys.size() != 2) [[unlikely]] {
-		[[maybe_unused]] Point p{keys};
+	if (keys.IsNullValue()) {
+		result.emplace_back(Upsert(Variant{}, id, clearCache));
+		return;
 	}
-	const Point point{keys[0].IsNullValue() ? 0.0 : keys[0].As<double>(), keys[1].IsNullValue() ? 0.0 : keys[1].As<double>()};
+	const Point point = pointFromKeys(keys);
 	typename Map::iterator keyIt = this->idx_map.find(point);
 	if (keyIt == this->idx_map.end()) {
 		keyIt = this->idx_map.insert_without_test({point, typename Map::mapped_type()});
@@ -102,7 +115,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 		return Delete(Variant{}, id, mustExist, strHolder, clearCache);
 	}
 	int delcnt = 0;
-	const Point point = static_cast<Point>(keys);
+	const Point point = pointFromKeys(keys);
 	typename Map::iterator keyIt = this->idx_map.find(point);
 	if (keyIt == this->idx_map.end()) {
 		return;

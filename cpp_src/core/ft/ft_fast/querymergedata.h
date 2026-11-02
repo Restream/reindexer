@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <variant>
 #include "core/id_type.h"
@@ -18,14 +19,19 @@ public:
 	struct [[nodiscard]] HoldT {};
 	struct [[nodiscard]] NoHoldT {};
 
-	SubtermResults(std::shared_ptr<const IdCont> vids, std::string&& pattern, WordIdType patternId, float proc, float termLenBoost,
+	SubtermResults(WordOccurences<const IdCont> vids, std::string&& pattern, WordIdType patternId, float proc, float termLenBoost,
 				   HoldT) noexcept
 		: proc_(proc), termLenBoost_(termLenBoost), vids_(std::move(vids)), pattern_(std::move(pattern)), patternId_(patternId) {}
-	SubtermResults(std::shared_ptr<const IdCont> vids, std::string_view pattern, WordIdType patternId, float proc, float termLenBoost,
+	SubtermResults(WordOccurences<const IdCont> vids, std::string_view pattern, WordIdType patternId, float proc, float termLenBoost,
 				   NoHoldT) noexcept
 		: proc_(proc), termLenBoost_(termLenBoost), vids_(std::move(vids)), pattern_(std::move(pattern)), patternId_(patternId) {}
 
-	const IdCont& Occurences() const noexcept { return *vids_; }
+	const IdCont& Occurences() const noexcept { return *vids_.ids; }
+	double EstimateNumLiveDocs(size_t liveDocs, uint64_t deletedDocs) const noexcept {
+		return vids_.EstimateNumLiveDocs(liveDocs, deletedDocs);
+	}
+	uint32_t NumLiveDocs() const noexcept { return numLiveDocs_; }
+	void SetNumLiveDocs(uint32_t count) noexcept { numLiveDocs_ = count; }
 	// NOLINTNEXTLINE(bugprone-exception-escape)
 	std::string_view Pattern() const noexcept {
 		return std::visit([](const auto& v) { return std::string_view(v); }, pattern_);
@@ -41,8 +47,9 @@ private:
 	float proc_ = 0.0;
 	float termLenBoost_ = 1.0f;
 	bool suppressed_ = false;
+	uint32_t numLiveDocs_ = 0;	// Populated during phrase preselection, before query filters.
 
-	std::shared_ptr<const IdCont> vids_;				   // snapshot of postings for the given word + position + field
+	WordOccurences<const IdCont> vids_;					   // snapshot of postings for the given word + position + field
 	std::variant<std::string, std::string_view> pattern_;  // word,translit,.....
 	WordIdType patternId_;
 };
@@ -60,12 +67,12 @@ public:
 	const std::u16string& Pattern() const noexcept { return term_.Pattern(); }
 	const FtDslOpts& Opts() const noexcept { return term_.Opts(); }
 
-	void AddSubterm(std::shared_ptr<const IdCont> vids, std::string_view pattern, WordIdType patternId, float proc, float termLenBoost) {
+	void AddSubterm(WordOccurences<const IdCont> vids, std::string_view pattern, WordIdType patternId, float proc, float termLenBoost) {
 		subtermsResults_.emplace_back(std::move(vids), pattern, patternId, proc, termLenBoost,
 									  typename ft::SubtermResults<IdCont>::NoHoldT{});
 		maxVDocs_ += subtermsResults_.back().Occurences().size();
 	}
-	void AddSubterm(std::shared_ptr<const IdCont> vids, std::string&& pattern, WordIdType patternId, float proc, float termLenBoost) {
+	void AddSubterm(WordOccurences<const IdCont> vids, std::string&& pattern, WordIdType patternId, float proc, float termLenBoost) {
 		subtermsResults_.emplace_back(std::move(vids), std::move(pattern), patternId, proc, termLenBoost,
 									  typename ft::SubtermResults<IdCont>::HoldT{});
 		maxVDocs_ += subtermsResults_.back().Occurences().size();

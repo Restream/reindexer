@@ -16,7 +16,8 @@ class NamespaceImpl;
 /// Evaluates WHERE arithmetic operands via ExpressionAst and applies CondType comparison.
 class [[nodiscard]] ArithmeticComparator {
 public:
-	ArithmeticComparator(QueryArithmeticEntry&& entry, PayloadType pt, const NamespaceImpl& ns, std::optional<int64_t> nowNsec);
+	ArithmeticComparator(QueryArithmeticEntry&& entry, PayloadType pt, const NamespaceImpl& ns, const TagsMatcher& tm,
+						 std::optional<int64_t> nowNsec);
 
 	RX_ALWAYS_INLINE bool Compare(const PayloadValue& pv, IdType /*rowId*/) {
 		++totalCalls_;
@@ -58,6 +59,7 @@ private:
 	std::vector<ExprFieldBinding> rightExprFieldBindings_;
 	PayloadType pt_;
 	const NamespaceImpl* ns_{nullptr};
+	const TagsMatcher* tm_{nullptr};
 	std::optional<NowTimes> nowTimes_;
 	mutable VariantArray fieldValuesScratch_;
 	mutable VariantArray exprScratch_;

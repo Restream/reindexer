@@ -22,7 +22,7 @@ class NamespaceImpl;
 class NsContext;
 class WrSerializer;
 class Serializer;
-
+class IItemValuesExtractor;
 namespace builders {
 class JsonBuilder;
 }
@@ -128,7 +128,7 @@ public:
 	static FlatArrayLen FromSQL(Tokenizer& tokenizer);
 	static FlatArrayLen FromJSON(const gason::JsonNode& node);
 
-	size_t Evaluate(const PayloadValue& pv, const PayloadType& pt, const TagsMatcher& tm) const;
+	size_t Evaluate(const IItemValuesExtractor& de, const PayloadType& pt) const;
 	bool Compare(CondType condition, const h_vector<int, 1>& expectedValues, size_t fieldSize) const;
 };
 

@@ -12,9 +12,9 @@
 #pragma GCC diagnostic pop
 #endif
 #include "core/function/builtin_function.h"
+#include "core/item_tree/data_extractor.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/payload/payloadiface.h"
-#include "core/queryresults/fields_filter.h"
 #include "core/type_consts_helpers.h"
 #include "tools/float_comparison.h"
 #include "tools/overflow.h"
@@ -83,10 +83,10 @@ bool hasExplicitElementIndex(std::string_view path) noexcept {
 	return false;
 }
 
-ExprScalar scalarFromIndexedField(const ConstPayload& pv, int fieldIdx, std::string_view name, bool whereMode) {
-	const auto& fieldType = pv.Type().Field(fieldIdx);
+ExprScalar scalarFromIndexedField(ExprEvalContext& ctx, int fieldIdx, std::string_view name) {
+	const auto& fieldType = ctx.dataExtractor.Type().Field(fieldIdx);
 	if (fieldType.IsArray()) {
-		if (whereMode) {
+		if (ctx.whereMode) {
 			throwWrongFieldType(name);
 		}
 		throw Error(errParams, kArrayNullOutsideConcatError);
@@ -94,15 +94,12 @@ ExprScalar scalarFromIndexedField(const ConstPayload& pv, int fieldIdx, std::str
 	if (fieldType.Type().Is<KeyValueType::FloatVector>()) {
 		throwWrongFieldType(name);
 	}
-	return fieldType.Type().EvaluateOneOf(
-		[&](KeyValueType::Int) { return ExprScalar::FromInt(pv.GetView<int>(fieldIdx).front()); },
-		[&](KeyValueType::Int64) { return ExprScalar::FromInt(pv.GetView<int64_t>(fieldIdx).front()); },
-		[&](KeyValueType::Double) { return ExprScalar::FromDouble(pv.GetView<double>(fieldIdx).front()); },
-		[&](KeyValueType::Float) { return ExprScalar::FromDouble(pv.GetView<float>(fieldIdx).front()); },
-		[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid, KeyValueType::FloatVector, KeyValueType::Tuple,
-							KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null> auto) -> ExprScalar {
-			throwWrongFieldType(name);
-		});
+	VariantArray values;
+	ctx.dataExtractor.Get(fieldIdx, values);
+	if (values.empty() || values.IsNullValue()) {
+		throw Error(errParams, "Calculating value of an empty field is impossible: '{}'", name);
+	}
+	return scalarFromNumeric(values.front(), name);
 }
 
 ExprScalar evaluateScalar(const ExprNode& node, ExprEvalContext& ctx);
@@ -302,6 +299,14 @@ std::string ExprNumber::Dump() const { return literalToken(value); }
 
 ExprField::FieldAccess ExprField::resolveAccess(ExprEvalContext& ctx, int& fieldIdx, const ExprFieldBinding*& binding) const {
 	binding = nullptr;
+	if (!ctx.updateIndexBindings.empty()) {
+		assertrx_throw(slot < ctx.updateIndexBindings.size());
+		if (const int indexNo = ctx.updateIndexBindings[slot]; indexNo != IndexValueType::NotSet) {
+			fieldIdx = indexNo;
+			return FieldAccess::Indexed;
+		}
+		return FieldAccess::JsonPath;
+	}
 	if (!ctx.fieldBindings.empty()) {
 		assertrx_throw(slot < ctx.fieldBindings.size());
 		binding = &ctx.fieldBindings[slot];
@@ -314,17 +319,18 @@ ExprField::FieldAccess ExprField::resolveAccess(ExprEvalContext& ctx, int& field
 		}
 		return FieldAccess::BindingFields;
 	}
-	if (ctx.ns.payloadType().FieldByName(name, fieldIdx)) {
+	if (ctx.dataExtractor.Type().FieldByName(name, fieldIdx)) {
 		return FieldAccess::Indexed;
 	}
 	return FieldAccess::JsonPath;
 }
 
-void ExprField::getByJsonPath(const PayloadIface<const PayloadValue>& pv, const NamespaceImpl& ns, VariantArray& out) const {
-	if (pv.ContainsMultidimensionalArray(FieldsFilter{std::string_view{name}, ns})) {
+void ExprField::getByJsonPath(ExprEvalContext& ctx, VariantArray& out) const {
+	const std::string_view jsonPath = ctx.updateIndexBindings.empty() ? jsonPathForEval(ctx.ns) : std::string_view{name};
+	if (ctx.dataExtractor.ContainsMultidimensionalArray(jsonPath)) {
 		throwMultidimensionalArray(name);
 	}
-	pv.GetByJsonPath(jsonPathForEval(ns), ns.tagsMatcher(), out, KeyValueType::Undefined{});
+	ctx.dataExtractor.GetByJsonPath(jsonPath, out, KeyValueType::Undefined{});
 }
 
 std::string_view ExprField::jsonPathForEval(const NamespaceImpl& ns) const {
@@ -351,7 +357,6 @@ std::string_view ExprField::jsonPathForEval(const NamespaceImpl& ns) const {
 }
 
 VariantArray ExprField::Evaluate(ExprEvalContext& ctx) const {
-	const auto& pv = ctx.payload;
 	int fieldIdx = 0;
 	[[maybe_unused]] const ExprFieldBinding* binding = nullptr;
 	const auto access = resolveAccess(ctx, fieldIdx, binding);
@@ -359,27 +364,52 @@ VariantArray ExprField::Evaluate(ExprEvalContext& ctx) const {
 
 	VariantArray fieldValues;
 	if (access == FieldAccess::Indexed) {
-		const auto& fieldType = pv.Type().Field(fieldIdx);
+		if (fieldIdx >= ctx.dataExtractor.Type().NumFields()) {
+			const auto& index = *ctx.ns.indexes()[fieldIdx];
+			if (index.Opts().IsArray()) {
+				const auto& fields = index.Fields();
+				for (size_t i = 0; i < fields.getJsonPathsLength(); ++i) {
+					if (ctx.dataExtractor.ContainsMultidimensionalArray(fields.getJsonPath(i))) {
+						throwMultidimensionalArray(name);
+					}
+				}
+			}
+			ctx.dataExtractor.Get(fieldIdx, fieldValues);
+			if (index.Opts().IsArray()) {
+				return asArrayResult(std::move(fieldValues));
+			}
+			if (fieldValues.empty() || fieldValues.IsNullValue()) {
+				return {};
+			}
+			if (fieldValues.size() != 1) {
+				throwWrongFieldType(name);
+			}
+			return VariantArray{fieldValues.front()};
+		}
+		const auto& fieldType = ctx.dataExtractor.Type().Field(fieldIdx);
 		if (fieldType.Type().Is<KeyValueType::FloatVector>()) {
 			throwWrongFieldType(name);
 		}
 		if (fieldType.IsArray()) {
-			if (pv.ContainsMultidimensionalArray(FieldsFilter{fieldType.JsonPaths(), ctx.ns})) {
-				throwMultidimensionalArray(name);
+			const auto& jsonPaths = fieldType.JsonPaths();
+			for (const auto& jsonPath : jsonPaths) {
+				if (ctx.dataExtractor.ContainsMultidimensionalArray(jsonPath)) {
+					throwMultidimensionalArray(name);
+				}
 			}
-			pv.Get(fieldIdx, fieldValues);
+			ctx.dataExtractor.Get(fieldIdx, fieldValues);
 			return asArrayResult(std::move(fieldValues));
 		}
 		return fieldType.Type().EvaluateOneOf(
 			[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float> auto) -> VariantArray {
-				pv.Get(fieldIdx, fieldValues);
+				ctx.dataExtractor.Get(fieldIdx, fieldValues);
 				if (fieldValues.empty() || fieldValues.IsNullValue()) {
 					throw Error(errParams, "Calculating value of an empty field is impossible: '{}'", name);
 				}
 				return VariantArray{fieldValues.front()};
 			},
 			[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid> auto) -> VariantArray {
-				pv.Get(fieldIdx, fieldValues);
+				ctx.dataExtractor.Get(fieldIdx, fieldValues);
 				if (fieldValues.empty()) {
 					return VariantArray{};
 				}
@@ -393,7 +423,7 @@ VariantArray ExprField::Evaluate(ExprEvalContext& ctx) const {
 			});
 	}
 
-	getByJsonPath(pv, ctx.ns, fieldValues);
+	getByJsonPath(ctx, fieldValues);
 	if (fieldValues.IsNullValue()) {
 		return {};
 	}
@@ -412,18 +442,32 @@ VariantArray ExprField::Evaluate(ExprEvalContext& ctx) const {
 std::string ExprField::Dump() const { return quoted ? std::string("\"") + name + "\"" : name; }
 
 ExprScalar ExprField::EvaluateScalar(ExprEvalContext& ctx) const {
-	const auto& pv = ctx.payload;
 	int fieldIdx = 0;
 	const ExprFieldBinding* binding = nullptr;
 	const auto access = resolveAccess(ctx, fieldIdx, binding);
 	if (access == FieldAccess::Indexed) {
-		return scalarFromIndexedField(pv, fieldIdx, name, ctx.whereMode);
+		if (fieldIdx >= ctx.dataExtractor.Type().NumFields()) {
+			const auto& index = *ctx.ns.indexes()[fieldIdx];
+			if (index.Opts().IsArray()) {
+				throwWrongFieldType(name);
+			}
+			VariantArray values;
+			ctx.dataExtractor.Get(fieldIdx, values);
+			if (values.empty() || values.IsNullValue()) {
+				return {};
+			}
+			if (values.size() != 1) {
+				throwWrongFieldType(name);
+			}
+			return scalarFromNumeric(values.front(), name);
+		}
+		return scalarFromIndexedField(ctx, fieldIdx, name);
 	}
 
 	auto& fieldValues = fieldBuf(ctx);
 	if (access == FieldAccess::BindingFields) {
 		assertrx_throw(binding);
-		pv.GetByFieldsSet(binding->fields, fieldValues, binding->fieldType, binding->compositeFieldsTypes);
+		ctx.dataExtractor.GetByFieldsSet(binding->fields, fieldValues, binding->fieldType, binding->compositeFieldsTypes);
 		if (fieldValues.empty() || fieldValues.IsNullValue()) {
 			return {};
 		}
@@ -433,7 +477,7 @@ ExprScalar ExprField::EvaluateScalar(ExprEvalContext& ctx) const {
 		return scalarFromNumeric(fieldValues.front(), name);
 	}
 
-	getByJsonPath(pv, ctx.ns, fieldValues);
+	getByJsonPath(ctx, fieldValues);
 	if (fieldValues.IsNullValue() || fieldValues.empty()) {
 		return {};
 	}

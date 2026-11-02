@@ -18,6 +18,9 @@ public:
 	void Delete(const Variant& key, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	void Delete(const VariantArray& keys, IdType id, MustExist mustExist, StringsHolder&, bool& clearCache) override;
 	bool RefreshCompositeKey(const Variant& key, IdType id) noexcept override;
+#if REINDEX_WITH_STRHOLDER_CHECKS
+	void CollectOwnedStringPtrs(OwnedStringPtrCollector& collector) const override;
+#endif	// REINDEX_WITH_STRHOLDER_CHECKS
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, const Index::SelectContext&,
 							   const RdxContext&) override;
 	WasCanceled Commit(const index::ICancelable&) override;

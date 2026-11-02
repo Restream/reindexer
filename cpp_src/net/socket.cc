@@ -236,17 +236,24 @@ int socket::create(std::string_view addr, struct addrinfo** presults) {
 
 std::string socket::addr() const {
 	if (domain() == socket_domain::tcp) {
-		struct sockaddr_storage saddr;
-		struct sockaddr* paddr = reinterpret_cast<sockaddr*>(&saddr);
+		sockaddr_storage saddr;
+		memset(&saddr, 0, sizeof(saddr));
+		auto* paddr = reinterpret_cast<sockaddr*>(&saddr);
 		socklen_t len = sizeof(saddr);
 		if (::getpeername(fd_, paddr, &len) == 0) [[likely]] {
-			char buf[INET_ADDRSTRLEN] = {};
-			auto port = ntohs(reinterpret_cast<sockaddr_in*>(paddr)->sin_port);
-			if (getnameinfo(paddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST) == 0) [[likely]] {
-				return std::string(buf) + ':' + std::to_string(port);
-			} else {
-				perror("getnameinfo error");
+			char host[NI_MAXHOST] = {};
+			const int ret = ::getnameinfo(paddr, len, host, sizeof(host), nullptr, 0, NI_NUMERICHOST);
+			if (ret == 0) [[likely]] {
+				uint16_t port = 0;
+				if (saddr.ss_family == AF_INET) {
+					port = ntohs(reinterpret_cast<sockaddr_in*>(&saddr)->sin_port);
+				} else if (saddr.ss_family == AF_INET6) {
+					port = ntohs(reinterpret_cast<sockaddr_in6*>(&saddr)->sin6_port);
+					return '[' + std::string(host) + "]:" + std::to_string(port);
+				}
+				return std::string(host) + ':' + std::to_string(port);
 			}
+			fprintf(stderr, "reindexer error: getnameinfo failed: %s\n", gai_strerror(ret));
 		} else {
 			perror("getpeername error");
 		}
@@ -440,15 +447,16 @@ int lst_socket::close() {
 }
 
 socket lst_socket::accept() {
-	struct sockaddr client_addr;
-	memset(&client_addr, 0, sizeof(client_addr));
-	socklen_t client_len = sizeof(client_addr);
+	// sockaddr is 16 bytes and truncates an IPv6 peer. sockaddr_storage fits both families.
+	sockaddr_storage clientAddr;
+	memset(&clientAddr, 0, sizeof(clientAddr));
+	socklen_t clientLen = sizeof(clientAddr);
 
 #ifdef __linux__
-	socket client(::accept4(sock_.fd(), &client_addr, &client_len, SOCK_NONBLOCK), domain());
+	socket client(::accept4(sock_.fd(), reinterpret_cast<sockaddr*>(&clientAddr), &clientLen, SOCK_NONBLOCK), domain());
 
 #else	// __linux__
-	socket client(::accept(sock_.fd(), &client_addr, &client_len), domain());
+	socket client(::accept(sock_.fd(), reinterpret_cast<sockaddr*>(&clientAddr), &clientLen), domain());
 	if (client.valid()) {
 		if (client.set_nonblock() < 0) [[unlikely]] {
 			perror("client.set_nonblock() error");

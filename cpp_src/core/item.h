@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bitset>
+#include <memory>
 #include <span>
 #include <variant>
 #include "core/id_type.h"
@@ -257,13 +258,12 @@ public:
 
 private:
 	explicit Item(ItemImpl* impl) noexcept : impl_(impl) {}
-	Item(ItemImpl*, const FieldsFilter&);
+	Item(ItemImpl*, std::shared_ptr<const FieldsFilter>);
 	explicit Item(const Error& err) noexcept : impl_(nullptr), status_(err) {}
-	Item(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, const FieldsFilter&);
+	Item(PayloadType, PayloadValue, const TagsMatcher&, std::shared_ptr<const Schema>, std::shared_ptr<const FieldsFilter>);
 	void setID(IdType id) noexcept { id_ = id; }
 	void setLSN(lsn_t lsn);
 	void setShardID(int id) noexcept { shardId_ = id; }
-	void setFieldsFilter(const FieldsFilter&) noexcept;
 
 	ItemImpl* impl_;
 	Error status_;

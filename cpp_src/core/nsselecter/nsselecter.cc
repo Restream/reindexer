@@ -67,6 +67,27 @@ RankSortType determineRankSortType(QueryRankType queryRankType, IsRanked isRanke
 bool isLeftJoin(const joins::ItemsProcessor& selector, const SelectCtx& sctx) {
 	return (selector.Type() == JoinType::LeftJoin) && (selector.LeftNsId() == sctx.nsid);
 }
+
+bool haveRank(LocalQueryResults& result, IsMergeQuery isMergeSubQuery, bool hasSorting, QueryRankType queryRankType, bool withRank) {
+	const bool curRanked = queryRankType != QueryRankType::No;
+	// A field-sorted merge stays ranked only when every subquery is ranked: the sort expression may use rank().
+	// One not ranked result makes the whole merge not ranked.
+	// An empty container stays in the unranked variant, so the previous branch is result.haveRank.
+	// The main MERGE query is IsMergeQuery too, but it has no previous branch: haveRank is still the default false.
+	if (isMergeSubQuery == IsMergeQuery_True && hasSorting && result.haveRank != curRanked) {
+		if (result.needOutputRank || (withRank && curRanked)) [[unlikely]] {
+			throw Error(errLogic, "WithRank() is not available for a merge query that contains both ranked and not ranked results");
+		}
+		if (!result.Items().Empty() && bool(result.Items().IsRanked()) != curRanked) {
+			if (result.Items().IsRanked()) {
+				result.Items().DropRanks();
+			}
+			return false;
+		}
+	}
+	return curRanked;
+}
+
 }  // namespace
 
 template <typename JoinPreSelectCtx>
@@ -165,7 +186,8 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectAndPreSelectCtx<Joi
 	}
 	// Prepare data for select functions
 	if (ctx.functions) {
-		ftFunc_ = ctx.functions->AddNamespace(ctx.query, *ns_, ctx.nsid, rankedQueryEntry.queryRankType != QueryRankType::No);
+		ftFunc_ = ctx.functions->AddNamespace(ctx.query, NsFtFuncInterface{ns_->indexRegistry_}, ctx.nsid,
+											  rankedQueryEntry.queryRankType != QueryRankType::No);
 	}
 
 	if (!ctx.skipIndexesLookup) {
@@ -174,19 +196,23 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectAndPreSelectCtx<Joi
 	if (rankedQueryEntry.queryRankType == QueryRankType::FullText) {
 		qPreproc.ExcludeFtQuery(rdxCtx);
 	}
-	result.haveRank = rankedQueryEntry.queryRankType != QueryRankType::No;
+	result.haveRank = haveRank(result, ctx.isMergeQuerySubQuery(), !ctx.query.GetSortingEntries().empty(), rankedQueryEntry.queryRankType,
+							   ctx.query.IsWithRank());
 
 	explain.AddPrepareTime();
 
-	const FieldsFilter fieldsFilter{ctx.query.SelectFilters(), *ns_};
+	const auto fieldsFilter{FieldsFilter::Create(ctx.query.SelectFilters(), *ns_)};
 	if (ctx.contextCollectingMode) {
 		result.addNSContext(ns_->payloadType(), ns_->tagsMatcher(), fieldsFilter, ns_->schema_, ns_->incarnationTag_);
 	}
 
 	if (ctx.query.IsWithRank()) {
 		if (rankedQueryEntry.queryRankType != QueryRankType::No) [[likely]] {
+			if (!result.haveRank) [[unlikely]] {
+				throw Error(errLogic, "WithRank() is not available for a merge query that contains both ranked and not ranked results");
+			}
 			result.needOutputRank = true;
-		} else {
+		} else [[unlikely]] {
 			throw Error(errLogic, "Rank() is available only for fulltext or knn query");
 		}
 	}
@@ -203,6 +229,8 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectAndPreSelectCtx<Joi
 	}
 	const bool isForceAll = ctx.isForceAll;
 	const bool aggregationsOnlyOrig = aggregationsOnly;
+	// Captured before a preselect pass replaces the ranked condition with QueryRankType::No.
+	const auto rankBeforePasses = rankedQueryEntry;
 	do {
 		rankedQueryEntry = qPreproc.GetQueryRankType();
 		const IsRanked isRanked{rankedQueryEntry.queryRankType != QueryRankType::No};
@@ -218,7 +246,13 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectAndPreSelectCtx<Joi
 		ctx.sortingContext.forcedMode = qPreproc.ContainsForcedSortOrder();
 		SortingEntries sortBy = qPreproc.GetSortingEntries(ctx, rankedQueryEntry.queryRankType);
 		prepareSortingContext(sortBy, ctx, rankedQueryEntry.queryRankType, rankedQueryEntry.rankedIndexNo,
-							  qPreproc.AvailableSelectBySortIndex());
+							  qPreproc.AvailableSelectBySortIndex(), true);
+		// Preselect removes the fulltext condition, so GetSortingEntries() is empty and an empty preselect never starts the
+		// second pass. The parsed sort is still required to order rows returned by the other MERGE queries.
+		if (qPreproc.IsFtExcluded() && ctx.parsedSortExpressions.empty() && !ctx.query.GetSortingEntries().empty()) {
+			SortingEntries querySort = ctx.query.GetSortingEntries();
+			prepareSortingContext(querySort, ctx, rankBeforePasses.queryRankType, rankBeforePasses.rankedIndexNo, false, false);
+		}
 
 		if (ctx.sortingContext.isOptimizationEnabled()) {
 			// Un-built btree index optimization is available for query with
@@ -340,6 +374,16 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectAndPreSelectCtx<Joi
 		lctx.calcAggsImmediately =
 			(!ctx.HasLimit() && !ctx.HasOffset()) || ctx.sortingContext.isOptimizationEnabled() || ctx.sortingContext.sortId();
 		aggregationsOnly = aggregationsOnlyOrig && lctx.calcAggsImmediately;
+		// Sum and count change when duplicate rows are removed, so those rows must stay until dedup.
+		// Min and max do not: a repeated document has the same value. Facet, avg and distinct are rejected for MERGE.
+		if (ctx.isMergeQuery == IsMergeQuery_True && aggregationsOnly) {
+			for (const AggregateEntry& agg : aggregationQueryRef.Aggregations()) {
+				if (agg.Type() == AggSum || agg.Type() == AggCount || agg.Type() == AggCountCached) {
+					aggregationsOnly = false;
+					break;
+				}
+			}
+		}
 
 		if (qPreproc.IsFtExcluded()) {
 			auto& ftMergeStatuses = qPreproc.GetFtMergeStatuses();
@@ -409,7 +453,8 @@ void NsSelecter::operator()(LocalQueryResults& result, SelectAndPreSelectCtx<Joi
 		joinSelectStrategy.SetPreSelectValuesAfterSorting();
 		resultHandler.SetItemsValuesAfterSorting(ns_->items_, resultInitSize);
 	}
-	holdFloatVectors(result, ctx, resultInitSize, fieldsFilter);
+	assertrx(fieldsFilter);
+	holdFloatVectors(result, ctx, resultInitSize, *fieldsFilter);
 	if (ctx.isMergeQuerySubQuery()) [[unlikely]] {
 		writeAggregationResultMergeSubQuery(result, std::move(aggregators), ctx);
 	} else {
@@ -606,9 +651,6 @@ private:
 template <bool desc, bool multiColumnSort, typename It>
 It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator& compare, const SelectCtx& ctx, const joins::NamespaceResults* jr) {
 	assertrx_throw(!ctx.sortingContext.entries.empty());
-	if (ctx.query.MergeQueries().size() > 1) {
-		throw Error(errLogic, "Force sort could not be applied to 'merged' queries");
-	}
 	return std::visit(
 		overloaded{
 			[](const SortingContext::ExpressionEntry&) -> It { throw Error(errLogic, "Force sort could not be performed by expression"); },
@@ -731,11 +773,7 @@ private:
 };
 
 template <typename It>
-void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator& comparator, const SelectCtx& ctx) {
-	if (ctx.query.MergeQueries().size() > 1) {
-		throw Error(errLogic, "Sorting cannot be applied to merged queries.");
-	}
-
+void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator& comparator) {
 	std::partial_sort(itFirst, itLast, itEnd, GeneralComparator{comparator});
 }
 
@@ -813,7 +851,7 @@ void NsSelecter::sortResults(LoopCtx<SelectCtxT>& ctx, It begin, It end, const S
 			endPos = std::min(static_cast<size_t>(ctx.qPreproc.Count()) + ctx.qPreproc.Start(), endPos);
 		}
 		auto last = begin + endPos;
-		applyGeneralSort(begin, last, end, comparator, sctx);
+		applyGeneralSort(begin, last, end, comparator);
 	}
 	ctx.explain.StopSort();
 }
@@ -1310,18 +1348,41 @@ static void removeQuotesFromExpression(std::string& expression) {
 	expression.erase(std::remove(expression.begin(), expression.end(), '"'), expression.end());
 }
 
+static void rejectDuplicateSortExpression(const SortExpression& expr, std::string_view written, std::span<const SortExpression> parsed) {
+	for (const SortExpression& prev : parsed) {
+		if (prev == expr) {
+			throw Error(errQueryExec, "You cannot sort by the same expression twice: {}", written);
+		}
+	}
+}
+
 void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, QueryRankType queryRankType, int rankedIndexNo,
-									   bool availableSelectBySortIndex) const {
+									   bool availableSelectBySortIndex, bool installSort) const {
 	using namespace SortExprFuncs;
 	const auto strictMode = ctx.inTransaction
 								? StrictModeNone
 								: ((ctx.query.GetStrictMode() == StrictModeNotSet) ? ns_->config_.strictMode : ctx.query.GetStrictMode());
-	ctx.sortingContext.entries.clear();
-	ctx.sortingContext.expressions.clear();
+	if (installSort) {
+		ctx.sortingContext.entries.clear();
+		ctx.sortingContext.expressions.clear();
+	}
+	ctx.parsedSortExpressions.clear();
+	ctx.parsedSortExpressions.reserve(sortBy.size());
 	for (size_t i = 0; i < sortBy.size(); ++i) {
 		SortingEntry& sortingEntry(sortBy[i]);
 		assertrx_throw(!sortingEntry.expression.empty());
 		SortExpression expr{SortExpression::Parse(sortingEntry.expression, ctx.joinItemsProcessors)};
+		if (expr.ByMergedQueryId()) {
+			// The value is constant for every row of this query, so sorting by it does not change the order.
+			// Forced values are only defined for a field. This expression never becomes a sort entry, so reject them here.
+			if (i == 0 && !ctx.query.ForcedSortOrder().empty()) {
+				throw Error(errLogic, "Force sort could not be performed by expression");
+			}
+			expr.Get<MergedQueryId>(0).SetId(ctx.mergedQueryId);
+			rejectDuplicateSortExpression(expr, sortingEntry.expression, ctx.parsedSortExpressions);
+			ctx.parsedSortExpressions.emplace_back(std::move(expr));
+			continue;
+		}
 		if (expr.ByField()) {
 			SortingContext::FieldEntry entry{.data = sortingEntry};
 			removeQuotesFromExpression(sortingEntry.expression);
@@ -1336,7 +1397,7 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, Q
 				const auto& idxOpts = sortIndex->Opts();
 				entry.opts = &idxOpts.collateOpts_;
 
-				if (i == 0) {
+				if (installSort && ctx.sortingContext.entries.empty()) {
 					const bool isOrdered = sortIndex->IsOrdered();
 					if (isOrdered && !idxOpts.IsArray() && !ctx.sortingContext.enableSortOrders && availableSelectBySortIndex) {
 						ctx.sortingContext.uncommitedIndex = sortingEntry.index;
@@ -1349,19 +1410,31 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, Q
 				}
 			} else {
 				validateField(strictMode, sortingEntry.expression, ns_->name_, ns_->tagsMatcher());
-				ctx.isForceAll = true;
+				if (installSort) {
+					ctx.isForceAll = true;
+				}
 			}
-			ctx.sortingContext.entries.emplace_back(std::move(entry));
+			expr.Get<SortExprFuncs::Index>(0).index = sortingEntry.index;
+			rejectDuplicateSortExpression(expr, sortingEntry.expression, ctx.parsedSortExpressions);
+			ctx.parsedSortExpressions.emplace_back(expr);
+			if (installSort) {
+				ctx.sortingContext.entries.emplace_back(std::move(entry));
+			}
 		} else if (expr.ByJoinedField()) {
 			auto& je{expr.GetJoinedIndex()};
 			const auto& js = ctx.joinItemsProcessors[je.nsIdx];
 			assertrx_throw(!std::holds_alternative<joins::PreSelect::Values>(js.PreSelectResults().payload));
 			int jeIndex = IndexValueType::NotSet;
 			prepareSortIndex(*js.RightNs(), je.column, jeIndex, strictMode, IsRanked_False);
+			je.index = jeIndex;
+			rejectDuplicateSortExpression(expr, sortingEntry.expression, ctx.parsedSortExpressions);
+			ctx.parsedSortExpressions.emplace_back(expr);
 
-			ctx.sortingContext.entries.emplace_back(
-				SortingContext::JoinedFieldEntry(sortingEntry, je.nsIdx, std::move(je.column), jeIndex));
-			ctx.isForceAll = true;
+			if (installSort) {
+				ctx.sortingContext.entries.emplace_back(
+					SortingContext::JoinedFieldEntry(sortingEntry, je.nsIdx, std::move(je.column), jeIndex));
+				ctx.isForceAll = true;
+			}
 		} else {
 			struct {
 				StrictMode strictMode;
@@ -1380,6 +1453,7 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, Q
 						throw Error(errQueryExec, "Sorting by rank() is only available for query with single fulltext or knn condition");
 					}
 				},
+				[mergedQueryId = ctx.mergedQueryId](MergedQueryId& id) { id.SetId(mergedQueryId); },
 				[&](RankNamed& r) {
 					prepareSortIndex(*ns_, r.IndexName(), r.IndexNoRef(), lCtx.strictMode, IsRanked_True);
 					if (r.IndexNo() != rankedIndexNo && queryRankType != QueryRankType::Hybrid) {
@@ -1417,14 +1491,20 @@ void NsSelecter::prepareSortingContext(SortingEntries& sortBy, SelectCtx& ctx, Q
 					prepareSortJoinedIndex(exprIndex.nsIdx, exprIndex.column2, exprIndex.index2, lCtx.joinItemsProcessors, lCtx.strictMode);
 				});
 
-			ctx.sortingContext.expressions.emplace_back(std::move(expr));
-			ctx.sortingContext.entries.emplace_back(
-				SortingContext::ExpressionEntry{sortingEntry, ctx.sortingContext.expressions.size() - 1});
-			ctx.isForceAll = true;
+			rejectDuplicateSortExpression(expr, sortingEntry.expression, ctx.parsedSortExpressions);
+			ctx.parsedSortExpressions.emplace_back(expr);
+			if (installSort) {
+				ctx.sortingContext.expressions.emplace_back(std::move(expr));
+				ctx.sortingContext.entries.emplace_back(
+					SortingContext::ExpressionEntry{sortingEntry, ctx.sortingContext.expressions.size() - 1});
+				ctx.isForceAll = true;
+			}
 		}
 	}
-	ctx.sortingContext.exprResults.clear();
-	ctx.sortingContext.exprResults.resize(ctx.sortingContext.expressions.size());
+	if (installSort) {
+		ctx.sortingContext.exprResults.clear();
+		ctx.sortingContext.exprResults.resize(ctx.sortingContext.expressions.size());
+	}
 }
 
 bool NsSelecter::isSortOptimizationEffective(const QueryEntries& qentries, const SelectCtx& ctx, bool needCalcTotal,

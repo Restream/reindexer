@@ -1613,6 +1613,76 @@ TEST_F(QueriesApi, SetByTreeIndex) {
 	}
 }
 
+TEST_F(QueriesApi, MergedQueryIdLimitSortsAllRows) {
+	// merged_query_id() is not a local sort entry, so the following hash field must still force a full read.
+	// Otherwise LIMIT keeps the first matches in scan order and sorts only that page.
+	const std::string nsName = "merged_query_id_limit_sort";
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	// Row order is the opposite of id order. A backwards scan of the first LIMIT rows is then {1, 2}.
+	for (int id : {4, 3, 2, 1}) {
+		rt.UpsertJSON(nsName, fmt::format(R"({{"id":{}}})", id));
+	}
+
+	QueryResults qr = rt.Select(Query(nsName).Sort("merged_query_id()", SortOrder::Asc).Sort("id", SortOrder::Desc).Limit(2));
+	std::vector<int> ids;
+	ids.reserve(qr.Count());
+	for (auto it : qr) {
+		ids.emplace_back(it.GetItem()["id"].As<int>());
+	}
+	EXPECT_EQ(ids, (std::vector<int>{4, 3}));
+}
+
+TEST_F(QueriesApi, MergedQueryIdForcedSortRejected) {
+	const std::string nsMain = "merged_query_id_forced_main";
+	const std::string nsMerge = "merged_query_id_forced_merge";
+	for (const std::string& ns : {nsMain, nsMerge}) {
+		rt.OpenNamespace(ns);
+		rt.AddIndex(ns, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	}
+	rt.UpsertJSON(nsMain, R"({"id":1})");
+	rt.UpsertJSON(nsMerge, R"({"id":2})");
+
+	QueryResults qr;
+	const Error err = rt.SelectErr(Query(nsMain).Merge(Query(nsMerge)).Sort("merged_query_id()", SortOrder::Asc, {1, 0}), qr);
+	EXPECT_EQ(err, Error(errLogic, "Force sort could not be performed by expression")) << err.what();
+}
+
+TEST_F(QueriesApi, DuplicateSortExpression) {
+	const std::string nsName = "duplicate_sort_expr";
+	rt.OpenNamespace(nsName);
+	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	rt.AddIndex(nsName, reindexer::IndexDef{"year", {"year"}, "tree", "int", IndexOpts{}});
+	rt.AddIndex(nsName, reindexer::IndexDef{"idxname", {"idxjson"}, "tree", "int", IndexOpts{}});
+	rt.UpsertJSON(nsName, R"({"id":1,"year":2,"idxjson":3})");
+
+	const auto expectDuplicate = [&](const Query& q, std::string_view expression) {
+		QueryResults qr;
+		const Error err = rt.SelectErr(q, qr);
+		EXPECT_EQ(err, Error(errQueryExec, "You cannot sort by the same expression twice: {}", expression)) << err.what();
+	};
+
+	expectDuplicate(Query(nsName).Sort("year", SortOrder::Asc).Sort("year", SortOrder::Desc), "year");
+	expectDuplicate(Query(nsName).Sort("year + 1", SortOrder::Asc).Sort("(year + 1)", SortOrder::Desc), "(year + 1)");
+	expectDuplicate(Query(nsName).Sort("2 * year", SortOrder::Asc).Sort("year * 2", SortOrder::Asc), "year * 2");
+	expectDuplicate(Query(nsName).Sort("year + 1 + 2", SortOrder::Asc).Sort("year + 3", SortOrder::Asc), "year + 3");
+	expectDuplicate(Query(nsName).Sort("merged_query_id()", SortOrder::Asc).Sort("merged_query_id()", SortOrder::Desc),
+					"merged_query_id()");
+	expectDuplicate(Query(nsName).Sort("merged_query_id()", SortOrder::Asc).Sort("(merged_query_id())", SortOrder::Asc),
+					"(merged_query_id())");
+	expectDuplicate(Query(nsName).Sort("merged_query_id() + year", SortOrder::Asc).Sort("(merged_query_id() + year)", SortOrder::Asc),
+					"(merged_query_id() + year)");
+	expectDuplicate(Query(nsName).Merge(Query(nsName)).Sort("merged_query_id()", SortOrder::Asc).Sort("merged_query_id()", SortOrder::Asc),
+					"merged_query_id()");
+	expectDuplicate(Query(nsName).Sort("idxname", SortOrder::Asc).Sort("idxjson", SortOrder::Asc), "idxjson");
+	expectDuplicate(Query(nsName).Sort("idxname + 1", SortOrder::Asc).Sort("idxjson + 1", SortOrder::Asc), "idxjson + 1");
+
+	QueryResults qr = rt.Select(Query(nsName).Sort("year + 1", SortOrder::Asc).Sort("1 + year", SortOrder::Asc));
+	EXPECT_EQ(qr.Count(), 1);
+	qr = rt.Select(Query(nsName).Sort("merged_query_id()", SortOrder::Asc).Sort("id", SortOrder::Asc));
+	EXPECT_EQ(qr.Count(), 1);
+}
+
 TEST_F(QueriesApi, TestCsvParsing) {
 	std::vector<std::vector<std::string_view>> fieldsArr{
 		{"field0", "", "\"field1\"", "field2", "", "", "", "field3", "field4", "", "", "field5", ""},
@@ -2057,6 +2127,44 @@ TEST_F(QueriesApi, SortByFieldWithDifferentTypes) {
 	rt.OpenNamespace(nsName);
 	rt.AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
 	sortByNsDifferentTypesImpl(nsName, Query{nsName}, "");
+}
+
+TEST_F(QueriesApi, SubqueryConditionClearsForcedSort) {
+	constexpr std::string_view ns = "subquery_condition_forced_sort";
+	rt.OpenNamespace(ns);
+	rt.AddIndex(ns, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	for (int id = 0; id < 3; ++id) {
+		auto item = rt.NewItem(ns);
+		item["id"] = id;
+		rt.Upsert(ns, item);
+	}
+	for (const auto order : {SortOrder::Asc, SortOrder::Desc}) {
+		for (const int value : {1, 10}) {
+			auto subquery = Query{ns}.Select("id").Sort("id", order, {2, 0});
+			const auto query = Query{ns}.Not().Where(std::move(subquery), CondEq, {value});
+			SCOPED_TRACE(query.GetSQL());
+			ASSERT_EQ(Impl(query).SubQueries().size(), 1);
+			const auto normalized = Impl(Impl(query).SubQueries().front());
+			EXPECT_TRUE(normalized.GetSortingEntries().empty());
+			EXPECT_TRUE(normalized.ForcedSortOrder().empty());
+			EXPECT_EQ(query, Query::FromSQL(query.GetSQL()));
+			EXPECT_EQ(query, Query::FromJSON(query.GetJSON()));
+			const auto result = rt.Select(query);
+			EXPECT_EQ(result.Count(), value == 1 ? 0 : 3);
+		}
+	}
+	// With LIMIT, forced ordering determines which value reaches the outer condition.
+	const auto subquery = Query{ns}.Select("id").Sort("id", SortOrder::Asc, {2, 0}).Limit(1);
+	for (const int value : {0, 2}) {
+		const auto query = Query{ns}.Where(Query{subquery}, CondEq, {value});
+		SCOPED_TRACE(query.GetSQL());
+		ASSERT_EQ(Impl(query).SubQueries().size(), 1);
+		EXPECT_EQ(Impl(query).SubQueries().front(), subquery);
+		EXPECT_EQ(query, Query::FromSQL(query.GetSQL()));
+		EXPECT_EQ(query, Query::FromJSON(query.GetJSON()));
+		const auto result = rt.Select(query);
+		EXPECT_EQ(result.Count(), value == 2 ? 3 : 0);
+	}
 }
 
 TEST_F(QueriesApi, SerializeDeserialize) {
@@ -2765,6 +2873,732 @@ TEST_F(QueriesApi, NowFunctionTest) {
 		}
 		ASSERT_EQ(it1, qr1.end());
 		ASSERT_EQ(it2, qr2.end());
+	}
+}
+
+TEST_F(QueriesApi, MergeDedupTotalCountsAllRows) {
+	const std::string ns = "merge_dedup_total";
+	const std::string other = "merge_dedup_total_other";
+	rt.OpenNamespace(ns);
+	rt.AddIndex(ns, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	rt.OpenNamespace(other);
+	rt.AddIndex(other, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	for (int id = 1; id <= 8; ++id) {
+		rt.UpsertJSON(ns, fmt::format(R"({{"id":{}}})", id));
+	}
+	rt.UpsertJSON(other, R"({"id":1})");
+
+	{
+		QueryResults qr = rt.Select(Query(ns).ReqTotal().Merge(Query(ns)).Limit(2));
+		EXPECT_EQ(qr.TotalCount(), 8);
+		EXPECT_EQ(qr.Count(), 2);
+	}
+	{
+		QueryResults qr = rt.Select(Query(ns).ReqTotal().Merge(Query(ns)).Offset(3).Limit(2));
+		EXPECT_EQ(qr.TotalCount(), 8);
+		EXPECT_EQ(qr.Count(), 2);
+	}
+	{
+		QueryResults qr = rt.ExecSQL(fmt::format("SELECT count(*) FROM {} MERGE (SELECT * FROM {})", ns, ns));
+		EXPECT_EQ(qr.TotalCount(), 8);
+		EXPECT_EQ(qr.Count(), 0);
+		const auto& aggs = qr.GetAggregationResults();
+		ASSERT_EQ(aggs.size(), 1);
+		ASSERT_TRUE(aggs[0].GetValue().has_value());
+		EXPECT_EQ(aggs[0].GetValue().value(), 8);  // NOLINT(bugprone-unchecked-optional-access)
+	}
+	{
+		QueryResults qr = rt.Select(Query(ns).Aggregate(AggCount, {}).Merge(Query(ns)).Limit(2));
+		const auto& aggs = qr.GetAggregationResults();
+		ASSERT_EQ(aggs.size(), 1);
+		ASSERT_TRUE(aggs[0].GetValue().has_value());
+		EXPECT_EQ(aggs[0].GetValue().value(), 8);  // NOLINT(bugprone-unchecked-optional-access)
+		EXPECT_EQ(qr.TotalCount(), 8);
+	}
+	{
+		// The second branch overlaps the first. Unique rows are still the whole namespace.
+		QueryResults qr = rt.Select(Query(ns).ReqTotal().Where("id", CondGt, 4).Merge(Query(ns)).Limit(2));
+		EXPECT_EQ(qr.TotalCount(), 8);
+		EXPECT_EQ(qr.Count(), 2);
+	}
+	{
+		QueryResults qr = rt.Select(Query(ns).ReqTotal().Merge(Query(other)).Limit(2));
+		EXPECT_EQ(qr.TotalCount(), 9);
+		EXPECT_EQ(qr.Count(), 2);
+	}
+	{
+		// Two branches share ns, the third is a different namespace. Only ns is read in full.
+		const std::string third = "merge_dedup_total_third";
+		rt.OpenNamespace(third);
+		rt.AddIndex(third, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		for (int id = 1; id <= 5; ++id) {
+			rt.UpsertJSON(third, fmt::format(R"({{"id":{}}})", id));
+		}
+		{
+			QueryResults qr = rt.Select(Query(ns).ReqTotal().Merge(Query(ns)).Merge(Query(third)).Limit(2));
+			EXPECT_EQ(qr.TotalCount(), 13);
+			EXPECT_EQ(qr.Count(), 2);
+		}
+		{
+			QueryResults qr = rt.Select(Query(third).ReqTotal().Merge(Query(ns)).Merge(Query(ns)).Limit(2));
+			EXPECT_EQ(qr.TotalCount(), 13);
+			EXPECT_EQ(qr.Count(), 2);
+		}
+		{
+			QueryResults qr = rt.Select(Query(ns).ReqTotal().Merge(Query(third)).Merge(Query(ns)).Offset(3).Limit(2));
+			EXPECT_EQ(qr.TotalCount(), 13);
+			EXPECT_EQ(qr.Count(), 2);
+		}
+	}
+}
+
+TEST_F(QueriesApi, MergeUserSort) {
+	using reindexer::Error;
+	using reindexer::Query;
+
+	constexpr std::string_view nsA = "merge_user_sort_a";
+	constexpr std::string_view nsB = "merge_user_sort_b";
+	constexpr std::string_view nsNoYear = "merge_user_sort_no_year";
+	constexpr std::string_view nsJoin = "merge_user_sort_join";
+
+	rt.OpenNamespace(nsA);
+	rt.OpenNamespace(nsB);
+	rt.OpenNamespace(nsNoYear);
+	rt.OpenNamespace(nsJoin);
+	rt.AddIndex(nsA, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	rt.AddIndex(nsA, {"year", {"year"}, "tree", "int", IndexOpts{}});
+	rt.AddIndex(nsA, {"description", {"description"}, "text", "string", IndexOpts{}});
+	rt.AddIndex(nsB, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	rt.AddIndex(nsB, {"year", {"year"}, "tree", "int", IndexOpts{}});
+	rt.AddIndex(nsB, {"description", {"description"}, "text", "string", IndexOpts{}});
+	rt.AddIndex(nsNoYear, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	rt.AddIndex(nsNoYear, {"description", {"description"}, "text", "string", IndexOpts{}});
+	rt.AddIndex(nsJoin, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	rt.AddIndex(nsJoin, {"score", {"score"}, "tree", "int", IndexOpts{}});
+
+	rt.UpsertJSON(nsA, R"({"id":1,"year":2000,"description":"alpha red"})");
+	rt.UpsertJSON(nsA, R"({"id":2,"year":1990,"description":"alpha"})");
+	rt.UpsertJSON(nsA, R"({"id":3,"year":2010,"description":"other"})");
+	rt.UpsertJSON(nsA, R"({"id":4,"year":2020,"description":"gamma gamma delta"})");
+	rt.UpsertJSON(nsB, R"({"id":10,"year":2005,"description":"alpha red blue"})");
+	rt.UpsertJSON(nsB, R"({"id":11,"year":1980,"description":"nothing"})");
+	rt.UpsertJSON(nsB, R"({"id":12,"year":2010,"description":"alpha"})");
+	rt.UpsertJSON(nsNoYear, R"({"id":20,"description":"alpha"})");
+	rt.UpsertJSON(nsJoin, R"({"id":1,"score":30})");
+	rt.UpsertJSON(nsJoin, R"({"id":2,"score":10})");
+	rt.UpsertJSON(nsJoin, R"({"id":3,"score":20})");
+	rt.UpsertJSON(nsJoin, R"({"id":10,"score":5})");
+	rt.UpsertJSON(nsJoin, R"({"id":11,"score":40})");
+	rt.UpsertJSON(nsJoin, R"({"id":12,"score":15})");
+
+	const auto idsOf = [](QueryResults& qr) {
+		std::vector<int> ids;
+		ids.reserve(qr.Count());
+		for (auto it : qr) {
+			ids.emplace_back(it.GetItem()["id"].As<int>());
+		}
+		return ids;
+	};
+
+	{
+		QueryResults qr = rt.Select(Query(nsA).Merge(Query(nsB)).Sort("year", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{11, 2, 1, 10, 3, 12, 4}));
+	}
+	{
+		// year 2010 is shared. DESC puts the later subquery before the earlier one.
+		QueryResults qr = rt.Select(Query(nsA).Merge(Query(nsB)).Sort("year", SortOrder::Desc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{4, 12, 3, 10, 1, 2, 11}));
+	}
+	{
+		// Non-indexed JSON values keep their own numeric types. 1 and 2.5 must compare the same way as a single-namespace sort.
+		constexpr std::string_view nsJsonA = "merge_user_sort_json_a";
+		constexpr std::string_view nsJsonB = "merge_user_sort_json_b";
+		rt.OpenNamespace(nsJsonA);
+		rt.OpenNamespace(nsJsonB);
+		rt.AddIndex(nsJsonA, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsJsonB, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.UpsertJSON(nsJsonA, R"({"id":1,"weight":1})");
+		rt.UpsertJSON(nsJsonA, R"({"id":2,"weight":10})");
+		rt.UpsertJSON(nsJsonB, R"({"id":3,"weight":2.5})");
+		QueryResults qr = rt.Select(Query(nsJsonA).Merge(Query(nsJsonB)).Sort("weight", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{1, 3, 2}));
+	}
+	{
+		// The same field name may be int in one namespace and int64 in another.
+		constexpr std::string_view nsInt = "merge_user_sort_int";
+		constexpr std::string_view nsInt64 = "merge_user_sort_int64";
+		rt.OpenNamespace(nsInt);
+		rt.OpenNamespace(nsInt64);
+		rt.AddIndex(nsInt, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsInt, {"n", {"n"}, "tree", "int", IndexOpts{}});
+		rt.AddIndex(nsInt64, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsInt64, {"n", {"n"}, "tree", "int64", IndexOpts{}});
+		rt.UpsertJSON(nsInt, R"({"id":1,"n":1})");
+		rt.UpsertJSON(nsInt, R"({"id":2,"n":100})");
+		rt.UpsertJSON(nsInt64, R"({"id":3,"n":50})");
+		QueryResults qr = rt.Select(Query(nsInt).Merge(Query(nsInt64)).Sort("n", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{1, 3, 2}));
+	}
+	{
+		// The ascii namespace sorts its block as "A", "b", "C". The merge compares all rows with the first row's collation (none),
+		// so that block is out of order and the merge sorts every row instead of merging the blocks.
+		constexpr std::string_view nsNone = "merge_user_sort_collate_none";
+		constexpr std::string_view nsAscii = "merge_user_sort_collate_ascii";
+		rt.OpenNamespace(nsNone);
+		rt.OpenNamespace(nsAscii);
+		rt.AddIndex(nsNone, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsNone, {"name", {"name"}, "tree", "string", IndexOpts{}});
+		rt.AddIndex(nsAscii, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsAscii, {"name", {"name"}, "tree", "string", IndexOpts{}.SetCollateMode(CollateASCII)});
+		rt.UpsertJSON(nsNone, R"({"id":1,"name":"B"})");
+		rt.UpsertJSON(nsNone, R"({"id":2,"name":"a"})");
+		rt.UpsertJSON(nsAscii, R"({"id":10,"name":"A"})");
+		rt.UpsertJSON(nsAscii, R"({"id":11,"name":"b"})");
+		rt.UpsertJSON(nsAscii, R"({"id":12,"name":"C"})");
+		QueryResults qr = rt.Select(Query(nsNone).Merge(Query(nsAscii)).Sort("name", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{10, 1, 12, 2, 11}));
+	}
+	{
+		// A string forced value is converted to each namespace's index type, so "10" matches both int 10 and int64 10.
+		constexpr std::string_view nsIntId = "merge_user_sort_forced_str_int";
+		constexpr std::string_view nsInt64Id = "merge_user_sort_forced_str_int64";
+		rt.OpenNamespace(nsIntId);
+		rt.OpenNamespace(nsInt64Id);
+		rt.AddIndex(nsIntId, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsInt64Id, {"id", {"id"}, "hash", "int64", IndexOpts{}.PK()});
+		rt.UpsertJSON(nsIntId, R"({"id":1})");
+		rt.UpsertJSON(nsInt64Id, R"({"id":10})");
+		QueryResults qr = rt.Select(Query(nsIntId).Merge(Query(nsInt64Id)).Sort("id", SortOrder::Asc, {"10"}));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{10, 1}));
+	}
+	{
+		constexpr std::string_view nsSparseA = "merge_user_sort_sparse_a";
+		constexpr std::string_view nsSparseB = "merge_user_sort_sparse_b";
+		rt.OpenNamespace(nsSparseA);
+		rt.OpenNamespace(nsSparseB);
+		rt.AddIndex(nsSparseA, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsSparseA, {"weight", {"weight"}, "hash", "int", IndexOpts().Sparse()});
+		rt.AddIndex(nsSparseB, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsSparseB, {"weight", {"weight"}, "hash", "int", IndexOpts().Sparse()});
+		rt.UpsertJSON(nsSparseA, R"({"id":1,"weight":10})");
+		rt.UpsertJSON(nsSparseA, R"({"id":2,"weight":1})");
+		rt.UpsertJSON(nsSparseB, R"({"id":3,"weight":5})");
+		QueryResults qr = rt.Select(Query(nsSparseA).Merge(Query(nsSparseB)).Sort("weight", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{2, 3, 1}));
+	}
+	{
+		// A missing sparse value compares equal to null. Ascending order follows insertion, not "missing before null".
+		constexpr std::string_view nsNull = "merge_user_sort_sparse_null";
+		rt.OpenNamespace(nsNull);
+		rt.AddIndex(nsNull, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsNull, {"weight", {"weight"}, "hash", "int", IndexOpts().Sparse()});
+		rt.UpsertJSON(nsNull, R"({"id":1,"weight":null})");
+		rt.UpsertJSON(nsNull, R"({"id":2})");
+		rt.UpsertJSON(nsNull, R"({"id":3,"weight":null})");
+		rt.UpsertJSON(nsNull, R"({"id":4})");
+		rt.UpsertJSON(nsNull, R"({"id":5,"weight":5})");
+		QueryResults single = rt.Select(Query(nsNull).Sort("weight", SortOrder::Asc));
+		EXPECT_EQ(idsOf(single), (std::vector<int>{1, 2, 3, 4, 5}));
+
+		constexpr std::string_view nsNullA = "merge_user_sort_sparse_null_a";
+		constexpr std::string_view nsMissingB = "merge_user_sort_sparse_missing_b";
+		rt.OpenNamespace(nsNullA);
+		rt.OpenNamespace(nsMissingB);
+		for (const std::string_view ns : {nsNullA, nsMissingB}) {
+			rt.AddIndex(ns, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+			rt.AddIndex(ns, {"weight", {"weight"}, "hash", "int", IndexOpts().Sparse()});
+		}
+		rt.UpsertJSON(nsNullA, R"({"id":1,"weight":null})");
+		rt.UpsertJSON(nsNullA, R"({"id":2,"weight":10})");
+		rt.UpsertJSON(nsNullA, R"({"id":3})");
+		rt.UpsertJSON(nsMissingB, R"({"id":4})");
+		rt.UpsertJSON(nsMissingB, R"({"id":5,"weight":1})");
+		rt.UpsertJSON(nsMissingB, R"({"id":6,"weight":null})");
+		QueryResults asc = rt.Select(Query(nsNullA).Merge(Query(nsMissingB)).Sort("weight", SortOrder::Asc));
+		EXPECT_EQ(idsOf(asc), (std::vector<int>{1, 3, 4, 6, 5, 2}));
+
+		constexpr std::string_view nsMissingA = "merge_user_sort_sparse_missing_a";
+		constexpr std::string_view nsNullB = "merge_user_sort_sparse_null_b";
+		rt.OpenNamespace(nsMissingA);
+		rt.OpenNamespace(nsNullB);
+		for (const std::string_view ns : {nsMissingA, nsNullB}) {
+			rt.AddIndex(ns, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+			rt.AddIndex(ns, {"weight", {"weight"}, "hash", "int", IndexOpts().Sparse()});
+		}
+		rt.UpsertJSON(nsMissingA, R"({"id":1})");
+		rt.UpsertJSON(nsMissingA, R"({"id":2,"weight":10})");
+		rt.UpsertJSON(nsMissingA, R"({"id":3,"weight":null})");
+		rt.UpsertJSON(nsNullB, R"({"id":4,"weight":null})");
+		rt.UpsertJSON(nsNullB, R"({"id":5,"weight":1})");
+		rt.UpsertJSON(nsNullB, R"({"id":6})");
+		QueryResults desc = rt.Select(Query(nsMissingA).Merge(Query(nsNullB)).Sort("weight", SortOrder::Desc));
+		EXPECT_EQ(idsOf(desc), (std::vector<int>{2, 5, 6, 4, 3, 1}));
+	}
+	{
+		// An empty sparse array compares equal to null, same as a missing value.
+		constexpr std::string_view nsEmpty = "merge_user_sort_sparse_empty";
+		rt.OpenNamespace(nsEmpty);
+		rt.AddIndex(nsEmpty, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsEmpty, {"weight", {"weight"}, "hash", "int", IndexOpts().Array().Sparse()});
+		rt.UpsertJSON(nsEmpty, R"({"id":1,"weight":null})");
+		rt.UpsertJSON(nsEmpty, R"({"id":2,"weight":[]})");
+		rt.UpsertJSON(nsEmpty, R"({"id":3,"weight":null})");
+		rt.UpsertJSON(nsEmpty, R"({"id":4,"weight":[]})");
+		rt.UpsertJSON(nsEmpty, R"({"id":5,"weight":[5]})");
+		QueryResults single = rt.Select(Query(nsEmpty).Sort("weight", SortOrder::Asc));
+		EXPECT_EQ(idsOf(single), (std::vector<int>{1, 2, 3, 4, 5}));
+
+		constexpr std::string_view nsNullA = "merge_user_sort_sparse_arr_null_a";
+		constexpr std::string_view nsEmptyB = "merge_user_sort_sparse_arr_empty_b";
+		rt.OpenNamespace(nsNullA);
+		rt.OpenNamespace(nsEmptyB);
+		for (const std::string_view ns : {nsNullA, nsEmptyB}) {
+			rt.AddIndex(ns, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+			rt.AddIndex(ns, {"weight", {"weight"}, "hash", "int", IndexOpts().Array().Sparse()});
+		}
+		rt.UpsertJSON(nsNullA, R"({"id":1,"weight":null})");
+		rt.UpsertJSON(nsNullA, R"({"id":2,"weight":[10]})");
+		rt.UpsertJSON(nsNullA, R"({"id":3,"weight":[]})");
+		rt.UpsertJSON(nsEmptyB, R"({"id":4,"weight":[]})");
+		rt.UpsertJSON(nsEmptyB, R"({"id":5,"weight":[1]})");
+		rt.UpsertJSON(nsEmptyB, R"({"id":6,"weight":null})");
+		QueryResults asc = rt.Select(Query(nsNullA).Merge(Query(nsEmptyB)).Sort("weight", SortOrder::Asc));
+		EXPECT_EQ(idsOf(asc), (std::vector<int>{1, 3, 4, 6, 5, 2}));
+
+		constexpr std::string_view nsEmptyA = "merge_user_sort_sparse_arr_empty_a";
+		constexpr std::string_view nsNullB = "merge_user_sort_sparse_arr_null_b";
+		rt.OpenNamespace(nsEmptyA);
+		rt.OpenNamespace(nsNullB);
+		for (const std::string_view ns : {nsEmptyA, nsNullB}) {
+			rt.AddIndex(ns, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+			rt.AddIndex(ns, {"weight", {"weight"}, "hash", "int", IndexOpts().Array().Sparse()});
+		}
+		rt.UpsertJSON(nsEmptyA, R"({"id":1,"weight":[]})");
+		rt.UpsertJSON(nsEmptyA, R"({"id":2,"weight":[10]})");
+		rt.UpsertJSON(nsEmptyA, R"({"id":3,"weight":null})");
+		rt.UpsertJSON(nsNullB, R"({"id":4,"weight":null})");
+		rt.UpsertJSON(nsNullB, R"({"id":5,"weight":[1]})");
+		rt.UpsertJSON(nsNullB, R"({"id":6,"weight":[]})");
+		QueryResults desc = rt.Select(Query(nsEmptyA).Merge(Query(nsNullB)).Sort("weight", SortOrder::Desc));
+		EXPECT_EQ(idsOf(desc), (std::vector<int>{2, 5, 6, 4, 3, 1}));
+	}
+	{
+		constexpr std::string_view nsCompA = "merge_user_sort_comp_a";
+		constexpr std::string_view nsCompB = "merge_user_sort_comp_b";
+		rt.OpenNamespace(nsCompA);
+		rt.OpenNamespace(nsCompB);
+		for (const std::string_view ns : {nsCompA, nsCompB}) {
+			rt.AddIndex(ns, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+			rt.AddIndex(ns, {"a", {"a"}, "tree", "int", IndexOpts{}});
+			rt.AddIndex(ns, {"b", {"b"}, "tree", "int", IndexOpts{}});
+			rt.AddIndex(ns, {"a+b", {"a", "b"}, "tree", "composite", IndexOpts{}});
+		}
+		rt.UpsertJSON(nsCompA, R"({"id":1,"a":1,"b":2})");
+		rt.UpsertJSON(nsCompA, R"({"id":2,"a":1,"b":9})");
+		rt.UpsertJSON(nsCompA, R"({"id":3,"a":3,"b":0})");
+		rt.UpsertJSON(nsCompB, R"({"id":4,"a":1,"b":5})");
+		rt.UpsertJSON(nsCompB, R"({"id":5,"a":2,"b":0})");
+		QueryResults qr = rt.Select(Query(nsCompA).Merge(Query(nsCompB)).Sort("a+b", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{1, 4, 2, 5, 3}));
+	}
+	{
+		// Forced sort matches the whole composite key, so (2, 2) stays ahead of (1, 1) and (1, 9).
+		constexpr std::string_view nsForcedA = "merge_user_sort_comp_forced_a";
+		constexpr std::string_view nsForcedB = "merge_user_sort_comp_forced_b";
+		rt.OpenNamespace(nsForcedA);
+		rt.OpenNamespace(nsForcedB);
+		for (const std::string_view ns : {nsForcedA, nsForcedB}) {
+			rt.AddIndex(ns, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+			rt.AddIndex(ns, {"a", {"a"}, "tree", "int", IndexOpts{}});
+			rt.AddIndex(ns, {"b", {"b"}, "tree", "int", IndexOpts{}});
+			rt.AddIndex(ns, {"a+b", {"a", "b"}, "tree", "composite", IndexOpts{}});
+		}
+		rt.UpsertJSON(nsForcedA, R"({"id":1,"a":1,"b":1})");
+		rt.UpsertJSON(nsForcedA, R"({"id":3,"a":1,"b":9})");
+		rt.UpsertJSON(nsForcedB, R"({"id":2,"a":2,"b":2})");
+		const Variant forced22{VariantArray{Variant{2}, Variant{2}}};
+		const Variant forced19{VariantArray{Variant{1}, Variant{9}}};
+		{
+			QueryResults qr = rt.Select(Query(nsForcedA).Merge(Query(nsForcedB)).Sort("a+b", SortOrder::Asc, {forced22}));
+			EXPECT_EQ(idsOf(qr), (std::vector<int>{2, 1, 3}));
+		}
+		{
+			QueryResults qr = rt.Select(Query(nsForcedA).Merge(Query(nsForcedB)).Sort("a+b", SortOrder::Asc, {forced19}));
+			EXPECT_EQ(idsOf(qr), (std::vector<int>{3, 1, 2}));
+		}
+		{
+			QueryResults qr = rt.Select(Query(nsForcedA).Merge(Query(nsForcedB)).Sort("a+b", SortOrder::Desc, {forced22}));
+			EXPECT_EQ(idsOf(qr), (std::vector<int>{3, 1, 2}));
+		}
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA).Merge(Query(nsB)).Sort("year", SortOrder::Asc).Offset(2).Limit(3));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{1, 10, 3}));
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA).Merge(Query(nsB)).Sort("year * 10 + id", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{11, 2, 1, 10, 3, 12, 4}));
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA).Merge(Query(nsB)).Sort("merged_query_id()", SortOrder::Asc).Sort("id", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{1, 2, 3, 4, 10, 11, 12}));
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA).Merge(Query(nsB)).Sort("merged_query_id()", SortOrder::Desc).Sort("id", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{10, 11, 12, 1, 2, 3, 4}));
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA)
+										.Where("id", CondEq, 1)
+										.Merge(Query(nsB).Where("id", CondEq, 10))
+										.Merge(Query(nsNoYear).Where("id", CondEq, 20))
+										.Sort("merged_query_id()", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{1, 10, 20}));
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA).Merge(Query(nsB)).Sort("merged_query_id() * 100 + year", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{2, 1, 3, 4, 11, 10, 12}));
+	}
+	{
+		// Outside MERGE every row has merged_query_id() == 0, so the second key decides the order.
+		QueryResults qr = rt.Select(Query(nsA).Sort("merged_query_id()", SortOrder::Asc).Sort("id", SortOrder::Desc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{4, 3, 2, 1}));
+	}
+	{
+		// The joined query is not a MERGE subquery, so merged_query_id() is 0 and the joined rows follow score.
+		QueryResults qr = rt.Select(Query(nsA)
+										.Where("id", CondEq, 1)
+										.InnerJoin(Query(nsJoin).Sort("merged_query_id()", SortOrder::Asc).Sort("score", SortOrder::Desc),
+												   "year", CondGt, "score"));
+		ASSERT_EQ(qr.Count(), 1);
+		auto joinedCtx = qr.begin().GetJoinedContext();
+		auto joinedField = joinedCtx.iterator.Begin();
+		ASSERT_EQ(joinedField.ItemsCount(), 6);
+		std::vector<int> joinedIds;
+		joinedIds.reserve(6);
+		for (auto jit : joinedField.ToQueryResults(joinedCtx)) {
+			joinedIds.emplace_back(jit.GetItem()["id"].As<int>());
+		}
+		EXPECT_EQ(joinedIds, (std::vector<int>{11, 1, 3, 12, 2, 10}));
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA).Merge(Query(nsB)).Sort("year", SortOrder::Asc).Sort("id", SortOrder::Desc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{11, 2, 1, 10, 12, 3, 4}));
+	}
+	{
+		const std::string joinedScore = std::string(nsJoin) + ".score";
+		QueryResults qr = rt.Select(Query(nsA)
+										.InnerJoin(Query(nsJoin), "id", CondEq, "id")
+										.Merge(Query(nsB).InnerJoin(Query(nsJoin), "id", CondEq, "id"))
+										.Sort(joinedScore, SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{10, 2, 12, 3, 1, 11}));
+	}
+	{
+		const std::string joinedScore = std::string(nsJoin) + ".score";
+		QueryResults qr = rt.Select(Query(nsA)
+										.InnerJoin(Query(nsJoin), "id", CondEq, "id")
+										.Merge(Query(nsB).InnerJoin(Query(nsJoin), "id", CondEq, "id"))
+										.Sort(joinedScore, SortOrder::Asc, {20, 5}));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{3, 10, 2, 12, 1, 11}));
+	}
+	{
+		const std::string joinedScore = std::string(nsJoin) + ".score";
+		QueryResults qr = rt.Select(Query(nsA)
+										.InnerJoin(Query(nsJoin), "id", CondEq, "id")
+										.Merge(Query(nsB).InnerJoin(Query(nsJoin), "id", CondEq, "id"))
+										.Sort(joinedScore, SortOrder::Desc, {20, 5}));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{11, 1, 12, 2, 10, 3}));
+	}
+	{
+		const std::string joinedExpr = std::string(nsJoin) + ".score + year";
+		QueryResults qr = rt.Select(Query(nsA)
+										.InnerJoin(Query(nsJoin), "id", CondEq, "id")
+										.Merge(Query(nsB).InnerJoin(Query(nsJoin), "id", CondEq, "id"))
+										.Sort(joinedExpr, SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{2, 10, 11, 12, 1, 3}));
+	}
+	{
+		QueryResults qr;
+		const Error err = rt.reindexer->Select(
+			Query(nsA).InnerJoin(Query(nsJoin), "id", CondEq, "id").Merge(Query(nsB)).Sort(std::string(nsJoin) + ".score", SortOrder::Asc),
+			qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(
+			err.what(),
+			"Current query strict mode allows sort by existing fields only. There are no fields with name 'merge_user_sort_join.score' "
+			"in namespace 'merge_user_sort_b'");
+	}
+	{
+		QueryResults qr;
+		const Error err = rt.reindexer->Select(
+			Query(nsA).Where("description", CondEq, "alpha").WithRank().Merge(Query(nsB)).Sort("id", SortOrder::Asc), qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "WithRank() is not available for a merge query that contains both ranked and not ranked results");
+	}
+	{
+		// An empty ranked branch still has WithRank(). The following unranked rows must not be appended.
+		QueryResults qr;
+		const Error err = rt.reindexer->Select(
+			Query(nsA).Where("description", CondEq, "no-such-token").WithRank().Merge(Query(nsB)).Sort("id", SortOrder::Asc), qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "WithRank() is not available for a merge query that contains both ranked and not ranked results");
+	}
+	{
+		QueryResults qr;
+		const Error err = rt.reindexer->Select(Query(nsB)
+												   .Where("id", CondEq, -1)
+												   .Merge(Query(nsA).Where("description", CondEq, "no-such-token").WithRank())
+												   .Sort("id", SortOrder::Asc),
+											   qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "WithRank() is not available for a merge query that contains both ranked and not ranked results");
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA)
+										.Where("description", CondEq, "alpha")
+										.Merge(Query(nsB).Where("description", CondEq, "alpha"))
+										.Sort("rank()", SortOrder::Desc));
+		ASSERT_EQ(qr.Count(), 4);
+		double prevRank = std::numeric_limits<double>::max();
+		std::vector<int> ids;
+		for (auto it : qr) {
+			const double rank = it.GetItemRefRanked().Rank().Value();
+			EXPECT_LE(rank, prevRank);
+			prevRank = rank;
+			ids.emplace_back(it.GetItem()["id"].As<int>());
+		}
+		std::sort(ids.begin(), ids.end());
+		EXPECT_EQ(ids, (std::vector<int>{1, 2, 10, 12}));
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA)
+										.Where("description", CondEq, "alpha")
+										.Merge(Query(nsB).Where("description", CondEq, "alpha"))
+										.Sort("id + rank()", SortOrder::Asc));
+		ASSERT_EQ(qr.Count(), 4);
+		double prevKey = -std::numeric_limits<double>::max();
+		for (auto it : qr) {
+			const double key = it.GetItem()["id"].As<int>() + it.GetItemRefRanked().Rank().Value();
+			EXPECT_GE(key, prevKey);
+			prevKey = key;
+		}
+	}
+	{
+		QueryResults qr;
+		const Error err = rt.reindexer->Select(
+			Query(nsA).Where("description", CondEq, "alpha").Merge(Query(nsB)).Sort("id + rank()", SortOrder::Asc), qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(), "Sorting by rank() is only available for query with single fulltext or knn condition");
+	}
+	{
+		QueryResults qr;
+		const Error err = rt.reindexer->Select(Query(nsA).Merge(Query(nsNoYear)).Sort("year", SortOrder::Asc), qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_STREQ(err.what(),
+					 "Current query strict mode allows sort by existing fields only. There are no fields with name 'year' in namespace "
+					 "'merge_user_sort_no_year'");
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA).Merge(Query(nsNoYear)).Strict(StrictModeNone).Sort("year", SortOrder::Asc));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{20, 2, 1, 3, 4}));
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA).Where("id", CondSet, {1, 2}).Merge(Query(nsA).Where("id", CondSet, {2, 3})));
+		std::vector<int> ids;
+		int nsidOf2 = -1;
+		for (auto it : qr) {
+			const int id = it.GetItem()["id"].As<int>();
+			ids.emplace_back(id);
+			if (id == 2) {
+				nsidOf2 = it.GetItemRef().Nsid();
+			}
+		}
+		EXPECT_EQ(ids, (std::vector<int>{1, 2, 3}));
+		EXPECT_EQ(nsidOf2, 0);
+	}
+	{
+		QueryResults qr =
+			rt.Select(Query(nsA).Where("id", CondSet, {1, 2}).Merge(Query(nsA).Where("id", CondSet, {2, 3})).Sort("id", SortOrder::Desc));
+		std::vector<int> ids;
+		int nsidOf2 = -1;
+		for (auto it : qr) {
+			const int id = it.GetItem()["id"].As<int>();
+			ids.emplace_back(id);
+			if (id == 2) {
+				nsidOf2 = it.GetItemRef().Nsid();
+			}
+		}
+		EXPECT_EQ(ids, (std::vector<int>{3, 2, 1}));
+		// DESC keeps the copy from the later subquery.
+		EXPECT_EQ(nsidOf2, 1);
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA)
+										.Where("id", CondSet, {1, 2})
+										.Merge(Query(nsB).Where("id", CondEq, 10))
+										.Merge(Query(nsA).Where("id", CondSet, {2, 3})));
+		std::vector<int> ids;
+		int nsidOf2 = -1;
+		for (auto it : qr) {
+			const int id = it.GetItem()["id"].As<int>();
+			ids.emplace_back(id);
+			if (id == 2) {
+				nsidOf2 = it.GetItemRef().Nsid();
+			}
+		}
+		EXPECT_EQ(ids, (std::vector<int>{1, 2, 10, 3}));
+		EXPECT_EQ(nsidOf2, 0);
+	}
+	{
+		QueryResults qr =
+			rt.Select(Query(nsA).Select("id").Where("id", CondEq, 1).Merge(Query(nsA).Select("id", "year").Where("id", CondEq, 1)));
+		ASSERT_EQ(qr.Count(), 2);
+		auto it = qr.begin();
+		EXPECT_EQ(it.GetItem()["id"].As<int>(), 1);
+		EXPECT_EQ(it.GetItemRef().Nsid(), 0);
+		++it;
+		EXPECT_EQ(it.GetItem()["id"].As<int>(), 1);
+		EXPECT_EQ(it.GetItemRef().Nsid(), 1);
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA).Select("id").Where("id", CondEq, 1).Merge(Query(nsA).Select("id").Where("id", CondEq, 1)));
+		ASSERT_EQ(qr.Count(), 1);
+		EXPECT_EQ(qr.begin().GetItem()["id"].As<int>(), 1);
+		EXPECT_EQ(qr.begin().GetItemRef().Nsid(), 0);
+	}
+	{
+		// ids 1 and 2 overlap, so count/sum must ignore the dropped copy: ids {1, 2, 3}, years 2000+1990+2010.
+		QueryResults qr = rt.Select(Query(nsA)
+										.Where("id", CondSet, {1, 2})
+										.Aggregate(AggCount, {})
+										.Aggregate(AggSum, {"year"})
+										.Merge(Query(nsA).Where("id", CondSet, {2, 3})));
+		ASSERT_EQ(qr.Count(), 0);
+		double count = -1;
+		double sum = -1;
+		for (const auto& agg : qr.GetAggregationResults()) {
+			switch (agg.GetType()) {
+				case AggCount:
+					count = agg.GetValueOrZero();
+					break;
+				case AggSum:
+					sum = agg.GetValueOrZero();
+					break;
+				case AggCountCached:
+				case AggAvg:
+				case AggFacet:
+				case AggMin:
+				case AggMax:
+				case AggDistinct:
+				case AggUnknown:
+					break;
+			}
+		}
+		EXPECT_DOUBLE_EQ(count, 3);
+		EXPECT_DOUBLE_EQ(sum, 6000);
+		EXPECT_EQ(qr.TotalCount(), 3);
+	}
+	{
+		QueryResults qr =
+			rt.Select(Query(nsA).Where("id", CondSet, {1, 2}).Aggregate(AggCountCached, {}).Merge(Query(nsA).Where("id", CondSet, {2, 3})));
+		ASSERT_EQ(qr.Count(), 3);
+		ASSERT_EQ(qr.GetAggregationResults().size(), 1);
+		EXPECT_EQ(qr.GetAggregationResults()[0].GetType(), AggCountCached);
+		EXPECT_DOUBLE_EQ(qr.GetAggregationResults()[0].GetValueOrZero(), 3);
+		EXPECT_EQ(qr.TotalCount(), 3);
+	}
+	{
+		// The repeated id 2 has the same year, so min/max stay 1990 and 2010 and no rows are returned.
+		QueryResults qr = rt.Select(Query(nsA)
+										.Where("id", CondSet, {1, 2})
+										.Aggregate(AggMin, {"year"})
+										.Aggregate(AggMax, {"year"})
+										.Merge(Query(nsA).Where("id", CondSet, {2, 3})));
+		ASSERT_EQ(qr.Count(), 0);
+		double minYear = -1;
+		double maxYear = -1;
+		for (const auto& agg : qr.GetAggregationResults()) {
+			if (agg.GetType() == AggMin) {
+				minYear = agg.GetValueOrZero();
+			} else if (agg.GetType() == AggMax) {
+				maxYear = agg.GetValueOrZero();
+			}
+		}
+		EXPECT_DOUBLE_EQ(minYear, 1990);
+		EXPECT_DOUBLE_EQ(maxYear, 2010);
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA)
+										.Where("id", CondSet, {1, 2})
+										.Aggregate(AggCount, {})
+										.Aggregate(AggMin, {"year"})
+										.Merge(Query(nsA).Where("id", CondSet, {2, 3})));
+		ASSERT_EQ(qr.Count(), 0);
+		double count = -1;
+		double minYear = -1;
+		for (const auto& agg : qr.GetAggregationResults()) {
+			if (agg.GetType() == AggCount) {
+				count = agg.GetValueOrZero();
+			} else if (agg.GetType() == AggMin) {
+				minYear = agg.GetValueOrZero();
+			}
+		}
+		EXPECT_DOUBLE_EQ(count, 3);
+		EXPECT_DOUBLE_EQ(minYear, 1990);
+		EXPECT_EQ(qr.TotalCount(), 3);
+	}
+	for (AggType type : {AggFacet, AggAvg, AggDistinct}) {
+		QueryResults qr;
+		const Error err = rt.reindexer->Select(Query(nsA).Aggregate(type, {"year"}).Merge(Query(nsA).Where("id", CondSet, {2, 3})), qr);
+		EXPECT_FALSE(err.ok());
+		const std::string expected = fmt::format("Aggregation '{}' in merge query is not implemented yet", reindexer::AggTypeToStr(type));
+		EXPECT_STREQ(err.what(), expected.c_str());
+	}
+	double firstRank = 0;
+	double secondRank = 0;
+	{
+		QueryResults qr = rt.Select(Query(nsA).Where("description", CondEq, "gamma"));
+		ASSERT_EQ(qr.Count(), 1);
+		firstRank = qr.begin().GetItemRefRanked().Rank().Value();
+	}
+	{
+		QueryResults qr = rt.Select(Query(nsA).Where("description", CondEq, "delta"));
+		ASSERT_EQ(qr.Count(), 1);
+		secondRank = qr.begin().GetItemRefRanked().Rank().Value();
+	}
+	ASSERT_NE(firstRank, secondRank);
+	{
+		QueryResults qr =
+			rt.Select(Query(nsA).Where("description", CondEq, "gamma").Merge(Query(nsA).Where("description", CondEq, "delta")));
+		ASSERT_EQ(qr.Count(), 1);
+		const bool keepFirst = firstRank > secondRank;
+		EXPECT_EQ(qr.begin().GetItemRef().Nsid(), keepFirst ? 0 : 1);
+		EXPECT_DOUBLE_EQ(qr.begin().GetItemRefRanked().Rank().Value(), keepFirst ? firstRank : secondRank);
+	}
+	{
+		// An empty fulltext preselect does not run the second pass, but the root sort is still applied to MERGE rows.
+		constexpr std::string_view nsFt = "merge_user_sort_ft_preselect";
+		constexpr std::string_view nsRows = "merge_user_sort_ft_rows";
+		rt.OpenNamespace(nsFt);
+		rt.OpenNamespace(nsRows);
+		rt.AddIndex(nsFt, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsFt, {"year", {"year"}, "tree", "int", IndexOpts{}});
+		rt.AddIndex(nsFt, {"description",
+						   {"description"},
+						   "text",
+						   "string",
+						   IndexOpts{}.SetConfig(IndexFastFT, R"({"enable_preselect_before_ft":true})")});
+		rt.AddIndex(nsRows, {"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		rt.AddIndex(nsRows, {"year", {"year"}, "tree", "int", IndexOpts{}});
+		rt.UpsertJSON(nsFt, R"({"id":1,"year":2000,"description":"alpha"})");
+		rt.UpsertJSON(nsRows, R"({"id":10,"year":1990})");
+		rt.UpsertJSON(nsRows, R"({"id":11,"year":2010})");
+		QueryResults qr = rt.Select(Query(nsFt)
+										.Where("description", CondEq, "alpha")
+										.Where("id", CondEq, 999)
+										.Sort("year", SortOrder::Asc, {2010, 1990})
+										.Merge(Query(nsRows)));
+		EXPECT_EQ(idsOf(qr), (std::vector<int>{11, 10}));
 	}
 }
 

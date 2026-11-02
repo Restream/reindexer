@@ -70,12 +70,12 @@ class [[nodiscard]] FtFunctionsHolder {
 public:
 	/// Creates FtFunction object for a query.
 	/// @param q - query that contains sql function.
-	/// @param nm - namespace of the query to be executed.
+	/// @param nm - interface to the query namespace's indexes and metadata.
 	/// @param nsid - unique ns ID in the query.
 	/// @param force - forces to create FtFunction object
 	/// even if the list of sql-functions in this query is empty.
 	/// @return pointer to FtFunction object or nullptr in case of error.
-	FtFunction::Ptr AddNamespace(ConstQueryImpl q, const NamespaceImpl& nm, uint32_t nsid, bool force);
+	FtFunction::Ptr AddNamespace(ConstQueryImpl q, NsFtFuncInterface nm, uint32_t nsid, bool force);
 	/// Processing of results of an executed query.
 	/// @param res - results of query execution.
 	void Process(LocalQueryResults& res) const;

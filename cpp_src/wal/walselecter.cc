@@ -22,7 +22,8 @@ void WALSelecter::operator()(LocalQueryResults& result, SelectCtx& params, bool 
 		throw Error(errLogic, "Query to WAL should contain condition '{} > number' or '{} is not null'", kLsnIndexName, kLsnIndexName);
 	}
 
-	result.addNSContext(ns_->payloadType(), ns_->tagsMatcher(), FieldsFilter(q.SelectFilters(), *ns_), ns_->schema_, ns_->incarnationTag_);
+	result.addNSContext(ns_->payloadType(), ns_->tagsMatcher(), FieldsFilter::Create(q.SelectFilters(), *ns_), ns_->schema_,
+						ns_->incarnationTag_);
 
 	const auto& lsnEntry = q.Entries().Get<QueryEntry>(0);
 	if (lsnEntry.Values().size() == 1 && (lsnEntry.Condition() == CondGt || lsnEntry.Condition() == CondGe)) {

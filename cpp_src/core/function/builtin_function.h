@@ -49,7 +49,6 @@ protected:
 	void ValidateIdentifierArgs(const ExprParseContext::FunctionArgs& args, ExprParseContext& ctx) const;
 
 	static const PayloadType& PayloadTypeOf(const NamespaceImpl& ns) noexcept;
-	static const TagsMatcher& TagsMatcherOf(const NamespaceImpl& ns) noexcept;
 
 private:
 	std::string_view name_;

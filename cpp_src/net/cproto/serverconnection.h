@@ -62,13 +62,21 @@ protected:
 	void responseRPC(Context& ctx, const Error& error, const Args& args);
 	void handleException(Context& ctx, const Error& err) noexcept;
 	void sendUpdates();
-	void async_cb(ev::async&) { sendUpdates(); }
+	void async_cb(ev::async&) {
+		if (pendingUpdates() > 0) {
+			sendUpdates();
+			callback(BaseConnT::io_, ev::WRITE);
+		}
+	}
 	size_t pendingUpdates() const noexcept { return currentUpdatesCnt_.load(std::memory_order_acquire); }
 	void callback(ev::io& watcher, int revents) {
 		BaseConnT::callback(watcher, revents);
-		while (pendingUpdates() > 0 && canWrite_) {
-			sendUpdates();
-			write_cb();
+		if (pendingUpdates() > 0 && canWrite_) {
+			do {
+				sendUpdates();
+				write_cb();
+			} while (pendingUpdates() > 0 && canWrite_);
+			BaseConnT::update_cur_events(ev::READ | (BaseConnT::wrBuf_.size() ? ev::WRITE : 0));
 		}
 	}
 

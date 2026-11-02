@@ -3,6 +3,7 @@
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/formatters/tokenizer_range.h"
+#include "core/item_tree/data_extractor.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/payload/payloadiface.h"
 #include "estl/tokenizer.h"
@@ -12,7 +13,6 @@
 #include "tools/serilize/wrserializer.h"
 #include "vendor/frozen/unordered_map.h"
 #include "vendor/gason/gason.h"
-
 namespace reindexer {
 
 namespace functions {
@@ -160,16 +160,15 @@ FlatArrayLen FlatArrayLen::FromJSON(const gason::JsonNode& node) {
 	return FlatArrayLen(readNodeValues<std::string, h_vector, 1>(node.findCaseInsensitive("fields")));
 }
 
-size_t FlatArrayLen::Evaluate(const PayloadValue& pv, const PayloadType& pt, const TagsMatcher& tm) const {
-	ConstPayload item{pt, pv};
+size_t FlatArrayLen::Evaluate(const IItemValuesExtractor& de, const PayloadType& pt) const {
 	std::string_view fieldName{Function::FieldNames()[0]};
 
 	int fieldIndex = 0;
 	if (pt.FieldByName(fieldName, fieldIndex)) {
-		return item.GetFieldSize(FieldsSet{fieldIndex});
+		return de.GetFieldSize(fieldIndex);
 	}
 
-	return item.GetFieldSize(fieldName, tm);
+	return de.GetFieldSize(fieldName);
 }
 
 bool FlatArrayLen::Compare(CondType condition, const h_vector<int, 1>& expectedSize, size_t fieldSize) const {
@@ -260,7 +259,7 @@ int64_t Serial::Evaluate(NamespaceImpl& ns, UpdatesContainer& replUpdates, const
 	if (ns.tryGetIndexByNameOrJsonPath(comparisonField_, indexField)) {
 		fieldName = ns.indexes()[indexField]->Name();
 	}
-	return ns.GetSerial(fieldName, replUpdates, ctx);
+	return ns.GetSerial(fieldName, comparisonField_, replUpdates, ctx);
 }
 
 FunctionVariant Create(ParsedFunction&& parsedFunction) {

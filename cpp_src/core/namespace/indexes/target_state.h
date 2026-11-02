@@ -51,7 +51,7 @@ public:
 	const Index& At(int pos) const& noexcept;
 	const FieldsSet& FieldsAt(int pos) const& noexcept;
 	/** @brief The target position of a non-composite index with the given name. */
-	bool TryGetScalarIndexByName(std::string_view name, int& pos) const noexcept;
+	bool TryGetNonCompositeIndexPos(std::string_view name, int& pos) const noexcept;
 
 	auto GetPayloadType() const&& = delete;
 	auto GetTagsMatcher() const&& = delete;

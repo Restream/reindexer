@@ -1,6 +1,7 @@
 #include "registry.h"
 
 #include <algorithm>
+#include "core/definitions/indexdef.h"
 #include "core/index/index.h"
 #include "core/payload/payloadfieldtype.h"
 
@@ -18,6 +19,90 @@ Registry::Registry(const Registry& src, size_t newItemsCapacity)
 }
 
 Registry::~Registry() = default;
+
+int Registry::GetIndexPos(std::string_view index) const {
+	int pos = 0;
+	if (!TryGetIndexPos(index, pos)) [[unlikely]] {
+		throw Error(errParams, "Index '{}' not found in '{}'", index, nsName());
+	}
+	return pos;
+}
+
+bool Registry::TryGetNonCompositeIndexPos(std::string_view name, int& index) const noexcept {
+	int idx = 0;
+	if (TryGetIndexPos(name, idx)) {
+		if (idx < Indexes().firstCompositePos()) {
+			index = idx;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool Registry::TryGetIndexPosByNameOrJsonPath(std::string_view name, int& index, EnableMultiJsonPath multi) const {
+	if (TryGetIndexPos(name, index)) {
+		return true;
+	}
+	return TryGetIndexPosByJsonPath(name, index, multi);
+}
+
+bool Registry::TryGetIndexPosByJsonPath(std::string_view name, int& index, EnableMultiJsonPath multi) const noexcept {
+	// regular indexes handling
+	auto idx = GetPayloadType().FieldByJsonPath(name);
+	if (idx > 0) {
+		if (!multi && GetPayloadType().Field(idx).JsonPaths().size() > 1) {
+			return false;
+		}
+		index = idx;
+		return true;
+	}
+
+	// sparse indexes handling
+	auto field = GetTagsMatcher().tags2field(GetTagsMatcher().path2tag(name));
+	assertrx_dbg(!field.IsIndexed() || field.IsSparse());
+	if (field.IsIndexed() && field.IsSparse()) {
+		try {
+			auto& idxData = GetTagsMatcher().SparseIndex(field.SparseNumber());
+			if (!multi && idxData.paths.size() > 1) {
+				return false;
+			}
+			return TryGetIndexPos(idxData.name, index);
+		} catch (const std::exception& err) {
+			assertf(false, "Error getting sparse index {}: {}", field.SparseNumber(), err.what());
+			return false;
+		}
+	}
+	return false;
+}
+
+IndexDef Registry::GetIndexDefinition(std::string_view indexName) const {
+	for (unsigned i = 0; i < Indexes().size(); ++i) {
+		if (iequals(Indexes()[i]->Name(), indexName)) {
+			return GetIndexDefinition(i);
+		}
+	}
+	throw Error(errParams, "Index '{}' not found in '{}'", indexName, nsName());
+}
+
+IndexDef Registry::GetIndexDefinition(size_t i) const {
+	assertrx(i < Indexes().size());
+	const Index& index = *Indexes()[i];
+
+	if (static_cast<int>(i) >= GetPayloadType().NumFields()) {
+		int fIdx = 0;
+		JsonPaths jsonPaths;
+		for (auto& f : index.Fields()) {
+			if (f != IndexValueType::SetByJsonPath) {
+				jsonPaths.push_back(Indexes()[f]->Name());
+			} else {
+				jsonPaths.push_back(index.Fields().getJsonPath(fIdx++));
+			}
+		}
+		return {index.Name(), std::move(jsonPaths), index.Type(), index.Opts(), index.GetTTLValue()};
+	} else {
+		return {index.Name(), GetPayloadType().Field(i).JsonPaths(), index.Type(), index.Opts(), index.GetTTLValue()};
+	}
+}
 
 std::unique_ptr<Index> Registry::ReplaceIndex(int pos, std::unique_ptr<Index>&& newIndex) {
 	assertrx_throw(pos >= 0 && pos < indexes_.totalSize());
@@ -125,7 +210,7 @@ void Registry::CheckConsistency() const noexcept(consistencyState == Consistency
 		if (total == 0) {
 			// Only true right before the very first AddIndex() call from the NamespaceImpl constructor - trivially
 			// consistent, there is nothing to cross-check yet. Once the tuple index exists, it can never legitimately
-			// disappear again (see NamespaceImpl::verifyDropIndex), so this is not given the same pass below
+			// disappear again (see Validator::VerifyDropIndex), so this is not given the same pass below
 			return;
 		}
 	}

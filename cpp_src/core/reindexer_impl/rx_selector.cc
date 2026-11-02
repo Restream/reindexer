@@ -1,11 +1,14 @@
 #include "rx_selector.h"
+#include "core/nsselecter/joins/iterators.h"
 #include "core/nsselecter/joins/results.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/query/query_impl.h"
 #include "core/queryresults/context.h"
 #include "core/queryresults/queryresults.h"
+#include "core/sorting/sortexpression.h"
 #include "tools/logger.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
 namespace {
@@ -25,6 +28,35 @@ bool HasSubqueries(ConstQueryImpl q) noexcept {
 	}
 	return false;
 }
+
+bool requestsMergedTotal(ConstQueryImpl query) noexcept {
+	if (query.HasCalcTotal()) {
+		return true;
+	}
+	for (const AggregateEntry& agg : query.Aggregations()) {
+		if (agg.Type() == AggCount || agg.Type() == AggCountCached) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Dedup compares item ids inside one namespace. Only a namespace that appears more than once can lose rows.
+bool namespaceIsRepeated(ConstQueryImpl query, std::string_view nsName) noexcept {
+	size_t count = 0;
+	if (iequals(query.NsName(), nsName)) {
+		++count;
+	}
+	for (const JoinedQuery& merged : query.MergeQueries()) {
+		if (iequals(Impl(merged).NsName(), nsName)) {
+			if (++count > 1) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 }  // namespace
 
 class [[nodiscard]] ItemRefLess {
@@ -125,8 +157,14 @@ void RxSelector::DoSelect(ConstQueryImpl q, std::optional<Query>& queryCopy, Loc
 	QueryRankType commonQueryRankType{QueryRankType::NotSet};
 	auto commonLimit = query.Limit();
 	auto commonOffset = query.Offset();
+	const bool totalForRepeatedNs = requestsMergedTotal(query);
 	auto commonRankOrdering = RankOrdering::Off;
 	Explain explain;
+	// Bound sort trees and namespaces, in select order.
+	h_vector<SortExpressions, 4> mergeParsedSort;
+	h_vector<NamespaceImpl*, 4> mergeNs;
+	// Rows each namespace appended, in select order. Sorting does not change them.
+	h_vector<size_t, 4> mergeNsRows;
 	{
 		MainSelectCtx selCtx(query, std::nullopt, &result.GetFloatVectorsHolder());
 		selCtx.joinItemsProcessors = mainJoinItemsProcessors;
@@ -162,25 +200,35 @@ void RxSelector::DoSelect(ConstQueryImpl q, std::optional<Query>& queryCopy, Loc
 			commonOffset = QueryEntry::kDefaultOffset;
 		}
 		selCtx.requiresCrashTracking = true;
-		selCtx.limit = commonLimit;
-		selCtx.offset = commonOffset;
+		if (totalForRepeatedNs && namespaceIsRepeated(query, query.NsName())) {
+			selCtx.limit = QueryEntry::kDefaultLimit;
+			selCtx.offset = QueryEntry::kDefaultOffset;
+		} else {
+			selCtx.limit = commonLimit;
+			selCtx.offset = commonOffset;
+		}
+		const size_t rowsBefore = result.Items().Size();
 		ns->Select(result, selCtx, ctx);
 		result.AddNamespace(ns, true);
 		commonQueryRankType = selCtx.queryRankType;
+		if (!query.MergeQueries().empty()) {
+			mergeNs.push_back(ns.get());
+			mergeNsRows.push_back(result.Items().Size() - rowsBefore);
+			mergeParsedSort.emplace_back(std::move(selCtx.parsedSortExpressions));
+		}
 	}
 	// should be destroyed after results.lockResults()
 	std::vector<joins::ItemsProcessors> mergeJoinItemsProcessors;
 	if (!query.MergeQueries().empty()) {
-		if (commonQueryRankType != QueryRankType::Hybrid && !query.GetSortingEntries().empty()) [[unlikely]] {
-			throw Error{errNotValid, "Sorting in merge query is not implemented yet"};	// TODO #1449
-		}
-		commonRankOrdering = GetRankOrdering(commonQueryRankType, query.GetSortingEntries());
+		// Hybrid keeps its own rank expressions. A field sort does not merge by rank.
+		const bool propagateSort = commonQueryRankType != QueryRankType::Hybrid && !query.GetSortingEntries().empty();
+		commonRankOrdering = propagateSort ? RankOrdering::Off : GetRankOrdering(commonQueryRankType, query.GetSortingEntries());
 		mergeJoinItemsProcessors.reserve(query.MergeQueries().size());
 		uint16_t counter = 0;
 
 		auto hasUnsupportedAggregations = [](const std::vector<AggregateEntry>& aggVector, AggType& t) -> bool {
 			for (const auto& a : aggVector) {
-				if (a.Type() != AggCount || a.Type() != AggCountCached) {
+				if (a.Type() != AggCount && a.Type() != AggCountCached) {
 					t = a.Type();
 					return true;
 				}
@@ -200,7 +248,7 @@ void RxSelector::DoSelect(ConstQueryImpl q, std::optional<Query>& queryCopy, Loc
 			if (commonQueryRankType != QueryRankType::Hybrid && !mqImpl.GetSortingEntries().empty()) [[unlikely]] {
 				throw Error(errParams, "Sorting in inner merge query is not allowed");
 			}
-			if (commonRankOrdering != GetRankOrdering(commonQueryRankType, mqImpl.GetSortingEntries())) [[unlikely]] {
+			if (!propagateSort && commonRankOrdering != GetRankOrdering(commonQueryRankType, mqImpl.GetSortingEntries())) [[unlikely]] {
 				throw Error(errParams, "All merging queries should have the same ordering (ASC or DESC)");
 			}
 			if (!mqImpl.Aggregations().empty() || mqImpl.HasCalcTotal()) [[unlikely]] {
@@ -216,20 +264,24 @@ void RxSelector::DoSelect(ConstQueryImpl q, std::optional<Query>& queryCopy, Loc
 			std::optional<JoinedQuery> mQueryCopy;
 			std::vector<SubQueryExplain> mSubQueryExplains;
 			const bool hasSubqueries{HasSubqueries(mqImpl)};
+			if (hasSubqueries || propagateSort) {
+				mQueryCopy.emplace(mq);
+			}
 			if (hasSubqueries) {
 				const auto preselectStartTime = Explain::Clock::now();
-				mQueryCopy.emplace(mq);
 				if (!mqImpl.SubQueries().empty()) {
 					preselectSubQueries(Impl(*mQueryCopy), queryResultsHolder, locks, func, mSubQueryExplains, ctx);
 				}
 				preselectSubQueriesInJoins(Impl(*mQueryCopy), queryResultsHolder, locks, func, mSubQueryExplains, ctx);
 				mergePreselectTimeTotal += Explain::Clock::now() - preselectStartTime;
 			}
+			if (propagateSort) {
+				copyParentSorting(*mQueryCopy, query);
+			}
 			const JoinedQuery& mQuery{mQueryCopy ? *mQueryCopy : mq};
 			ConstQueryImpl mQueryImpl = Impl(mQuery);
 			MainSelectCtx mctx(mQueryImpl, query, &result.GetFloatVectorsHolder());
 			if (mQueryCopy.has_value()) {
-				assertrx_throw(hasSubqueries);
 				mctx.subQueriesExplains = std::move(mSubQueryExplains);
 			}
 
@@ -239,46 +291,95 @@ void RxSelector::DoSelect(ConstQueryImpl q, std::optional<Query>& queryCopy, Loc
 			if (counter >= std::numeric_limits<uint8_t>::max()) [[unlikely]] {
 				throw Error(errForbidden, "Too many namespaces requested in query result: {}", counter);
 			}
+			mctx.mergedQueryId = static_cast<uint8_t>(counter);
 			mctx.isMergeQuery = IsMergeQuery_True;
 			mctx.queryRankType = commonQueryRankType;
 			mctx.functions = &func;
 			mctx.contextCollectingMode = true;
-			mctx.limit = commonLimit;
-			mctx.offset = commonOffset;
+			if (totalForRepeatedNs && namespaceIsRepeated(query, mQueryImpl.NsName())) {
+				mctx.limit = QueryEntry::kDefaultLimit;
+				mctx.offset = QueryEntry::kDefaultOffset;
+			} else {
+				mctx.limit = commonLimit;
+				mctx.offset = commonOffset;
+			}
 			mctx.explain = &explain;
+			auto& mjs = mergeJoinItemsProcessors.emplace_back();
 			if (withJoins && !mQueryImpl.JoinQueries().empty()) {
 				const auto preselectStartTime = Explain::Clock::now();
-				auto& mjs = mergeJoinItemsProcessors.emplace_back(joins::ItemsProcessor::BuildForQuery(
-					mctx.nsid, mQueryImpl, result, locks, func, joinQueryResultsContexts, IsModifyQuery_False, ctx));
+				mjs = joins::ItemsProcessor::BuildForQuery(mctx.nsid, mQueryImpl, result, locks, func, joinQueryResultsContexts,
+														   IsModifyQuery_False, ctx);
 				mctx.joinItemsProcessors = mjs;
 				mergePreselectTimeTotal += Explain::Clock::now() - preselectStartTime;
 			}
 			mctx.joinPreSelectTimeTotal = mergePreselectTimeTotal;
 			mctx.requiresCrashTracking = true;
+			const size_t rowsBefore = result.Items().Size();
 			mns->Select(result, mctx, ctx);
 			result.AddNamespace(mns, true);
+			mergeNs.push_back(mns.get());
+			mergeNsRows.push_back(result.Items().Size() - rowsBefore);
+			if (propagateSort) {
+				mergeParsedSort.emplace_back(std::move(mctx.parsedSortExpressions));
+			}
 		}
-		const auto mergedSortStart = q.NeedExplain() ? Explain::Clock::now() : Explain::Clock::time_point();
+		assertrx_dbg(!propagateSort || mergeParsedSort.size() == query.MergeQueries().size() + 1);
 		ItemRefVector& itemRefVec = result.Items();
 		if (query.Offset() >= itemRefVec.Size()) {
 			result.Erase(itemRefVec.begin(), itemRefVec.end());
 		} else {
-			switch (commonRankOrdering) {
-				case RankOrdering::Off:
-					boost::sort::pdqsort(itemRefVec.begin().NotRanked(), itemRefVec.end().NotRanked(), ItemRefLess());
-					break;
-				case RankOrdering::Asc:
-					boost::sort::pdqsort(itemRefVec.begin().Ranked(), itemRefVec.end().Ranked(), ItemRefRankedLess<RankOrdering::Asc>());
-					break;
-				case RankOrdering::Desc:
-					boost::sort::pdqsort(itemRefVec.begin().Ranked(), itemRefVec.end().Ranked(), ItemRefRankedLess<RankOrdering::Desc>());
-					break;
+			const auto mergedSortStart = q.NeedExplain() ? Explain::Clock::now() : Explain::Clock::time_point();
+			if (propagateSort) {
+				std::vector<joins::ItemsProcessors> joinProcs;
+				joinProcs.reserve(mergeNs.size());
+				joinProcs.emplace_back(std::move(mainJoinItemsProcessors));
+				for (auto& procs : mergeJoinItemsProcessors) {
+					joinProcs.emplace_back(std::move(procs));
+				}
+				sortMergedItems(itemRefVec, mergeNs, mergeParsedSort, query.GetSortingEntries(), query.ForcedSortOrder(), joinProcs,
+								result.Joined());
+			} else {
+				switch (commonRankOrdering) {
+					case RankOrdering::Off:
+						assertrx_dbg(!itemRefVec.IsRanked());
+						boost::sort::pdqsort(itemRefVec.begin().NotRanked(), itemRefVec.end().NotRanked(), ItemRefLess());
+						break;
+					case RankOrdering::Asc:
+						boost::sort::pdqsort(itemRefVec.begin().Ranked(), itemRefVec.end().Ranked(),
+											 ItemRefRankedLess<RankOrdering::Asc>());
+						break;
+					case RankOrdering::Desc:
+						boost::sort::pdqsort(itemRefVec.begin().Ranked(), itemRefVec.end().Ranked(),
+											 ItemRefRankedLess<RankOrdering::Desc>());
+						break;
+				}
 			}
-			if (query.HasOffset()) {
-				result.Erase(itemRefVec.begin(), itemRefVec.begin() + query.Offset());
+			const size_t itemsBeforeDedup = itemRefVec.Size();
+			deduplicateMergedItems(itemRefVec, mergeNs, mergeNsRows, result);
+			adjustAggregationsAfterDedup(result, mergeNs, itemsBeforeDedup);
+			{  // Min, max and sum do not return rows. Rows are present here only when sum or count had to be recalculated.
+				size_t nonCount = 0;
+				bool nonDistinct = false;
+				for (const AggregateEntry& agg : query.Aggregations()) {
+					if (agg.Type() == AggCount || agg.Type() == AggCountCached) {
+						continue;
+					}
+					++nonCount;
+					nonDistinct = nonDistinct || agg.Type() != AggDistinct;
+				}
+				if (nonCount > 1 || (nonCount == 1 && nonDistinct)) {
+					result.Erase(itemRefVec.begin(), itemRefVec.end());
+				}
 			}
-			if (itemRefVec.Size() > query.Limit()) {
-				result.Erase(itemRefVec.begin() + query.Limit(), itemRefVec.end());
+			if (query.Offset() >= itemRefVec.Size()) {
+				result.Erase(itemRefVec.begin(), itemRefVec.end());
+			} else {
+				if (query.HasOffset()) {
+					result.Erase(itemRefVec.begin(), itemRefVec.begin() + query.Offset());
+				}
+				if (itemRefVec.Size() > query.Limit()) {
+					result.Erase(itemRefVec.begin() + query.Limit(), itemRefVec.end());
+				}
 			}
 			if (q.NeedExplain()) [[unlikely]] {
 				explain.AddSortTime(Explain::Clock::now() - mergedSortStart);
