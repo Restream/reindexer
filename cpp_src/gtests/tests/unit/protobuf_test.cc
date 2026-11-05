@@ -7,6 +7,8 @@
 #include "reindexer_api.h"
 #include "schema.pb.h"
 
+namespace reindexer_tests {
+
 const int64_t KIdValue = 13;
 const std::string kNameValue = "John White Snow";
 const int64_t kAgeValue = 21;
@@ -46,15 +48,9 @@ TEST_F(ReindexerApi, ProtobufConversionTest) {
 	// clang-format on
 
 	const std::string_view nsName = "conversion_namespace";
-	Error err = rt.reindexer->OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->SetSchema(nsName, schema);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	std::string protobufSchema;
-	err = rt.reindexer->GetSchema(nsName, ProtobufSchemaType, protobufSchema);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(nsName);
+	rt.SetSchema(nsName, schema);
+	std::ignore = rt.GetSchema(nsName, ProtobufSchemaType);
 
 	std::vector<double> numbers;
 
@@ -65,15 +61,14 @@ TEST_F(ReindexerApi, ProtobufConversionTest) {
 		auto nums = jsonBuilder.Array("numbers");
 		for (int i = 0; i < 10; ++i) {
 			numbers.emplace_back(double(rand() + 10 + i) + 0.11111f);
-			nums.Put(0, numbers.back());
+			nums.Put(reindexer::TagName::Empty(), numbers.back());
 		}
 	}
 	jsonBuilder.End();
 
-	Item item = rt.reindexer->NewItem(nsName);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	Item item(rt.NewItem(nsName));
 
-	err = item.FromJSON(wrser.Slice());
+	auto err = item.FromJSON(wrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::WrSerializer rrser;
@@ -128,18 +123,10 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 			  }
 			})z";
 	// clang-format on
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, reindexer::IndexDef("id", {"id"}, "hash", "int", IndexOpts().PK()));
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->SetSchema(default_namespace, schema);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	std::string protobufSchema;
-	err = rt.reindexer->GetSchema(default_namespace, ProtobufSchemaType, protobufSchema);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
+	rt.AddIndex(default_namespace, reindexer::IndexDef("id", {"id"}, "hash", "int", reindexer::IndexOpts().PK()));
+	rt.SetSchema(default_namespace, schema);
+	std::ignore = rt.GetSchema(default_namespace, ProtobufSchemaType);
 
 	std::vector<int> numVals;
 	std::vector<std::string> stringVals;
@@ -153,7 +140,7 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 			auto nums = nested.Array("nums");
 			for (int i = 0; i < 10; ++i) {
 				numVals.emplace_back(rand() + 10 + i);
-				nums.Put(0, numVals.back());
+				nums.Put(reindexer::TagName::Empty(), numVals.back());
 			}
 		}
 
@@ -161,24 +148,22 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 			auto strings = nested.Array("strings");
 			for (int i = 0; i < 10; ++i) {
 				stringVals.emplace_back(RandString());
-				strings.Put(0, stringVals.back());
+				strings.Put(reindexer::TagName::Empty(), stringVals.back());
 			}
 		}
 	}
 	jsonBuilder.End();
 
-	Item item = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	Item item(rt.NewItem(default_namespace));
 
-	err = item.FromJSON(wrser.Slice());
+	auto err = item.FromJSON(wrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::WrSerializer rrser;
 	err = item.GetProtobuf(rrser);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	Item item2 = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item2.Status().ok()) << item2.Status().what();
+	Item item2(rt.NewItem(default_namespace));
 	err = item2.FromProtobuf(rrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what() << wrser.Slice();
 	ASSERT_TRUE(item.GetJSON() == item2.GetJSON()) << item.GetJSON() << std::endl << std::endl << item2.GetJSON() << std::endl;
@@ -198,8 +183,7 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 }
 
 TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
 
 	// clang-format off
     const std::string jsonschema = R"xxx(
@@ -348,12 +332,8 @@ TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
                                    }    )xxx";
 	// clang-format on
 
-	err = rt.reindexer->SetSchema(default_namespace, jsonschema);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	std::string protobufSchema;
-	err = rt.reindexer->GetSchema(default_namespace, ProtobufSchemaType, protobufSchema);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.SetSchema(default_namespace, jsonschema);
+	std::ignore = rt.GetSchema(default_namespace, ProtobufSchemaType);
 
 	reindexer::WrSerializer wrser;
 	reindexer::JsonBuilder jsonBuilder(wrser);
@@ -385,7 +365,7 @@ TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
 				{
 					auto four = oneMoreNested.Array("four");
 					for (size_t i = 0; i < 10; ++i) {
-						auto item = four.Object(0);
+						auto item = four.Object();
 						item.Put("bigField", RandString());
 						item.Put("biggerField", double(11.11 + rand()));
 						item.Put("hugeField", int(33 + rand()));
@@ -396,22 +376,21 @@ TEST_F(ReindexerApi, ProtobufSchemaFromNsSchema) {
 	}
 	auto collection = jsonBuilder.Array("Collection");
 	for (int i = 0; i < 10; ++i) {
-		collection.Put(0, i);
+		collection.Put(reindexer::TagName::Empty(), i);
 	}
 	collection.End();
 	jsonBuilder.End();
 
-	Item item = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	Item item(rt.NewItem(default_namespace));
 
-	err = item.FromJSON(wrser.Slice());
+	auto err = item.FromJSON(wrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::WrSerializer rrser;
 	err = item.GetProtobuf(rrser);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	Item item2 = rt.reindexer->NewItem(default_namespace);
+	Item item2(rt.NewItem(default_namespace));
 	ASSERT_TRUE(item2.Status().ok()) << item2.Status().what();
 	err = item2.FromProtobuf(rrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -457,105 +436,105 @@ TEST_F(ReindexerApi, ProtobufEncodingTest) {
 	person.set_enabled(true);
 
 	reindexer::WrSerializer wrser;
-	reindexer::ProtobufBuilder builder(&wrser);
-	builder.Put(person.kNameFieldNumber, kNameValue);
-	builder.Put(person.kIdFieldNumber, KIdValue);
-	builder.Put(person.kAgeFieldNumber, kAgeValue);
-	builder.Put(person.kWeightFieldNumber, kWeightValue);
-	builder.Put(person.kEmailFieldNumber, kEmailValue);
+	reindexer::ProtobufBuilder builder(wrser);
+	builder.Put(reindexer::TagName(person.kNameFieldNumber), kNameValue);
+	builder.Put(reindexer::TagName(person.kIdFieldNumber), KIdValue);
+	builder.Put(reindexer::TagName(person.kAgeFieldNumber), kAgeValue);
+	builder.Put(reindexer::TagName(person.kWeightFieldNumber), kWeightValue);
+	builder.Put(reindexer::TagName(person.kEmailFieldNumber), kEmailValue);
 
-	auto addressBuilder = builder.Object(person.kAddressFieldNumber);
-	auto phones = addressBuilder.ArrayNotPacked(address->kPhonesFieldNumber);
+	auto addressBuilder = builder.Object(reindexer::TagName(person.kAddressFieldNumber));
+	auto phones = addressBuilder.ArrayNotPacked(reindexer::TagName(address->kPhonesFieldNumber));
 	for (size_t i = 0; i < 10; ++i) {
-		auto phone = phones.Object(0);
-		phone.Put(Person_Address_PhoneNumber::kNumberFieldNumber, kNumberValue + std::to_string(i));
-		phone.Put(Person_Address_PhoneNumber::kTypeFieldNumber, int64_t(kTypeValue + i));
+		auto phone = phones.Object();
+		phone.Put(reindexer::TagName(Person_Address_PhoneNumber::kNumberFieldNumber), kNumberValue + std::to_string(i));
+		phone.Put(reindexer::TagName(Person_Address_PhoneNumber::kTypeFieldNumber), int64_t(kTypeValue + i));
 	}
 	phones.End();
-	auto homes = addressBuilder.ArrayNotPacked(address->kHomesFieldNumber);
+	auto homes = addressBuilder.ArrayNotPacked(reindexer::TagName(address->kHomesFieldNumber));
 	for (size_t i = 0; i < 20; ++i) {
-		auto home = homes.Object(0);
-		home.Put(Person_Address_Home::kCityFieldNumber, kCityValue + std::to_string(i));
-		home.Put(Person_Address_Home::kStreetFieldNumber, kStreetValue + std::to_string(i));
+		auto home = homes.Object();
+		home.Put(reindexer::TagName(Person_Address_Home::kCityFieldNumber), kCityValue + std::to_string(i));
+		home.Put(reindexer::TagName(Person_Address_Home::kStreetFieldNumber), kStreetValue + std::to_string(i));
 	}
 	homes.End();
-	auto postalCodes = addressBuilder.ArrayNotPacked(address->kPostalcodesFieldNumber);
+	auto postalCodes = addressBuilder.ArrayNotPacked(reindexer::TagName(address->kPostalcodesFieldNumber));
 	for (size_t i = 0; i < 20; ++i) {
-		postalCodes.Put(0, kPostalCodeValue + std::to_string(i));
+		postalCodes.Put(reindexer::TagName::Empty(), kPostalCodeValue + std::to_string(i));
 	}
 	postalCodes.End();
 	addressBuilder.End();
-	auto friends = builder.ArrayNotPacked(person.kFriendsFieldNumber);
+	auto friends = builder.ArrayNotPacked(reindexer::TagName(person.kFriendsFieldNumber));
 	for (int64_t i = 0; i < 5; ++i) {
-		friends.Put(0, i);
+		friends.Put(reindexer::TagName::Empty(), i);
 	}
 	friends.End();
-	builder.Put(person.kSalaryFieldNumber, kSalaryValue);
-	auto bonuses = builder.ArrayPacked(person.kBonusesFieldNumber);
+	builder.Put(reindexer::TagName(person.kSalaryFieldNumber), kSalaryValue);
+	auto bonuses = builder.ArrayPacked(reindexer::TagName(person.kBonusesFieldNumber));
 	for (int64_t i = 0; i < 10; ++i) {
-		bonuses.Put(person.kBonusesFieldNumber, i);
+		bonuses.Put(reindexer::TagName(person.kBonusesFieldNumber), i);
 	}
 	bonuses.End();
 
-	auto indexedPackedDouble = builder.ArrayPacked(person.kIndexedPackedDoubleFieldNumber);
+	auto indexedPackedDouble = builder.ArrayPacked(reindexer::TagName(person.kIndexedPackedDoubleFieldNumber));
 	for (int i = 0; i < 10; ++i) {
-		indexedPackedDouble.Put(person.kIndexedPackedDoubleFieldNumber, double(i) + 0.55f);
+		indexedPackedDouble.Put(reindexer::TagName(person.kIndexedPackedDoubleFieldNumber), double(i) + 0.55f);
 	}
 	indexedPackedDouble.End();
 
-	auto indexedUnpackedDouble = builder.ArrayNotPacked(person.kIndexedUnpackedDoubleFieldNumber);
+	auto indexedUnpackedDouble = builder.ArrayNotPacked(reindexer::TagName(person.kIndexedUnpackedDoubleFieldNumber));
 	for (int i = 0; i < 10; ++i) {
-		indexedUnpackedDouble.Put(0, std::to_string(5 + i));
+		indexedUnpackedDouble.Put(reindexer::TagName::Empty(), std::to_string(5 + i));
 	}
 	indexedUnpackedDouble.End();
 
-	builder.Put(person.kEnabledFieldNumber, true);
+	builder.Put(reindexer::TagName(person.kEnabledFieldNumber), true);
 
 	builder.End();
 
 	Person person2;
 	person2.ParseFromArray(wrser.Buf(), wrser.Len());
-	EXPECT_TRUE(person.id() == person2.id());
-	EXPECT_TRUE(person.name() == person2.name());
-	EXPECT_TRUE(person.age() == person2.age());
-	EXPECT_TRUE(person.email() == person2.email());
-	EXPECT_TRUE(person.weight() == person2.weight());
-	EXPECT_TRUE(person.salary() == person2.salary());
-	ASSERT_TRUE(person.address().homes_size() == person2.address().homes_size());
+	EXPECT_EQ(person.id(), person2.id());
+	EXPECT_EQ(person.name(), person2.name());
+	EXPECT_EQ(person.age(), person2.age());
+	EXPECT_EQ(person.email(), person2.email());
+	EXPECT_EQ(person.weight(), person2.weight());
+	EXPECT_EQ(person.salary(), person2.salary());
+	ASSERT_EQ(person.address().homes_size(), person2.address().homes_size());
 	for (int j = 0; j < person.address().homes_size(); ++j) {
 		const auto& home = person.address().homes(j);
 		const auto& home2 = person2.address().homes(j);
-		EXPECT_TRUE(home.city() == home2.city());
-		EXPECT_TRUE(home.street() == home2.street());
+		EXPECT_EQ(home.city(), home2.city());
+		EXPECT_EQ(home.street(), home2.street());
 	}
-	ASSERT_TRUE(person.address().phones_size() == person2.address().phones_size());
+	ASSERT_EQ(person.address().phones_size(), person2.address().phones_size());
 	for (int j = 0; j < person.address().phones_size(); ++j) {
 		const auto& phone = person.address().phones(j);
 		const auto& phone2 = person2.address().phones(j);
-		EXPECT_TRUE(phone.number() == phone2.number());
-		EXPECT_TRUE(phone.type() == phone2.type());
+		EXPECT_EQ(phone.number(), phone2.number());
+		EXPECT_EQ(phone.type(), phone2.type());
 	}
-	ASSERT_TRUE(person.address().postalcodes_size() == person2.address().postalcodes_size());
+	ASSERT_EQ(person.address().postalcodes_size(), person2.address().postalcodes_size());
 	for (int j = 0; j < person.address().postalcodes_size(); ++j) {
-		EXPECT_TRUE(person.address().postalcodes(j) == person2.address().postalcodes(j));
+		EXPECT_EQ(person.address().postalcodes(j), person2.address().postalcodes(j));
 	}
-	ASSERT_TRUE(person.friends_size() == person2.friends_size());
+	ASSERT_EQ(person.friends_size(), person2.friends_size());
 	for (int j = 0; j < person.friends_size(); ++j) {
-		EXPECT_TRUE(person.friends(j) == person2.friends(j));
+		EXPECT_EQ(person.friends(j), person2.friends(j));
 	}
-	ASSERT_TRUE(person.bonuses_size() == person2.bonuses_size());
+	ASSERT_EQ(person.bonuses_size(), person2.bonuses_size());
 	for (int j = 0; j < person.bonuses_size(); ++j) {
-		EXPECT_TRUE(person.bonuses(j) == person2.bonuses(j));
+		EXPECT_EQ(person.bonuses(j), person2.bonuses(j));
 	}
-	ASSERT_TRUE(person.indexedpackeddouble_size() == person2.indexedpackeddouble_size());
+	ASSERT_EQ(person.indexedpackeddouble_size(), person2.indexedpackeddouble_size());
 	for (int j = 0; j < person.indexedpackeddouble_size(); ++j) {
-		EXPECT_TRUE(person.indexedpackeddouble(j) == person2.indexedpackeddouble(j));
+		EXPECT_EQ(person.indexedpackeddouble(j), person2.indexedpackeddouble(j));
 	}
-	ASSERT_TRUE(person.indexedunpackeddouble_size() == person2.indexedunpackeddouble_size());
+	ASSERT_EQ(person.indexedunpackeddouble_size(), person2.indexedunpackeddouble_size());
 	for (int j = 0; j < person.indexedunpackeddouble_size(); ++j) {
-		EXPECT_TRUE(person.indexedunpackeddouble(j) == person2.indexedunpackeddouble(j));
+		EXPECT_EQ(person.indexedunpackeddouble(j), person2.indexedunpackeddouble(j));
 	}
-	ASSERT_TRUE(person.enabled() == person2.enabled());
+	ASSERT_EQ(person.enabled(), person2.enabled());
 }
 
 TEST_F(ReindexerApi, ProtobufDecodingTest) {
@@ -688,29 +667,22 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
                           )xxx";
 	// clang-format on
 
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.OpenNamespace(default_namespace);
 
-	err = rt.reindexer->AddIndex(
-		default_namespace, reindexer::IndexDef("indexedPackedDouble", {"indexedPackedDouble"}, "tree", "double", IndexOpts().Array()));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.AddIndex(default_namespace,
+				reindexer::IndexDef("indexedPackedDouble", {"indexedPackedDouble"}, "tree", "double", reindexer::IndexOpts().Array()));
 
-	err = rt.reindexer->AddIndex(
-		default_namespace, reindexer::IndexDef("indexedUnpackedDouble", {"indexedUnpackedDouble"}, "tree", "string", IndexOpts().Array()));
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.AddIndex(default_namespace,
+				reindexer::IndexDef("indexedUnpackedDouble", {"indexedUnpackedDouble"}, "tree", "string", reindexer::IndexOpts().Array()));
 
-	err = rt.reindexer->SetSchema(default_namespace, jsonSchema);
-	ASSERT_TRUE(err.ok()) << err.what();
+	rt.SetSchema(default_namespace, jsonSchema);
+	std::ignore = rt.GetSchema(default_namespace, ProtobufSchemaType);
 
-	std::string protobufSchema;
-	err = rt.reindexer->GetSchema(default_namespace, ProtobufSchemaType, protobufSchema);
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	reindexer::Item nsItem = rt.reindexer->NewItem(default_namespace);
+	Item nsItem(rt.NewItem(default_namespace));
 	ASSERT_TRUE(nsItem.Status().ok()) << nsItem.Status().what();
 
 	reindexer::WrSerializer wrser;
-	reindexer::ProtobufBuilder builder(&wrser);
+	reindexer::ProtobufBuilder builder(wrser);
 	builder.Put(nsItem.GetFieldTag("name"), kNameValue);
 	builder.Put(nsItem.GetFieldTag("id"), KIdValue);
 	builder.Put(nsItem.GetFieldTag("age"), kAgeValue);
@@ -720,39 +692,39 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 	auto addressBuilder = builder.Object(nsItem.GetFieldTag("address"));
 	auto phones = addressBuilder.ArrayNotPacked(nsItem.GetFieldTag("phones"));
 	for (size_t i = 0; i < 10; ++i) {
-		auto phone = phones.Object(0);
+		auto phone = phones.Object();
 		phone.Put(nsItem.GetFieldTag("number"), kNumberValue + std::to_string(i));
 		phone.Put(nsItem.GetFieldTag("type"), int64_t(kTypeValue + i));
 	}
 	phones.End();
 	auto homes = addressBuilder.ArrayNotPacked(nsItem.GetFieldTag("homes"));
 	for (size_t i = 0; i < 20; ++i) {
-		auto home = homes.Object(0);
+		auto home = homes.Object();
 		home.Put(nsItem.GetFieldTag("city"), kCityValue + std::to_string(i));
 		home.Put(nsItem.GetFieldTag("street"), kStreetValue + std::to_string(i));
 	}
 	homes.End();
 	auto postalCodes = addressBuilder.ArrayNotPacked(nsItem.GetFieldTag("postalcodes"));
 	for (size_t i = 0; i < 20; ++i) {
-		postalCodes.Put(0, kPostalCodeValue + std::to_string(i));
+		postalCodes.Put(reindexer::TagName::Empty(), kPostalCodeValue + std::to_string(i));
 	}
 	postalCodes.End();
 	addressBuilder.End();
 	auto friends = builder.ArrayNotPacked(nsItem.GetFieldTag("friends"));
 	for (int64_t i = 0; i < 5; ++i) {
-		friends.Put(0, i);
+		friends.Put(reindexer::TagName::Empty(), i);
 	}
 	friends.End();
 	builder.Put(nsItem.GetFieldTag("salary"), kSalaryValue);
 	auto bonuses = builder.ArrayPacked(nsItem.GetFieldTag("bonuses"));
 	for (int64_t i = 0; i < 10; ++i) {
-		bonuses.Put(9, i);
+		bonuses.Put(reindexer::TagName(9), i);
 	}
 	bonuses.End();
 
 	auto indexedPackedDouble = builder.ArrayPacked(nsItem.GetFieldTag("indexedPackedDouble"));
 	for (int i = 0; i < 10; ++i) {
-		indexedPackedDouble.Put(0, double(i) + 0.55f);
+		indexedPackedDouble.Put(reindexer::TagName::Empty(), double(i) + 0.55f);
 	}
 	indexedPackedDouble.End();
 
@@ -760,7 +732,7 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 	auto indexedUnpackedDouble = builder.ArrayNotPacked(nsItem.GetFieldTag("indexedUnpackedDouble"));
 	for (int i = 0; i < 10; ++i) {
 		strings.emplace_back(std::string("BIG_DATA") + std::to_string(i + 1));
-		indexedUnpackedDouble.Put(0, strings.back());
+		indexedUnpackedDouble.Put(reindexer::TagName::Empty(), strings.back());
 	}
 	indexedUnpackedDouble.End();
 
@@ -768,20 +740,19 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 
 	builder.End();
 
-	Item item1 = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item1.Status().ok()) << item1.Status().what();
+	Item item1(rt.NewItem(default_namespace));
 
-	err = item1.FromProtobuf(wrser.Slice());
+	auto err = item1.FromProtobuf(wrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	Item item2 = rt.reindexer->NewItem(default_namespace);
+	Item item2(rt.NewItem(default_namespace));
 	ASSERT_TRUE(item2.Status().ok()) << item2.Status().what();
 
 	err = item2.FromJSON(item1.GetJSON());
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(item1.GetJSON() == item2.GetJSON());
 
-	Item item3 = rt.reindexer->NewItem(default_namespace);
+	Item item3(rt.NewItem(default_namespace));
 	ASSERT_TRUE(item3.Status().ok()) << item3.Status().what();
 
 	reindexer::WrSerializer protobufSer;
@@ -792,5 +763,7 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(item2.GetJSON() == item3.GetJSON());
 }
+
+}  // namespace reindexer_tests
 
 #endif

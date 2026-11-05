@@ -12,7 +12,7 @@ using reindexer::Error;
 class ServerImpl;
 class DBManager;
 
-class Server {
+class [[nodiscard]] Server {
 public:
 	Server(ServerMode mode = ServerMode::Builtin);
 	~Server();

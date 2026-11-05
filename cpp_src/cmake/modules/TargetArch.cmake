@@ -74,6 +74,8 @@ function(target_architecture output_var)
                 set(osx_arch_i386 TRUE)
             elseif("${osx_arch}" STREQUAL "x86_64")
                 set(osx_arch_x86_64 TRUE)
+	        elseif("${osx_arch}" STREQUAL "arm64")
+                set(osx_arch_arm64 TRUE)
             elseif("${osx_arch}" STREQUAL "ppc64" AND ppc_support)
                 set(osx_arch_ppc64 TRUE)
             else()
@@ -92,6 +94,10 @@ function(target_architecture output_var)
 
         if(osx_arch_x86_64)
             list(APPEND ARCH x86_64)
+        endif()
+
+        if(osx_arch_arm64)
+            list(APPEND ARCH aarch64)
         endif()
 
         if(osx_arch_ppc64)
@@ -138,3 +144,4 @@ function(target_architecture output_var)
 
     set(${output_var} "${ARCH}" PARENT_SCOPE)
 endfunction()
+

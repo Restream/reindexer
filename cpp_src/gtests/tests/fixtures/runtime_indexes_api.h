@@ -2,14 +2,18 @@
 
 #include "gtests/tools.h"
 #include "reindexer_api.h"
-#include "tools/randompoint.h"
 
-class RuntimeIndexesApi : public ReindexerApi {
+namespace reindexer_tests {
+
+class [[nodiscard]] RuntimeIndexesApi : public ReindexerApi {
 public:
 	void SetUp() override {
 		using namespace std::string_literals;
-		Error err = rt.reindexer->OpenNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
+		using reindexer::IndexOpts;
+
+		ReindexerApi::SetUp();
+
+		rt.OpenNamespace(default_namespace);
 
 		DefineNamespaceDataset(
 			default_namespace,
@@ -20,9 +24,7 @@ public:
 			 IndexDeclaration{(title + "+"s + price).c_str(), "hash", "composite", IndexOpts(), 0},
 			 IndexDeclaration{"bookid+bookid2", "hash", "composite", IndexOpts().PK(), 0}});
 
-		err = rt.reindexer->OpenNamespace(geom_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-
+		rt.OpenNamespace(geom_namespace);
 		DefineNamespaceDataset(geom_namespace, {IndexDeclaration{id, "hash", "int", IndexOpts().PK(), 0},
 												IndexDeclaration{qpoints, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Quadratic), 0},
 												IndexDeclaration{lpoints, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Linear), 0},
@@ -32,7 +34,8 @@ public:
 
 protected:
 	void FillNamespaces(size_t since, size_t till) {
-		using reindexer::randPoint;
+		using namespace reindexer_tests_tools;
+
 		for (size_t i = since; i < till; ++i) {
 			int id = static_cast<int>(i);
 
@@ -60,16 +63,13 @@ protected:
 	}
 
 	void AddRuntimeIntArrayIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeIntIndexName(indexNumber);
-		Error err = rt.reindexer->AddIndex(default_namespace, {indexName, "hash", "int", IndexOpts().Array()});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.AddIndex(default_namespace, {indexName, "hash", "int", IndexOpts().Array()});
 	}
 
-	void DropRuntimeIntArrayIndex(int indexNumber) {
-		reindexer::IndexDef idef(getRuntimeIntIndexName(indexNumber));
-		Error err = rt.reindexer->DropIndex(default_namespace, idef);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
+	void DropRuntimeIntArrayIndex(int indexNumber) { rt.DropIndex(default_namespace, getRuntimeIntIndexName(indexNumber)); }
 
 	void AddDataForRuntimeIntIndex(int indexNumber) {
 		std::string indexName = getRuntimeIntIndexName(indexNumber);
@@ -81,15 +81,17 @@ protected:
 	}
 
 	void AddRuntimeUuidIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeUuidIndexName(indexNumber);
-		Error err = rt.reindexer->AddIndex(default_namespace, {indexName, "hash", "uuid", IndexOpts()});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.AddIndex(default_namespace, {indexName, "hash", "uuid", IndexOpts()});
 	}
 
 	void AddRuntimeUuidArrayIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeUuidArrayIndexName(indexNumber);
-		Error err = rt.reindexer->AddIndex(default_namespace, {indexName, "hash", "uuid", IndexOpts().Array()});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.AddIndex(default_namespace, {indexName, "hash", "uuid", IndexOpts().Array()});
 	}
 
 	void AddDataForRuntimeUuidIndex(int indexNumber) {
@@ -97,9 +99,9 @@ protected:
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(default_namespace);
 			if (rand() % 2 == 0) {
-				item[indexName] = randStrUuid();
+				item[indexName] = reindexer_tests_tools::randStrUuid();
 			} else {
-				item[indexName] = randUuid();
+				item[indexName] = reindexer_tests_tools::randUuid();
 			}
 			Upsert(default_namespace, item);
 		}
@@ -114,48 +116,32 @@ protected:
 				const size_t s = rand() % 20;
 				uuids.reserve(s);
 				for (size_t i = 0; i < s; ++i) {
-					uuids.emplace_back(randStrUuid());
+					uuids.emplace_back(reindexer_tests_tools::randStrUuid());
 				}
-				item[indexName] = std::move(uuids);
+				item[indexName] = uuids;
 			} else {
 				std::vector<reindexer::Uuid> uuids;
 				const size_t s = rand() % 20;
 				uuids.reserve(s);
 				for (size_t i = 0; i < s; ++i) {
-					uuids.emplace_back(randUuid());
+					uuids.emplace_back(reindexer_tests_tools::randUuid());
 				}
-				item[indexName] = std::move(uuids);
+				item[indexName] = uuids;
 			}
 			Upsert(default_namespace, item);
 		}
 	}
 
-	void DropRuntimeUuidIndex(int indexNumber) {
-		reindexer::IndexDef idef(getRuntimeUuidIndexName(indexNumber));
-		Error err = rt.reindexer->DropIndex(default_namespace, idef);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
-
-	void DropRuntimeUuidArrayIndex(int indexNumber) {
-		reindexer::IndexDef idef(getRuntimeUuidArrayIndexName(indexNumber));
-		Error err = rt.reindexer->DropIndex(default_namespace, idef);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
+	void DropRuntimeUuidIndex(int indexNumber) { rt.DropIndex(default_namespace, getRuntimeUuidIndexName(indexNumber)); }
+	void DropRuntimeUuidArrayIndex(int indexNumber) { rt.DropIndex(default_namespace, getRuntimeUuidArrayIndexName(indexNumber)); }
+	void DropRuntimeStringIndex(int indexNumber) { rt.DropIndex(default_namespace, getRuntimeStringIndexName(indexNumber)); }
 
 	void AddRuntimeStringIndex(int indexNumber, bool pk = false) {
-		IndexOpts opts;
-		if (pk) {
-			opts.PK();
-		}
-		std::string indexName = getRuntimeStringIndexName(indexNumber);
-		Error err = rt.reindexer->AddIndex(default_namespace, {indexName, "hash", "string", opts});
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
+		using reindexer::IndexOpts;
 
-	void DropRuntimeStringIndex(int indexNumber) {
-		reindexer::IndexDef idef(getRuntimeStringIndexName(indexNumber));
-		Error err = rt.reindexer->DropIndex(default_namespace, idef);
-		ASSERT_TRUE(err.ok()) << err.what();
+		const IndexOpts opts = IndexOpts().PK(pk);
+		std::string indexName = getRuntimeStringIndexName(indexNumber);
+		rt.AddIndex(default_namespace, {indexName, "hash", "string", opts});
 	}
 
 	void AddDataForRuntimeStringIndex(int indexNumber) {
@@ -168,47 +154,47 @@ protected:
 	}
 
 	void AddRuntimeCompositeIndex(bool pk = false) {
+		using reindexer::IndexOpts;
+
 		std::string indexName(getRuntimeCompositeIndexName(pk));
-		Error err = rt.reindexer->AddIndex(default_namespace,
-										   {indexName, getRuntimeCompositeIndexParts(pk), "tree", "composite", IndexOpts().PK(pk)});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.AddIndex(default_namespace, {indexName, getRuntimeCompositeIndexParts(pk), "tree", "composite", IndexOpts().PK(pk)});
 	}
 
-	void DropRuntimeCompositeIndex(bool pk = false) {
-		reindexer::IndexDef idef(getRuntimeCompositeIndexName(pk));
-		Error err = rt.reindexer->DropIndex(default_namespace, idef);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
+	void DropRuntimeCompositeIndex(bool pk = false) { rt.DropIndex(default_namespace, getRuntimeCompositeIndexName(pk)); }
 
 	void AddRuntimeQPointIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeQPointIndexName(indexNumber);
-		Error err = rt.reindexer->AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Quadratic)});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Quadratic)});
 	}
 
 	void AddRuntimeLPointIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeLPointIndexName(indexNumber);
-		Error err = rt.reindexer->AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Linear)});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Linear)});
 	}
 
 	void AddRuntimeGPointIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeGPointIndexName(indexNumber);
-		Error err = rt.reindexer->AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Greene)});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::Greene)});
 	}
 
 	void AddRuntimeSPointIndex(int indexNumber) {
+		using reindexer::IndexOpts;
+
 		std::string indexName = getRuntimeSPointIndexName(indexNumber);
-		Error err = rt.reindexer->AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::RStar)});
-		ASSERT_TRUE(err.ok()) << err.what();
+		rt.AddIndex(geom_namespace, {indexName, "rtree", "point", IndexOpts().RTreeType(IndexOpts::RStar)});
 	}
 
 	void AddDataForRuntimeQPointIndex(int indexNumber) {
 		std::string indexName = getRuntimeQPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = reindexer::randPoint(10);
+			item[indexName] = reindexer_tests_tools::randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
@@ -217,7 +203,7 @@ protected:
 		std::string indexName = getRuntimeLPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = reindexer::randPoint(10);
+			item[indexName] = reindexer_tests_tools::randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
@@ -226,7 +212,7 @@ protected:
 		std::string indexName = getRuntimeGPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = reindexer::randPoint(10);
+			item[indexName] = reindexer_tests_tools::randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
@@ -235,40 +221,17 @@ protected:
 		std::string indexName = getRuntimeSPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = reindexer::randPoint(10);
+			item[indexName] = reindexer_tests_tools::randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 	}
 
-	void DropRuntimeQPointIndex(int indexNumber) {
-		reindexer::IndexDef idef(getRuntimeQPointIndexName(indexNumber));
-		Error err = rt.reindexer->DropIndex(geom_namespace, idef);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
+	void DropRuntimeQPointIndex(int indexNumber) { rt.DropIndex(geom_namespace, getRuntimeQPointIndexName(indexNumber)); }
+	void DropRuntimeLPointIndex(int indexNumber) { rt.DropIndex(geom_namespace, getRuntimeLPointIndexName(indexNumber)); }
+	void DropRuntimeGPointIndex(int indexNumber) { rt.DropIndex(geom_namespace, getRuntimeGPointIndexName(indexNumber)); }
+	void DropRuntimeSPointIndex(int indexNumber) { rt.DropIndex(geom_namespace, getRuntimeSPointIndexName(indexNumber)); }
 
-	void DropRuntimeLPointIndex(int indexNumber) {
-		reindexer::IndexDef idef(getRuntimeLPointIndexName(indexNumber));
-		Error err = rt.reindexer->DropIndex(geom_namespace, idef);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
-
-	void DropRuntimeGPointIndex(int indexNumber) {
-		reindexer::IndexDef idef(getRuntimeGPointIndexName(indexNumber));
-		Error err = rt.reindexer->DropIndex(geom_namespace, idef);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
-
-	void DropRuntimeSPointIndex(int indexNumber) {
-		reindexer::IndexDef idef(getRuntimeSPointIndexName(indexNumber));
-		Error err = rt.reindexer->DropIndex(geom_namespace, idef);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
-
-	void CheckSelectValidity(const Query& query) {
-		QueryResults qr;
-		Error err = rt.reindexer->Select(query, qr);
-		ASSERT_TRUE(err.ok()) << query.GetSQL() << '\n' << err.what();
-	}
+	void CheckSelectValidity(const Query& query) { std::ignore = rt.Select(query); }
 
 	std::string getRuntimeCompositeIndexName(bool pk) {
 		using namespace std::string_literals;
@@ -324,3 +287,5 @@ private:
 
 	static const int max_runtime_indexes = 10;
 };
+
+}  // namespace reindexer_tests

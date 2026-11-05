@@ -110,7 +110,7 @@ func (es *EventsStream) bgRoutine() {
 			es.setError(context.TODO(), err)
 			return
 		}
-		for i := 0; i < len(events); i++ {
+		for i := range events {
 			if val := events[i].streamsMask & (1 << es.id); val > 0 {
 				if events[i].err == nil {
 					select {

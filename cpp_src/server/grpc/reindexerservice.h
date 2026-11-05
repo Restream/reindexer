@@ -3,10 +3,10 @@
 #if defined(WITH_GRPC)
 #include "reindexer.grpc.pb.h"
 
-#include <unordered_map>
 #include "core/transaction/transaction.h"
 #include "net/ev/ev.h"
-#include "tools/serializer.h"
+#include "server/loggerwrapper.h"
+#include "txregistry.h"
 
 namespace reindexer_server {
 class DBManager;
@@ -15,13 +15,15 @@ class DBManager;
 namespace reindexer {
 
 class Reindexer;
+class WrSerializer;
 
 namespace grpc {
 
-class ReindexerService : public Reindexer::Service {
+class [[nodiscard]] ReindexerService : public Reindexer::Service {
 public:
 	using Base = Reindexer::Service;
-	ReindexerService(reindexer_server::DBManager& dbMgr, std::chrono::seconds txIdleTimeout, reindexer::net::ev::dynamic_loop& loop);
+	ReindexerService(reindexer_server::DBManager& dbMgr, std::chrono::seconds txIdleTimeout, reindexer::net::ev::dynamic_loop& loop,
+					 reindexer_server::LoggerWrapper logger);
 	ReindexerService(const ReindexerService&) = delete;
 	ReindexerService(ReindexerService&&) = delete;
 	ReindexerService& operator=(const ReindexerService&) = delete;
@@ -47,8 +49,8 @@ public:
 								 EnumDatabasesResponse* response) override;
 	::grpc::Status ModifyItem(::grpc::ServerContext* context,
 							  ::grpc::ServerReaderWriter<ErrorResponse, ModifyItemRequest>* stream) override;
-	::grpc::Status SelectSql(::grpc::ServerContext* context, const SelectSqlRequest* request,
-							 ::grpc::ServerWriter<QueryResultsResponse>* writer) override;
+	::grpc::Status ExecSql(::grpc::ServerContext* context, const SqlRequest* request,
+						   ::grpc::ServerWriter<QueryResultsResponse>* writer) override;
 	::grpc::Status Select(::grpc::ServerContext* context, const SelectRequest* request,
 						  ::grpc::ServerWriter<QueryResultsResponse>* writer) override;
 	::grpc::Status Update(::grpc::ServerContext* context, const UpdateRequest* request,
@@ -68,13 +70,37 @@ public:
 									   ErrorResponse* response) override;
 
 private:
-	struct TxData {
-		std::shared_ptr<Transaction> tx;
-		steady_clock_w::time_point txDeadline;
-		std::string dbName, nsName;
+	struct [[nodiscard]] RequestResult {
+		RequestResult(const Error& err, ::grpc::Status grpcStatus = ::grpc::Status::OK) : err(err), grpcStatus(std::move(grpcStatus)) {}
+		RequestResult(Error&& err, ::grpc::Status grpcStatus = ::grpc::Status::OK)
+			: err(std::move(err)), grpcStatus(std::move(grpcStatus)) {}
+		RequestResult(::grpc::Status grpcStatus) : grpcStatus(std::move(grpcStatus)) {}
+		Error err;
+		::grpc::Status grpcStatus{::grpc::Status::OK};
 	};
 
-	Error execSqlQueryByType(QueryResults& res, const SelectSqlRequest& request);
+	class [[nodiscard]] TxGuard {
+	public:
+		TxGuard() = default;
+		TxGuard(TxRegistry& registry, uint64_t id, TxRegistry::TxData data) noexcept;
+		~TxGuard() { Release(); }
+		TxGuard(TxGuard&& o) noexcept;
+		TxGuard& operator=(TxGuard&& o) noexcept;
+		TxGuard(const TxGuard&) = delete;
+		TxGuard& operator=(const TxGuard&) = delete;
+
+		void Release();
+		std::shared_ptr<Transaction>& tx() noexcept { return data_.tx; }
+		const std::string& dbName() const noexcept { return data_.dbName; }
+		const std::string& nsName() const noexcept { return data_.nsName; }
+
+	private:
+		TxRegistry* registry_ = nullptr;
+		uint64_t id_ = 0;
+		TxRegistry::TxData data_;
+	};
+
+	Error execSqlQueryByType(QueryResults& res, const SqlRequest& request);
 	static ::grpc::Status buildQueryResults(QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer, const OutputFlags& opts);
 	static Error buildItems(WrSerializer& wrser, QueryResults& qr, const OutputFlags& opts);
 
@@ -85,17 +111,37 @@ private:
 	void removeExpiredTxCb(reindexer::net::ev::periodic&, int);
 
 	template <typename ItT>
+	static Error packCJSONItemParams(WrSerializer& wrser, ItT& it, const OutputFlags& opts);
+	template <typename ItT>
 	static Error packCJSONItem(WrSerializer& wrser, ItT& it, const OutputFlags& opts);
 	static void packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr);
 
 	Error executeQuery(const std::string& dbName, const Query& q, QueryType type, reindexer::QueryResults& qr);
-	Error getTx(uint64_t id, TxData& txData);
+	Error getTx(uint64_t id, TxGuard& tx);
+
+	::grpc::Status log(::grpc::ServerContext* context, std::string_view method, std::string_view dbName, const RequestResult& result) const;
+	::grpc::Status log(::grpc::ServerContext* context, std::string_view method, std::string_view dbName,
+					   const ::grpc::Status& grpcStatus) const;
+
+	template <typename Handler>
+	::grpc::Status handleRequest(::grpc::ServerContext* context, const std::string_view& dbName, std::string_view method,
+								 Handler&& handler) const {
+		try {
+			RequestResult result{handler()};
+			return log(context, method, dbName, result);
+		} catch (const Error& err) {
+			return log(context, method, dbName, RequestResult{err, ::grpc::Status{::grpc::StatusCode::INTERNAL, err.what()}});
+		} catch (const std::exception& err) {
+			return log(context, method, dbName, RequestResult{err, ::grpc::Status{::grpc::StatusCode::INTERNAL, err.what()}});
+		} catch (...) {
+			const Error err{errLogic, "Unknown exception"};
+			return log(context, method, dbName, RequestResult{err, ::grpc::Status{::grpc::StatusCode::INTERNAL, err.what()}});
+		}
+	}
 
 	reindexer_server::DBManager& dbMgr_;
-	std::mutex m_;
-	std::unordered_map<uint64_t, TxData> transactions_;
-	uint64_t txID_ = {0};
-	const std::chrono::seconds txIdleTimeout_;
+	reindexer_server::LoggerWrapper logger_;
+	TxRegistry txRegistry_;
 	reindexer::net::ev::timer expirationChecker_;
 };
 

@@ -40,13 +40,13 @@ class dynamic_loop;
 
 #ifdef HAVE_POSIX_LOOP
 #ifdef HAVE_EVENT_FD
-class loop_posix_base {
+class [[nodiscard]] loop_posix_base {
 public:
 	void enable_asyncs();
 	void send_async();
 
 protected:
-	loop_posix_base();
+	loop_posix_base() = default;
 	~loop_posix_base();
 	bool check_async(int fd);
 
@@ -54,13 +54,13 @@ protected:
 	dynamic_loop* owner_ = nullptr;
 };
 #else	// HAVE_EVENT_FD
-class loop_posix_base {
+class [[nodiscard]] loop_posix_base {
 public:
 	void enable_asyncs();
 	void send_async();
 
 protected:
-	loop_posix_base();
+	loop_posix_base() = default;
 	~loop_posix_base();
 	bool check_async(int fd);
 
@@ -70,7 +70,7 @@ protected:
 #endif	// HAVE_EVENT_FD
 
 class loop_poll_backend_private;
-class loop_poll_backend : public loop_posix_base {
+class [[nodiscard]] loop_poll_backend : public loop_posix_base {
 public:
 	loop_poll_backend();
 	~loop_poll_backend();
@@ -85,7 +85,7 @@ protected:
 };
 
 class loop_select_backend_private;
-class loop_select_backend : public loop_posix_base {
+class [[nodiscard]] loop_select_backend : public loop_posix_base {
 public:
 	loop_select_backend();
 	~loop_select_backend();
@@ -102,7 +102,7 @@ protected:
 
 #ifdef HAVE_EPOLL_LOOP
 class loop_epoll_backend_private;
-class loop_epoll_backend : public loop_posix_base {
+class [[nodiscard]] loop_epoll_backend : public loop_posix_base {
 public:
 	loop_epoll_backend();
 	~loop_epoll_backend();
@@ -119,7 +119,7 @@ protected:
 
 #ifdef HAVE_WSA_LOOP
 class loop_wsa_backend_private;
-class loop_wsa_backend {
+class [[nodiscard]] loop_wsa_backend {
 public:
 	loop_wsa_backend();
 	~loop_wsa_backend();
@@ -142,7 +142,7 @@ class io;
 class timer;
 class async;
 class sig;
-class dynamic_loop {
+class [[nodiscard]] dynamic_loop {
 	friend class loop_ref;
 	friend class loop_epoll_backend;
 	friend class loop_poll_backend;
@@ -155,26 +155,8 @@ public:
 	~dynamic_loop();
 	void run();
 	void break_loop() noexcept { break_ = true; }
-	void spawn(std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
-		auto tid = std::this_thread::get_id();
-		if (coroTid_ != std::thread::id() && coroTid_ != tid) {
-			// Every coroutine has to be spawned from the same thread
-			assertrx(false);
-		} else {
-			coroTid_ = tid;
-		}
-		auto id = coroutine::create(std::move(func), stack_size);
-		new_tasks_.emplace_back(id);
-	}
-	void spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
-		wg.add(1);
-		spawn(
-			[f = std::move(func), &wg]() {	// NOLINT(*.NewDeleteLeaks) False positive
-				coroutine::wait_group_guard wgg(wg);
-				f();
-			},
-			stack_size);
-	}
+	void spawn(std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit);
+	void spawn(coroutine::wait_group& wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit);
 	template <typename Rep, typename Period>
 	void sleep(std::chrono::duration<Rep, Period> dur);
 	template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename TerminateT>
@@ -194,20 +176,20 @@ protected:
 	void set(timer* watcher, double t);
 	void set(async* watcher);
 	void set(sig* watcher);
-	void stop(int fd);
-	void stop(timer* watcher);
-	void stop(async* watcher);
-	void stop(sig* watcher);
-	void send(async* watcher);
+	void stop(int fd) noexcept;
+	void stop(timer* watcher) noexcept;
+	void stop(async* watcher) noexcept;
+	void stop(sig* watcher) noexcept;
+	void send(async* watcher) noexcept;
 	bool is_active(const timer* watcher) const noexcept;
 
 	void io_callback(int fd, int events);
 	void async_callback();
 
 	void set_coro_cb();
-	void remove_coro_cb();
+	void remove_coro_cb() noexcept;
 
-	struct fd_handler {
+	struct [[nodiscard]] fd_handler {
 		int emask_ = 0;
 		int idx = -1;
 		io* watcher_ = nullptr;
@@ -240,7 +222,7 @@ protected:
 #endif
 };
 
-class loop_ref {
+class [[nodiscard]] loop_ref {
 	friend class io;
 	friend class timer;
 	friend class sig;
@@ -303,7 +285,7 @@ protected:
 	dynamic_loop* loop_ = nullptr;
 };
 
-class io {
+class [[nodiscard]] io {
 	friend class dynamic_loop;
 
 public:
@@ -339,7 +321,7 @@ protected:
 	}
 	std::function<void(io& watcher, int events)> func_ = nullptr;
 };
-class timer {
+class [[nodiscard]] timer {
 	friend class dynamic_loop;
 
 public:
@@ -370,7 +352,7 @@ public:
 	steady_clock_w::time_point deadline_;
 
 protected:
-	struct coro_t {};
+	struct [[nodiscard]] coro_t {};
 	timer(coro_t) noexcept : in_coro_storage_(true) {}
 
 	void callback(int tv) {
@@ -398,7 +380,7 @@ void dynamic_loop::sleep(std::chrono::duration<Rep, Period> dur) {
 	auto id = coroutine::current();
 	if (id) {
 		timer tm(timer::coro_t{});
-		tm.set([id](timer&, int) { coroutine::resume(id); });
+		tm.set([id](timer&, int) { std::ignore = coroutine::resume(id); });
 		tm.set(*this);
 		const double awaitTime = std::chrono::duration_cast<std::chrono::microseconds>(dur).count();
 		tm.start(awaitTime / 1e6);
@@ -422,7 +404,7 @@ void dynamic_loop::granular_sleep(std::chrono::duration<Rep1, Period1> dur, std:
 	}
 }
 
-class sig {
+class [[nodiscard]] sig {
 	friend class dynamic_loop;
 
 public:
@@ -461,7 +443,7 @@ protected:
 	int signum_ = 0;
 };
 
-class async {
+class [[nodiscard]] async {
 	friend class dynamic_loop;
 
 public:

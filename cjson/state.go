@@ -71,7 +71,7 @@ func (state *State) makeStructCache() {
 	}
 }
 
-func initCtagsCache(dec *Decoder, item interface{}) {
+func initCtagsCache(dec *Decoder, item any) {
 	cachePtr := &ctagsCache{missing: make(missingTagsCache)}
 
 	dec.state.sCacheLock.Lock()
@@ -84,7 +84,7 @@ func initCtagsCache(dec *Decoder, item interface{}) {
 	dec.ctagsCache = cachePtr
 }
 
-func (state *State) NewDecoder(item interface{}, loggerOwner LoggerOwner) Decoder {
+func (state *State) NewDecoder(item any, loggerOwner LoggerOwner) Decoder {
 	dec := Decoder{
 		state:       state,
 		loggerOwner: loggerOwner,

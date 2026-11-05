@@ -1,3 +1,5 @@
+#include <filesystem>
+
 #include "resources_wrapper.h"
 
 #ifdef LINK_RESOURCES
@@ -10,9 +12,15 @@ DocumentStatus web::fsStatus(const std::string& target) {
 	if (webRoot_.empty()) {
 		return DocumentStatus{};
 	}
+
+	const auto normalizedTarget = std::filesystem::path(target).lexically_normal();
+	if (normalizedTarget.has_root_path() || (!normalizedTarget.empty() && *normalizedTarget.begin() == "..")) {
+		return {reindexer::fs::StatError};
+	}
+
 	DocumentStatus status;
 	status.fstatus = reindexer::fs::Stat(webRoot_ + target);
-	if (status.fstatus == reindexer::fs::StatError) {
+	if (status.fstatus == reindexer::fs::StatNotFound) {
 		using reindexer::net::http::kGzSuffix;
 		status.fstatus = reindexer::fs::Stat(std::string(webRoot_).append(target).append(kGzSuffix));
 		if (status.fstatus == reindexer::fs::StatFile) {
@@ -25,7 +33,7 @@ DocumentStatus web::fsStatus(const std::string& target) {
 DocumentStatus web::stat(const std::string& target) {
 	auto fsRes = fsStatus(target);
 #ifdef LINK_RESOURCES
-	if (fsRes.fstatus == reindexer::fs::StatError) {
+	if (fsRes.fstatus == reindexer::fs::StatNotFound) {
 		using reindexer::net::http::kGzSuffix;
 		auto& table = cmrc::detail::table_instance();
 
@@ -46,9 +54,12 @@ DocumentStatus web::stat(const std::string& target) {
 }
 
 int web::file(Context& ctx, HttpStatusCode code, const std::string& target, bool isGzip, bool withCache) {
-#ifdef LINK_RESOURCES
 	auto fsRes = fsStatus(target);
 	if (fsRes.fstatus == reindexer::fs::StatError) {
+		return ctx.String(reindexer::net::http::StatusForbidden, "The access to the file is forbidden");
+	}
+#ifdef LINK_RESOURCES
+	if (fsRes.fstatus == reindexer::fs::StatNotFound) {
 		using reindexer::net::http::kGzSuffix;
 
 		const auto& table = cmrc::detail::table_instance();

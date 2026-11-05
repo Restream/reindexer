@@ -1,11 +1,34 @@
 #include "config.h"
 
+#include <filesystem>
+
 #include "args/args.hpp"
 #include "core/storage/storagefactory.h"
+#include "reindexer_version.h"
+#include "tools/catch_and_return.h"
 #include "tools/fsops.h"
 #include "yaml-cpp/yaml.h"
 
+#include <filesystem>
+
 namespace reindexer_server {
+
+static Error makeWebRootAbsolute(std::string& webRoot) noexcept {
+	try {
+		const std::filesystem::path path(webRoot);
+		if (webRoot.empty() || path.is_absolute()) {
+			return {};
+		}
+
+		std::error_code ec;
+		auto absolutePath = std::filesystem::absolute(path, ec);
+		if (ec) {
+			return Error(errParams, "Unable to make web root path '{}' absolute: {}", webRoot, ec.message());
+		}
+		webRoot = absolutePath.lexically_normal().string();
+		return {};
+	} CATCH_AND_RETURN
+}
 
 void ServerConfig::Reset() {
 	args_.clear();
@@ -21,10 +44,16 @@ void ServerConfig::Reset() {
 	RPCUnixThreadingMode = kSharedThreading;
 	HttpThreadingMode = kSharedThreading;
 	LogLevel = "info";
+	ServerLogLevel.clear();
+	CoreLogLevel.clear();
+	HttpLogLevel.clear();
+	RpcLogLevel.clear();
+	GrpcLogLevel.clear();
 	ServerLog = "stdout";
 	CoreLog = "stdout";
 	HttpLog = "stdout";
 	RpcLog = "stdout";
+	GrpcLog.clear();
 	AllowNamespaceLeak = true;
 #ifndef _WIN32
 	StoragePath = "/tmp/reindex";
@@ -43,7 +72,6 @@ void ServerConfig::Reset() {
 	EnablePrometheus = false;
 	PrometheusCollectPeriod = std::chrono::milliseconds(1000);
 	DebugAllocs = false;
-	Autorepair = false;
 	EnableConnectionsStats = true;
 	TxIdleTimeout = std::chrono::seconds(600);
 	RPCQrIdleTimeout = std::chrono::seconds(600);
@@ -51,9 +79,12 @@ void ServerConfig::Reset() {
 	httpWriteTimeout_ = kDefaultHttpWriteTimeout;
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
-	MaxHttpReqSize = 2 * 1024 * 1024;
+	MaxHttpReqSize = 8 * 1024 * 1024;
+	MaxHttpRspSize = 1024 * 1024 * 1024;
 	AllocatorCacheLimit = -1;
 	AllocatorCachePart = -1;
+	// 0: thread count is chosen automatically based on the number of CPU cores.
+	BackgroundThreads = 0;
 }
 
 reindexer::Error ServerConfig::ParseYaml(const std::string& yaml) {
@@ -62,20 +93,23 @@ reindexer::Error ServerConfig::ParseYaml(const std::string& yaml) {
 		YAML::Node root = YAML::Load(yaml);
 		err = fromYaml(root);
 	} catch (const YAML::Exception& ex) {
-		err = Error(errParseYAML, "Error with config string. Reason: '%s'", ex.what());
+		err = Error(errParseYAML, "Error with config string. Reason: '{}'", ex.what());
 	}
-	return err;
+	return err.ok() ? makeWebRootAbsolute(WebRoot) : err;
 }
 
 Error ServerConfig::ParseFile(const std::string& filePath) {
 	Error err;
 	try {
+		if (!std::filesystem::is_regular_file(filePath)) {
+			return Error(errParams, "'{}' is not a regular file", filePath);
+		}
 		YAML::Node root = YAML::LoadFile(filePath);
 		err = fromYaml(root);
 	} catch (const YAML::Exception& ex) {
-		err = Error(errParseYAML, "Error with config file '%s'. Reason: %s", filePath, ex.what());
+		err = Error(errParseYAML, "Error with config file '{}'. Reason: {}", filePath, ex.what());
 	}
-	return err;
+	return err.ok() ? makeWebRootAbsolute(WebRoot) : err;
 }
 
 Error ServerConfig::ParseCmd(int argc, char* argv[]) {
@@ -87,6 +121,8 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 
 	args::ArgumentParser parser("reindexer server");
 	args::HelpFlag help(parser, "help", "Show this message", {'h', "help"});
+	args::ActionFlag version(parser, "", "Reindexer version", {'v', "version"},
+							 []() { throw Error(errLogic, fmt::format("Reindexer version: {}", REINDEX_VERSION)); });
 	args::Flag securityF(parser, "", "Enable per-user security", {"security"});
 	args::ValueFlag<std::string> configF(parser, "CONFIG", "Path to reindexer config file", {'c', "config"}, args::Options::Single);
 	args::Flag startWithErrorsF(parser, "", "Allow to start reindexer with DB's load erros", {"startwitherrors"});
@@ -103,7 +139,7 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	}
 	args::ValueFlag<std::string> storageEngineF(dbGroup, "NAME", "'reindexer' storage engine (" + availabledStorages + ")", {'e', "engine"},
 												StorageEngine, args::Options::Single);
-	args::Flag autorepairF(dbGroup, "", "Enable autorepair for storages after unexpected shutdowns", {"autorepair"});
+	args::Flag autorepairF(dbGroup, "", "Deprecated. Does nothing", {"autorepair"});
 	args::Flag disableNamespaceLeakF(dbGroup, "", "Disable namespaces leak on database destruction (may slow down server's termination)",
 									 {"disable-ns-leak"});
 
@@ -133,8 +169,10 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 													   {"urpc-threading"}, RPCUnixThreadingMode, args::Options::Single);
 #endif	// _WIN32
 	args::ValueFlag<size_t> MaxHttpReqSizeF(
-		netGroup, "", "Max HTTP request size in bytes. Default value is 2 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
+		netGroup, "", "Max HTTP request size in bytes. Default value is 8 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
 		{"max-http-req"}, MaxHttpReqSize, args::Options::Single);
+	args::ValueFlag<size_t> MaxHttpRspSizeF(netGroup, "", "Max HTTP response size in bytes. Default value is 1 GB. 0 is 'unlimited'",
+											{"max-http-rsp"}, MaxHttpRspSize, args::Options::Single);
 #if defined(WITH_GRPC)
 	args::ValueFlag<std::string> grpcAddrF(netGroup, "GPORT", "GRPC listen host:port", {'g', "grpcaddr"}, RPCAddr, args::Options::Single);
 	args::Flag grpcF(netGroup, "", "Enable gRpc service", {"grpc"});
@@ -163,12 +201,25 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	args::Flag clientsConnectionsStatF(metricsGroup, "", "Enable client connection statistic", {"clientsstats"});
 
 	args::Group logGroup(parser, "Logging options");
-	args::ValueFlag<std::string> logLevelF(logGroup, "", "log level (none, warning, error, info, trace)", {'l', "loglevel"}, LogLevel,
-										   args::Options::Single);
+	args::ValueFlag<std::string> logLevelF(logGroup, "",
+										   "default log level for all loggers (none, warning, error, info, trace). Use component-specific "
+										   "loglevel options to override it for a particular logger",
+										   {'l', "loglevel"}, LogLevel, args::Options::Single);
+	args::ValueFlag<std::string> serverLogLevelF(logGroup, "", "server log level (none, warning, error, info, trace)", {"server-loglevel"},
+												 ServerLogLevel, args::Options::Single);
+	args::ValueFlag<std::string> coreLogLevelF(logGroup, "", "core log level (none, warning, error, info, trace)", {"core-loglevel"},
+											   CoreLogLevel, args::Options::Single);
+	args::ValueFlag<std::string> httpLogLevelF(logGroup, "", "HTTP log level (none, warning, error, info, trace)", {"http-loglevel"},
+											   HttpLogLevel, args::Options::Single);
+	args::ValueFlag<std::string> rpcLogLevelF(logGroup, "", "RPC log level (none, warning, error, info, trace)", {"rpc-loglevel"},
+											  RpcLogLevel, args::Options::Single);
+	args::ValueFlag<std::string> grpcLogLevelF(logGroup, "", "GRPC log level (none, warning, error, info, trace)", {"grpc-loglevel"},
+											   GrpcLogLevel, args::Options::Single);
 	args::ValueFlag<std::string> serverLogF(logGroup, "", "Server log file", {"serverlog"}, ServerLog, args::Options::Single);
 	args::ValueFlag<std::string> coreLogF(logGroup, "", "Core log file", {"corelog"}, CoreLog, args::Options::Single);
 	args::ValueFlag<std::string> httpLogF(logGroup, "", "Http log file", {"httplog"}, HttpLog, args::Options::Single);
 	args::ValueFlag<std::string> rpcLogF(logGroup, "", "Rpc log file", {"rpclog"}, RpcLog, args::Options::Single);
+	args::ValueFlag<std::string> grpcLogF(logGroup, "", "GRPC log file", {"grpclog"}, GrpcLog, args::Options::Single);
 	args::Flag logAllocsF(netGroup, "", "Log operations allocs statistics", {'a', "allocs"});
 
 #ifndef _WIN32
@@ -201,12 +252,21 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 		{"allocator-cache-part"}, AllocatorCachePart, args::Options::Single);
 #endif
 
+	args::Group backgroundGroup(parser, "Background threads options");
+	args::ValueFlag<size_t> backgroundThreadsF(
+		backgroundGroup, "",
+		"Number of threads for process-wide background pool (fulltext and other indexes). "
+		"0 (default) means the thread count is chosen automatically based on the number of CPU cores",
+		{"background-threads"}, BackgroundThreads, args::Options::Single);
+
 	try {
 		parser.ParseCLI(argc, argv);
 	} catch (const args::Help&) {
 		return Error(errLogic, parser.Help());
+	} catch (const Error& v) {
+		return v;
 	} catch (const args::Error& e) {
-		return Error(errParams, "%s\n%s", e.what(), parser.Help());
+		return Error(errParams, "{}\n{}", e.what(), parser.Help());
 	}
 
 	if (configF) {
@@ -232,14 +292,26 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	if (startWithErrorsF) {
 		StartWithErrors = args::get(startWithErrorsF);
 	}
-	if (autorepairF) {
-		Autorepair = args::get(autorepairF);
-	}
 	if (disableNamespaceLeakF) {
 		AllowNamespaceLeak = !args::get(disableNamespaceLeakF);
 	}
 	if (logLevelF) {
 		LogLevel = args::get(logLevelF);
+	}
+	if (serverLogLevelF) {
+		ServerLogLevel = args::get(serverLogLevelF);
+	}
+	if (coreLogLevelF) {
+		CoreLogLevel = args::get(coreLogLevelF);
+	}
+	if (httpLogLevelF) {
+		HttpLogLevel = args::get(httpLogLevelF);
+	}
+	if (rpcLogLevelF) {
+		RpcLogLevel = args::get(rpcLogLevelF);
+	}
+	if (grpcLogLevelF) {
+		GrpcLogLevel = args::get(grpcLogLevelF);
 	}
 	if (httpAddrF) {
 		HTTPAddr = args::get(httpAddrF);
@@ -265,6 +337,9 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	}
 	if (MaxHttpReqSizeF) {
 		MaxHttpReqSize = args::get(MaxHttpReqSizeF);
+	}
+	if (MaxHttpRspSizeF) {
+		MaxHttpRspSize = args::get(MaxHttpRspSizeF);
 	}
 #ifndef _WIN32
 	if (rpcUnixAddrF) {
@@ -327,6 +402,9 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	if (rpcLogF) {
 		RpcLog = args::get(rpcLogF);
 	}
+	if (grpcLogF) {
+		GrpcLog = args::get(grpcLogF);
+	}
 	if (pprofF) {
 		DebugPprof = args::get(pprofF);
 	}
@@ -357,8 +435,11 @@ Error ServerConfig::ParseCmd(int argc, char* argv[]) {
 	if (maxUpdatesSizeF) {
 		MaxUpdatesSize = args::get(maxUpdatesSizeF);
 	}
+	if (backgroundThreadsF) {
+		BackgroundThreads = args::get(backgroundThreadsF);
+	}
 
-	return {};
+	return makeWebRootAbsolute(WebRoot);
 }
 
 void ServerConfig::SetHttpWriteTimeout(std::chrono::seconds val) noexcept {
@@ -377,12 +458,17 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		StoragePath = root["storage"]["path"].as<std::string>(StoragePath);
 		StorageEngine = root["storage"]["engine"].as<std::string>(StorageEngine);
 		StartWithErrors = root["storage"]["startwitherrors"].as<bool>(StartWithErrors);
-		Autorepair = root["storage"]["autorepair"].as<bool>(Autorepair);
 		LogLevel = root["logger"]["loglevel"].as<std::string>(LogLevel);
+		ServerLogLevel = root["logger"]["server_loglevel"].as<std::string>(ServerLogLevel);
+		CoreLogLevel = root["logger"]["core_loglevel"].as<std::string>(CoreLogLevel);
+		HttpLogLevel = root["logger"]["http_loglevel"].as<std::string>(HttpLogLevel);
+		RpcLogLevel = root["logger"]["rpc_loglevel"].as<std::string>(RpcLogLevel);
+		GrpcLogLevel = root["logger"]["grpc_loglevel"].as<std::string>(GrpcLogLevel);
 		ServerLog = root["logger"]["serverlog"].as<std::string>(ServerLog);
 		CoreLog = root["logger"]["corelog"].as<std::string>(CoreLog);
 		HttpLog = root["logger"]["httplog"].as<std::string>(HttpLog);
 		RpcLog = root["logger"]["rpclog"].as<std::string>(RpcLog);
+		GrpcLog = root["logger"]["grpclog"].as<std::string>(GrpcLog);
 		SslCertPath = root["net"]["ssl_cert"].as<std::string>(SslCertPath);
 		SslKeyPath = root["net"]["ssl_key"].as<std::string>(SslKeyPath);
 		HTTPAddr = root["net"]["httpaddr"].as<std::string>(HTTPAddr);
@@ -392,7 +478,12 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		RPCThreadingMode = root["net"]["rpc_threading"].as<std::string>(RPCThreadingMode);
 		HttpThreadingMode = root["net"]["http_threading"].as<std::string>(HttpThreadingMode);
 		WebRoot = root["net"]["webroot"].as<std::string>(WebRoot);
-		MaxUpdatesSize = root["net"]["maxupdatessize"].as<size_t>(MaxUpdatesSize);
+		if (root["net"]["max_updates_size"].IsDefined()) {
+			MaxUpdatesSize = root["net"]["max_updates_size"].as<size_t>(MaxUpdatesSize);
+		} else {
+			// Deprecated naming. TODO: Remove it some day
+			MaxUpdatesSize = root["net"]["maxupdatessize"].as<size_t>(MaxUpdatesSize);
+		}
 		EnableSecurity = root["net"]["security"].as<bool>(EnableSecurity);
 		EnableGRPC = root["net"]["grpc"].as<bool>(EnableGRPC);
 		GRPCAddr = root["net"]["grpcaddr"].as<std::string>(GRPCAddr);
@@ -401,7 +492,14 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 		RPCQrIdleTimeout = std::chrono::seconds(root["net"]["rpc_qr_idle_timeout"].as<int>(RPCQrIdleTimeout.count()));
 		const auto httpWriteTimeout = root["net"]["http_write_timeout"].as<int>(-1);
 		SetHttpWriteTimeout(std::chrono::seconds(httpWriteTimeout));
-		MaxHttpReqSize = root["net"]["max_http_body_size"].as<std::size_t>(MaxHttpReqSize);
+
+		MaxHttpRspSize = root["net"]["max_http_rsp_size"].as<std::size_t>(MaxHttpRspSize);
+		if (root["net"]["max_http_req_size"].IsDefined()) {
+			MaxHttpReqSize = root["net"]["max_http_req_size"].as<std::size_t>(MaxHttpReqSize);
+		} else {
+			// Deprecated naming. TODO: Remove it some day
+			MaxHttpReqSize = root["net"]["max_http_body_size"].as<std::size_t>(MaxHttpReqSize);
+		}
 		EnablePrometheus = root["metrics"]["prometheus"].as<bool>(EnablePrometheus);
 		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].as<int>(PrometheusCollectPeriod.count()));
 		EnableConnectionsStats = root["metrics"]["clientsstats"].as<bool>(EnableConnectionsStats);
@@ -414,11 +512,12 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node& root) {
 #endif
 		AllocatorCacheLimit = root["system"]["allocator_cache_limit"].as<int64_t>(AllocatorCacheLimit);
 		AllocatorCachePart = root["system"]["allocator_cache_part"].as<float_t>(AllocatorCachePart);
+		BackgroundThreads = root["system"]["background_threads"].as<size_t>(BackgroundThreads);
 
 		DebugAllocs = root["debug"]["allocs"].as<bool>(DebugAllocs);
 		DebugPprof = root["debug"]["pprof"].as<bool>(DebugPprof);
 	} catch (const YAML::Exception& ex) {
-		return Error(errParseYAML, "Unable to parse YML server config: %s", ex.what());
+		return Error(errParseYAML, "Unable to parse YML server config: {}", ex.what());
 	}
 	return {};
 }
