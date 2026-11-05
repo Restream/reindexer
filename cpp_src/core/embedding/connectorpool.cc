@@ -29,7 +29,8 @@ namespace {
 bool CheckConnect(HttpConnector& connector, const PoolConfig& config) noexcept {
 	try {
 		if (!connector.Connected()) {
-			return connector.Connect(config.connect_timeout_ms, config.read_timeout_ms, config.write_timeout_ms);
+			constexpr bool tcpNoDelay = true;
+			return connector.Connect(config.connect_timeout_ms, config.read_timeout_ms, config.write_timeout_ms, tcpNoDelay);
 		}
 
 		return true;

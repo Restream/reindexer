@@ -21,7 +21,7 @@ HttpConnector::~HttpConnector() {
 	// NOLINTEND(bugprone-empty-catch)
 }
 
-bool HttpConnector::Connect(size_t connect_timeout_ms, size_t read_timeout_ms, size_t write_timeout_ms) {
+bool HttpConnector::Connect(size_t connect_timeout_ms, size_t read_timeout_ms, size_t write_timeout_ms, bool tcpNoDelay) {
 	if (client_ && client_->is_valid()) {
 		return true;
 	}
@@ -31,6 +31,7 @@ bool HttpConnector::Connect(size_t connect_timeout_ms, size_t read_timeout_ms, s
 	client_->set_read_timeout(0, read_timeout_ms * 1'000);
 	client_->set_write_timeout(0, write_timeout_ms * 1'000);
 	client_->set_keep_alive(true);
+	client_->set_tcp_nodelay(tcpNoDelay);
 	return client_->is_valid();
 }
 

@@ -21,7 +21,7 @@ public:
 	HttpConnector& operator=(HttpConnector&&) noexcept = delete;
 	~HttpConnector();
 
-	bool Connect(size_t connect_timeout_ms, size_t read_timeout_ms, size_t write_timeout_ms);
+	bool Connect(size_t connect_timeout_ms, size_t read_timeout_ms, size_t write_timeout_ms, bool tcpNoDelay);
 	bool Connected() const;
 	void Disconnect();
 

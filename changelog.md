@@ -1,3 +1,7 @@
+# Version 5.18.1 (05.11.2026)
+## Vector indexes
+- [fix] Enabled `TCP_NODELAY` for [auto-embedding](float_vector.md#embedding-configuration) HTTP connections to reduce latency for requests with small payloads
+
 # Version 5.18.0 (02.11.2026)
 ## Core
 - [fea] Reworked the `UPDATE` query engine. The new implementation supports updates with multidimensional arrays and arrays of vectors (for example: `UPDATE ns SET vecs_arr = [[1.0, 1.1], [0.0, 0.7], [[0.5, 0.1], [0.3, 1.0]]]`). It also fixes 24 issues with updates to array elements by position or wildcard, arrays of objects, and uninitialized indexed fields
