@@ -1,3 +1,4 @@
+#include <core/function/function.h>
 #include <core/reindexer.h>
 
 using namespace reindexer;
@@ -86,5 +87,12 @@ int main() {
 		agg.GetJSON(ser);
 		std::cout << ser.Slice() << std::endl;
 	}
+
+	std::cout << "Functions: " << std::endl;
+	std::ignore = functions::Create(FunctionType::FunctionFlatArrayLen, std::vector{std::string_view{"array1"}}, {});
+	std::ignore = functions::Serial("f1");
+	std::ignore = functions::FlatArrayLen(std::vector{"array1"});
+	std::ignore = functions::Now({Variant{"sec"}});
+
 	return 0;
 }

@@ -1,0 +1,16 @@
+#pragma once
+#include <cstdint>
+
+namespace hnswlib {
+
+using CorrectiveOffset = float;
+
+using tableint = uint32_t;
+using labeltype = uint64_t;
+using linklistsizeint = uint32_t;
+
+static constexpr uint8_t kQuantizeBits = 8;
+static constexpr float kSq8Range = (1 << kQuantizeBits) - 1;
+static constexpr int kSampleBatchSize = 20;
+
+}  // namespace hnswlib

@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-class contexted_cond_var {
+class [[nodiscard]] contexted_cond_var {
 public:
 	using CondVarType = std::condition_variable_any;
 

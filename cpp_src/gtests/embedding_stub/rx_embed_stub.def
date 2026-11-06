@@ -1,0 +1,4 @@
+; The export table of the test stub on Windows. The loader resolves the entry point by name, so the name here must be undecorated, which
+; __declspec(dllexport) does not give for a __cdecl function on x86.
+EXPORTS
+    rx_embed_get_api_base
