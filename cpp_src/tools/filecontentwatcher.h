@@ -1,12 +1,12 @@
 #pragma once
 
-#include <chrono>
-#include <mutex>
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "fsops.h"
 
 namespace reindexer {
 
-class FileContetWatcher {
+class [[nodiscard]] FileContetWatcher {
 public:
 	FileContetWatcher(std::string filename, std::function<Error(const std::string&)> loadFromYaml,
 					  std::function<Error(const std::string&)> loadFromFile) noexcept
@@ -58,14 +58,14 @@ public:
 			return Error();
 		}
 		const std::string tmpPath = filepath_ + ".tmp";
-		std::lock_guard<std::mutex> lck(mtx_);
+		lock_guard lck(mtx_);
 		res = fs::WriteFile(tmpPath, content);
 		if (res < 0 || static_cast<size_t>(res) != content.size()) {
-			return Error(errParams, "Unable to write tmp file [%s]. Reason: %s", tmpPath, strerror(errno));
+			return Error(errParams, "Unable to write tmp file [{}]. Reason: {}", tmpPath, strerror(errno));
 		}
 		res = fs::Rename(tmpPath, filepath_);
 		if (res < 0) {
-			return Error(errParams, "Unable to rename tmp file from [%s] to [%s]. Reason: %s", tmpPath, filepath_, strerror(errno));
+			return Error(errParams, "Unable to rename tmp file from [{}] to [{}]. Reason: {}", tmpPath, filepath_, strerror(errno));
 		}
 		expectedContent_ = std::move(content);
 		auto stat = fs::StatTime(filepath_);
@@ -85,7 +85,7 @@ private:
 		auto mtime = fs::StatTime(filepath_).mtime;
 		if (mtime > 0) {
 			if (lastReplConfMTime_.load(std::memory_order_acquire) != mtime) {
-				std::lock_guard<std::mutex> lck(mtx_);
+				lock_guard lck(mtx_);
 				mtime = fs::StatTime(filepath_).mtime;
 				if (mtime > 0) {
 					if (lastReplConfMTime_.load(std::memory_order_relaxed) != mtime) {
@@ -110,7 +110,7 @@ private:
 	std::atomic<bool> hasFilepath_{false};
 	std::atomic<bool> isEnabled_{false};
 	std::atomic<int64_t> lastReplConfMTime_{-1};
-	std::mutex mtx_;
+	mutex mtx_;
 	std::function<Error(const std::string&)> loadFromYaml_;
 	std::function<Error(const std::string&)> loadFromFile_;
 	bool hadErrorOnLastTry_ = false;

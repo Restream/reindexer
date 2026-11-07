@@ -7,7 +7,7 @@
 namespace reindexer {
 namespace client {
 
-class Snapshot {
+class [[nodiscard]] Snapshot {
 public:
 	Snapshot() = default;
 	Snapshot(const Snapshot&) = delete;
@@ -16,7 +16,7 @@ public:
 	Snapshot& operator=(Snapshot&&) noexcept;
 	~Snapshot();
 
-	class Iterator {
+	class [[nodiscard]] Iterator {
 	public:
 		Iterator(const Snapshot* sn, size_t idx) noexcept : sn_(sn), idx_(idx) {}
 		const SnapshotChunk& Chunk() const noexcept { return sn_->i_.data_; }
@@ -41,8 +41,8 @@ public:
 	Iterator end() noexcept { return Iterator{this, i_.count_}; }
 	size_t Size() const noexcept { return i_.count_; }
 	bool HasRawData() const noexcept { return i_.rawCount_; }
-	void ClusterizationStat(ClusterizationStatus&& clusterStatus) noexcept { i_.clusterStatus_ = std::move(clusterStatus); }
-	std::optional<ClusterizationStatus> ClusterizationStat() const noexcept { return i_.clusterStatus_; }
+	void ClusterOperationStat(ClusterOperationStatus&& clusterStatus) noexcept { i_.clusterStatus_ = std::move(clusterStatus); }
+	std::optional<ClusterOperationStatus> ClusterOperationStat() const noexcept { return i_.clusterStatus_; }
 
 private:
 	friend class RPCClient;
@@ -56,7 +56,7 @@ private:
 		i_.id_ = -1;
 	}
 
-	struct Impl {
+	struct [[nodiscard]] Impl {
 		Impl() = default;
 		Impl(net::cproto::CoroClientConnection* conn, int id, int64_t count, int64_t rawCount, lsn_t nsVersion,
 			 std::chrono::milliseconds timeout) noexcept;
@@ -69,7 +69,7 @@ private:
 		net::cproto::CoroClientConnection* conn_;
 		std::chrono::milliseconds requestTimeout_;
 		steady_clock_w::time_point sessionTs_;
-		std::optional<ClusterizationStatus> clusterStatus_;
+		std::optional<ClusterOperationStatus> clusterStatus_;
 	};
 
 	Impl i_;

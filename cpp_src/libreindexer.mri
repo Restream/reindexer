@@ -1,0 +1,5 @@
+create libreindexer.a
+addlib ../libreindexer.a
+addlib ../libleveldb.a
+save
+end

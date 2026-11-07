@@ -2,11 +2,12 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <fstream>
-#include "core/payload/fieldsset.h"
 #include "core/query/query.h"
 #include "index.h"
 #include "ns_scheme.h"
 #include "tools/clock.h"
+
+namespace reindexer_tests {
 
 namespace fuzzing {
 
@@ -40,14 +41,14 @@ void RandomGenerator::SetIn(const std::string& i) {
 
 RandomGenerator::RandomEngine RandomGenerator::createRandomEngine() {
 	if (in()) {
-		RandomEngine ret;
+		RandomEngine ret;  // NOLINT(bugprone-random-generator-seed)
 		std::string buf;
 		std::getline(*in(), buf);
 		std::istringstream ss{buf};
 		ss >> ret;
 		return ret;
 	} else {
-		RandomEngine ret(reindexer::system_clock_w::now().time_since_epoch().count());
+		RandomEngine ret(reindexer::system_clock_w::now_count());
 		if (!out().empty()) {
 			std::ofstream file{out(), std::ios_base::app};
 			if (file.is_open()) {
@@ -68,7 +69,7 @@ RandomGenerator::RandomGenerator(ErrFactorType errorFactor) : gen_{createRandomE
 
 size_t RandomGenerator::FieldsCount(bool firstLevel) {
 	if (RndErr()) {
-		enum Err : uint8_t { Zero, TooMany, END = TooMany };
+		enum [[nodiscard]] Err : uint8_t { Zero, TooMany, END = TooMany };
 		switch (RndWhich<Err, 1, 1>()) {
 			case Zero:
 				return 0;
@@ -79,7 +80,7 @@ size_t RandomGenerator::FieldsCount(bool firstLevel) {
 		}
 	}
 	if (firstLevel) {
-		enum Size : uint8_t { Normal, Long, END = Long };
+		enum [[nodiscard]] Size : uint8_t { Normal, Long, END = Long };
 		switch (RndWhich<Size, 10'000, 1>()) {
 			case Normal:
 				return RndInt(1, 9);
@@ -105,7 +106,7 @@ std::string RandomGenerator::FieldName(std::unordered_set<std::string>& generate
 		const bool withErr = RndErr();
 		if (withErr) {
 			size_t len;
-			enum Err : uint8_t { Dublicate, ZeroLength, TooLong, NormalLength, END = NormalLength };
+			enum [[nodiscard]] Err : uint8_t { Dublicate, ZeroLength, TooLong, NormalLength, END = NormalLength };
 			switch (RndWhich<Err, 1, 1, 1, 1>()) {
 				case Dublicate:
 					if (!generatedNames.empty()) {
@@ -127,7 +128,7 @@ std::string RandomGenerator::FieldName(std::unordered_set<std::string>& generate
 			}
 			res.resize(len);
 			{
-				enum Chars : uint8_t { All, Printable, Available, END = Available };
+				enum [[nodiscard]] Chars : uint8_t { All, Printable, Available, END = Available };
 				switch (RndWhich<Chars, 1, 1, 1>()) {
 					case All:
 						for (auto& ch : res) {
@@ -144,7 +145,7 @@ std::string RandomGenerator::FieldName(std::unordered_set<std::string>& generate
 						break;
 					case Available:
 						for (auto& ch : res) {
-							enum Chars : uint8_t { Alfas, Digits, END = Digits };
+							enum [[nodiscard]] Chars : uint8_t { Alfas, Digits, END = Digits };
 							switch (RndWhich<Chars, alfasWeight, digitsWeight>()) {
 								case Alfas:
 									ch = alfas[rndInt(alfasRndParams)];
@@ -168,7 +169,7 @@ std::string RandomGenerator::FieldName(std::unordered_set<std::string>& generate
 			res.resize(len);
 			res[0] = alfas[rndInt(alfasRndParams)];
 			for (size_t i = 1; i < len; ++i) {
-				enum Chars : uint8_t { Alfas, Digits, END = Digits };
+				enum [[nodiscard]] Chars : uint8_t { Alfas, Digits, END = Digits };
 				switch (RndWhich<Chars, alfasWeight, digitsWeight>()) {
 					case Alfas:
 						res[i] = alfas[rndInt(alfasRndParams)];
@@ -190,7 +191,7 @@ FieldPath RandomGenerator::RndField(const NsScheme& nsScheme) {
 	FieldPath res;
 	do {
 		if (withErr) {
-			enum Err : uint8_t { Break, Continue, END = Continue };
+			enum [[nodiscard]] Err : uint8_t { Break, Continue, END = Continue };
 			switch (RndWhich<Err, 1, 1>()) {
 				case Break:
 					return res;
@@ -215,7 +216,7 @@ FieldPath RandomGenerator::RndScalarField(const NsScheme& nsScheme) {
 	FieldPath res;
 	do {
 		if (withErr) {
-			enum Err : uint8_t { Break, Continue, END = Continue };
+			enum [[nodiscard]] Err : uint8_t { Break, Continue, END = Continue };
 			switch (RndWhich<Err, 1, 1>()) {
 				case Break:
 					return res;
@@ -234,7 +235,7 @@ FieldPath RandomGenerator::RndScalarField(const NsScheme& nsScheme) {
 		const int end = idx + size;
 		while (idx < end) {
 			res.back() = idx % size;
-			if (nsScheme.IsArray(res) == IsArrayT::No && !nsScheme.IsPoint(res)) {
+			if (!nsScheme.IsArray(res) && !nsScheme.IsPoint(res)) {
 				break;
 			}
 			++idx;
@@ -259,7 +260,7 @@ std::string RandomGenerator::IndexFieldType(FieldType ft) {
 
 IndexType RandomGenerator::RndIndexType(IndexType it) {
 	if (RndErr()) {
-		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1, 1>();	// TODO
+		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1>();	 // TODO
 	}
 	return it;
 }
@@ -268,7 +269,7 @@ template <size_t N, const std::vector<IndexType>* Availables>
 IndexType RandomGenerator::rndIndexType(const std::vector<FieldType>& fieldTypes) {
 	if (RndErr()) {
 		// TODO rnd string
-		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1, 1>();	// TODO
+		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1>();	 // TODO
 	}
 	assertrx(!fieldTypes.empty());
 	std::vector<IndexType> availables;
@@ -286,7 +287,7 @@ IndexType RandomGenerator::rndIndexType(const std::vector<FieldType>& fieldTypes
 		availables = tmp;
 	}
 	if (availables.empty()) {
-		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1, 1>();	// TODO
+		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1>();	 // TODO
 	} else {
 		return RndWhich(availables);
 	}
@@ -298,10 +299,10 @@ IndexType RandomGenerator::RndIndexType(const std::vector<FieldType>& fieldTypes
 		{IndexType::Store, IndexType::Hash, IndexType::Tree},				   // Int
 		{IndexType::Store, IndexType::Hash, IndexType::Tree, IndexType::Ttl},  // Int64
 		{IndexType::Store, IndexType::Tree},								   // Double
-		{IndexType::Store, IndexType::Hash, IndexType::Tree},				   // String // TODO IndexType::FastFT IndexType::FuzzyFT
+		{IndexType::Store, IndexType::Hash, IndexType::Tree},				   // String // TODO IndexType::FastFT
 		{IndexType::Hash},													   // Uuid
 		{IndexType::RTree},													   // Point
-		{IndexType::Hash, IndexType::Tree}									   // Struct // TODO  IndexType::FastFT IndexType::FuzzyFT
+		{IndexType::Hash, IndexType::Tree}									   // Struct // TODO  IndexType::FastFT
 	};
 	return rndIndexType<std::extent_v<decltype(availableTypes)>, availableTypes>(fieldTypes);
 }
@@ -324,7 +325,7 @@ size_t RandomGenerator::ArraySize() {
 	if (RndErr()) {
 		return RndInt(0, 100'000);
 	}
-	enum Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
+	enum [[nodiscard]] Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
 	switch (RndWhich<Size, 10'000, 100'000, 10, 1>()) {
 		case Short:
 			return RndInt(0, 5);
@@ -342,17 +343,17 @@ size_t RandomGenerator::ArraySize() {
 
 size_t RandomGenerator::IndexesCount() {
 	if (RndErr()) {
-		enum Err : uint8_t { Zero, TooMany, END = TooMany };
+		enum [[nodiscard]] Err : uint8_t { Zero, TooMany, END = TooMany };
 		switch (RndWhich<Err, 1, 1>()) {
 			case Zero:
 				return 0;
 			case TooMany:
-				return RndInt(reindexer::kMaxIndexes, 5 + reindexer::kMaxIndexes);
+				return RndInt(kMaxIndexes, 5 + kMaxIndexes);
 			default:
 				assertrx(0);
 		}
 	}
-	enum Count : uint8_t { Few, Normal, Many, TooMany, END = TooMany };
+	enum [[nodiscard]] Count : uint8_t { Few, Normal, Many, TooMany, END = TooMany };
 	switch (RndWhich<Count, 500, 1'000, 10, 1>()) {
 		case Few:
 			return RndInt(1, 3);
@@ -361,7 +362,7 @@ size_t RandomGenerator::IndexesCount() {
 		case Many:
 			return RndInt(21, 63);
 		case TooMany:
-			return RndInt(64, reindexer::kMaxIndexes);
+			return RndInt(64, kMaxIndexes);
 		default:
 			assertrx(false);
 			std::abort();
@@ -370,7 +371,7 @@ size_t RandomGenerator::IndexesCount() {
 
 size_t RandomGenerator::compositeIndexSize(size_t scalarIndexesCount) {
 	if (RndErr()) {
-		enum Err : uint8_t { Zero, /*One,*/ TooMany, END = TooMany };
+		enum [[nodiscard]] Err : uint8_t { Zero, /*One,*/ TooMany, END = TooMany };
 		switch (RndWhich<Err, 1, /*1,*/ 1>()) {
 			case Zero:
 				return 0;
@@ -433,7 +434,7 @@ std::string RandomGenerator::rndStrUuidValue(bool noErrors) {
 	static constexpr std::string_view hexChars = "0123456789aAbBcCdDeEfF";
 	static constexpr std::string_view notAvailableChars = "_ghijklmnopqrstuvwxyzGHIJKLMNOPQRSTUVWXYZ";
 	static constexpr unsigned uuidDelimPositions[] = {8, 13, 18, 23};
-	enum Err : uint8_t { NoErrors, Empty, Short, Long, TooLong, WrongVariant, WrongChar, END = WrongChar };
+	enum [[nodiscard]] Err : uint8_t { NoErrors, Empty, Short, Long, TooLong, WrongVariant, WrongChar, END = WrongChar };
 	Err err = NoErrors;
 	if (!noErrors && RndErr()) {
 		err = RndWhich<Err, 0, 1, 1, 1, 1, 1, 1>();
@@ -615,3 +616,5 @@ void RandomGenerator::RndWhereComposite(reindexer::Query& query, const std::stri
 }
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

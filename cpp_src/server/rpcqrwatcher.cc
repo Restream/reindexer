@@ -12,6 +12,7 @@ constexpr double kTimerPeriod = 0.1;
 
 void RPCQrWatcher::Register(net::ev::dynamic_loop& loop, LoggerWrapper logger) {
 	timer_.set(loop);
+	// NOLINTNEXTLINE(rx-perf-lambda-to-std-function-allocation)
 	timer_.set([this, logger = std::move(logger)](net::ev::timer&, int) {
 		thread_local static auto lastCbCallTime = steady_clock_w::now_coarse();
 		constexpr auto secCount = std::chrono::duration_cast<std::chrono::seconds>(kTimeIncrementPeriod).count();
@@ -64,7 +65,7 @@ void RPCQrWatcher::Stop() {
 uint32_t RPCQrWatcher::removeExpired(uint32_t now, uint32_t from, uint32_t to) {
 	uint32_t expiredCnt = 0;
 	[[maybe_unused]] const auto allocated = allocated_.load(std::memory_order_acquire);
-	assertf(to <= allocated, "to: %d, allocated: %d", to, allocated);
+	assertf(to <= allocated, "to: {}, allocated: {}", to, allocated);
 	for (uint32_t i = from; i < to; ++i) {
 		auto& qrs = qrs_[i];
 		if (qrs.IsExpired(now, idleTimeout_.count())) {
@@ -86,7 +87,7 @@ uint32_t RPCQrWatcher::removeExpired(uint32_t now, uint32_t from, uint32_t to) {
 				qrs.uid.store(newUID, std::memory_order_release);
 				++expiredCnt;
 
-				std::lock_guard lck(mtx_);
+				lock_guard lck(mtx_);
 				putFreeID(i);
 			}
 		}

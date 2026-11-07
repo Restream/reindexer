@@ -1,0 +1,32 @@
+{
+  "metadata_version": 1,
+  "model": {
+    "name": "stub/invalid",
+    "packed_at": "2026-01-01T00:00:00Z",
+    "packed_by": "reindexer_embedding.py 0.1.0"
+  },
+  "graph": {
+    "file": "model.onnx",
+    "inputs": {
+      "input_ids": "input_ids",
+      "attention_mask": "attention_mask",
+      "token_type_ids": "token_type_ids"
+    },
+    "output": "last_hidden_state",
+    "dimension": 4
+  },
+  "tokenizer": {
+    "file": "tokenizer.json",
+    "max_length": 512,
+    "truncation": "middle",
+    "padding": "right"
+  },
+  "inference": {
+    "pooling": "mean",
+    "normalize": true
+  },
+  "prefixes": {
+    "query": "query: ",
+    "passage": "passage: "
+  }
+}

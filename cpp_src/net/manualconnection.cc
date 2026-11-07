@@ -40,7 +40,7 @@ void manual_connection::close_conn(int err) {
 	connect_timer_.stop();
 	if (sock_.valid()) {
 		io_.stop();
-		if rx_unlikely (sock_.close() != 0) {
+		if (sock_.close() != 0) [[unlikely]] {
 			perror("sock_.close() error");
 		}
 	}
@@ -48,11 +48,12 @@ void manual_connection::close_conn(int err) {
 	const bool hadRData = !r_data_.empty();
 	const bool hadWData = !w_data_.empty();
 	if (hadRData) {
-		read_from_buf(r_data_.buf, r_data_.transfer, false);
-		buffered_data_.clear();
+		std::ignore = read_from_buf(r_data_.buf, r_data_.transfer, false);
+	}
+	buffered_data_.clear();
+	shrink_read_buf_if_needed();
+	if (hadRData) {
 		on_async_op_done(r_data_, err);
-	} else {
-		buffered_data_.clear();
 	}
 
 	if (hadWData) {
@@ -82,8 +83,7 @@ Error manual_connection::with_tls(bool enable) {
 			sslCtx_ = nullptr;
 			sock_.ssl = nullptr;
 		}
-	}
-	CATCH_AND_RETURN
+	} CATCH_AND_RETURN
 	return {};
 }
 
@@ -110,7 +110,7 @@ int manual_connection::async_connect(std::string_view addr, socket_domain type) 
 	return 0;
 }
 
-ssize_t manual_connection::write(span<char> wr_buf, transfer_data& transfer, int& err_ref) {
+ssize_t manual_connection::write(std::span<char> wr_buf, transfer_data& transfer, int& err_ref) {
 	err_ref = 0;
 	ssize_t written = -1;
 	auto cur_buf = wr_buf.subspan(transfer.transfered_size());
@@ -146,13 +146,14 @@ ssize_t manual_connection::write(span<char> wr_buf, transfer_data& transfer, int
 	return written;
 }
 
-ssize_t manual_connection::read(span<char> rd_buf, transfer_data& transfer, int& err_ref) {
+ssize_t manual_connection::read(std::span<char> rd_buf, transfer_data& transfer, int& err_ref) {
 	bool need_read = !transfer.expected_size();
 	ssize_t nread = 0;
 	ssize_t read_this_time = 0;
 	err_ref = 0;
 	auto remain_to_transfer = transfer.expected_size() - transfer.transfered_size();
 	if (read_from_buf(rd_buf, transfer, true)) {
+		shrink_read_buf_if_needed();
 		on_async_op_done(r_data_, 0);
 		return remain_to_transfer;
 	}
@@ -181,6 +182,7 @@ ssize_t manual_connection::read(span<char> rd_buf, transfer_data& transfer, int&
 				stats_->update_read_stats(nread);
 			}
 			if (read_from_buf(rd_buf, transfer, true)) {
+				shrink_read_buf_if_needed();
 				on_async_op_done(r_data_, 0);
 				return remain_to_transfer;
 			}
@@ -189,6 +191,7 @@ ssize_t manual_connection::read(span<char> rd_buf, transfer_data& transfer, int&
 			return nread;
 		}
 	}
+	shrink_read_buf_if_needed();
 	on_async_op_done(r_data_, 0);
 	return read_this_time;
 }
@@ -291,23 +294,22 @@ void manual_connection::write_cb() {
 		state_ = conn_state::connected;
 	}
 	if (w_data_.buf.size()) {
-		int err = 0;
-		write(w_data_.buf, w_data_.transfer, err);
-		(void)err;
+		[[maybe_unused]] int err = 0;
+		std::ignore = write(w_data_.buf, w_data_.transfer, err);
 	}
 }
 
 int manual_connection::read_cb() {
 	int err = 0;
 	if (r_data_.buf.size()) {
-		read(r_data_.buf, r_data_.transfer, err);
+		std::ignore = read(r_data_.buf, r_data_.transfer, err);
 	} else {
 		read_to_buf(err);
 	}
 	return err;
 }
 
-bool manual_connection::read_from_buf(span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept {
+bool manual_connection::read_from_buf(std::span<char> rd_buf, transfer_data& transfer, bool read_full) noexcept {
 	auto cur_buf = rd_buf.subspan(transfer.transfered_size());
 	const bool will_read_full = read_full && buffered_data_.size() >= cur_buf.size();
 	const bool will_read_any = !read_full && buffered_data_.size();
@@ -322,7 +324,7 @@ bool manual_connection::read_from_buf(span<char> rd_buf, transfer_data& transfer
 			it = buffered_data_.tail();
 		}
 		memcpy(cur_buf.data(), it.data(), bytes_to_copy);
-		buffered_data_.erase(bytes_to_copy);
+		std::ignore = buffered_data_.erase(bytes_to_copy);
 		transfer.append_transfered(bytes_to_copy);
 		return true;
 	}

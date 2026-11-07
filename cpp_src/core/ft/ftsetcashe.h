@@ -1,22 +1,22 @@
 #pragma once
 
-#include "core/idsetcache.h"
-#include "core/selectfunc/ctx/ftctx.h"
+#include "core/ft/ftctx.h"
+#include "core/idset/idsetcache.h"
 
 namespace reindexer {
 
-struct FtIdSetCacheVal {
-	FtIdSetCacheVal() = default;
-	FtIdSetCacheVal(IdSet::Ptr&& i) noexcept : ids(std::move(i)) {}
-	FtIdSetCacheVal(IdSet::Ptr&& i, FtCtxData::Ptr&& c) noexcept : ids(std::move(i)), ctx(std::move(c)) {}
-	size_t Size() const noexcept { return ids ? (sizeof(*ids.get()) + ids->heap_size()) : 0; }
+struct [[nodiscard]] FtIdSetCacheVal {
+	FtIdSetCacheVal() noexcept = default;
+	FtIdSetCacheVal(IdSetPlain::Ptr&& i) noexcept : ids(std::move(i)) {}
+	FtIdSetCacheVal(IdSetPlain::Ptr&& i, FtCtxData::Ptr&& c) noexcept : ids(std::move(i)), ctx(std::move(c)) {}
+	size_t Size() const noexcept { return ids ? (sizeof(*ids.get()) + ids->HeapSize()) : 0; }
 	bool IsInitialized() const noexcept { return bool(ids); }
 
-	IdSet::Ptr ids;
+	IdSetPlain::Ptr ids;
 	FtCtxData::Ptr ctx;
 };
 
 using FtIdSetCache =
-	LRUCache<LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>, LRUWithAtomicPtr::No>;
+	LRUCache<LRUCacheImpl<IdSetCacheKey, FtIdSetCacheVal, IdSetCacheKey::Hash, IdSetCacheKey::Equal>, LRUWithAtomicPtr::No>;
 
 }  // namespace reindexer

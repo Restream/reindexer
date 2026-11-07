@@ -2,38 +2,39 @@
 
 #include <memory>
 #include <set>
-#include "core/reindexer.h"
 #include "net/cproto/dispatcher.h"
 #include "net/listener.h"
 #include "server/dbmanager.h"
+
+namespace reindexer_tests {
 
 using namespace reindexer_server;
 using namespace reindexer::net;
 using namespace reindexer;
 
-struct RPCServerConfig {
+struct [[nodiscard]] RPCServerConfig {
 	std::chrono::milliseconds loginDelay = std::chrono::milliseconds(2000);
 	std::chrono::milliseconds openNsDelay = std::chrono::milliseconds(2000);
 	std::chrono::milliseconds selectDelay = std::chrono::milliseconds(2000);
 };
 
-enum RPCServerStatus { Init, Connected, Stopped };
+enum [[nodiscard]] RPCServerStatus { Init, Connected, Stopped };
 
-struct RPCClientData final : public cproto::ClientData {
+struct [[nodiscard]] RPCClientData final : public cproto::ClientData {
 	AuthContext auth;
 	int connID;
 };
 
-class RPCServerFake {
+class [[nodiscard]] RPCServerFake {
 public:
 	RPCServerFake(const RPCServerConfig& conf);
 
-	bool Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError);
+	void Start(const std::string& addr, ev::dynamic_loop& loop, Error loginError);
 	Error Stop();
 
 	Error Ping(cproto::Context& ctx);
 	Error Login(cproto::Context& ctx, p_string login, p_string password, p_string db);
-	Error Select(cproto::Context& ctx, p_string query, int flags, int limit, p_string ptVersions);
+	Error Select(cproto::Context& ctx, p_string query, int flags, int limit, p_string tmVersions);
 	Error OpenNamespace(cproto::Context& ctx, p_string ns);
 	Error DropNamespace(cproto::Context& ctx, p_string ns);
 	Error CloseResults(cproto::Context& ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);
@@ -52,8 +53,10 @@ protected:
 	std::string dsn_;
 	std::atomic<RPCServerStatus> state_;
 	Error loginError_;
-	std::mutex qrMutex_;
+	reindexer::mutex qrMutex_;
 	std::set<int> usedQrIds_;
 	std::set<int> unusedQrIds_;
 	std::atomic_size_t closeQRRequestsCounter_{0};
 };
+
+}  // namespace reindexer_tests

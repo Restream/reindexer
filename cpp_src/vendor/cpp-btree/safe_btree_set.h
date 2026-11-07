@@ -58,6 +58,9 @@ public:
 	// Copy constructor.
 	safe_btree_set(const self_type &x) : super_type(x) {}
 
+	// Move constructor.
+	safe_btree_set(self_type &&x) noexcept : super_type(std::move(x)) {}
+
 	// Range constructor.
 	template <class InputIterator>
 	safe_btree_set(InputIterator b, InputIterator e, const key_compare &comp = key_compare(),

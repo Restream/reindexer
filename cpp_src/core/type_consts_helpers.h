@@ -2,33 +2,180 @@
 
 #include <cstdlib>
 #include <string_view>
+#include "enums.h"
 #include "type_consts.h"
 
 namespace reindexer {
 
-[[nodiscard]] CondType InvertJoinCondition(CondType);
-[[nodiscard]] CondType InvertNotCondition(CondType);
-[[nodiscard]] std::string_view CondTypeToStr(CondType);
-[[nodiscard]] std::string_view CondTypeToStrShort(CondType);
-[[nodiscard]] std::string_view TagTypeToStr(TagType);
-[[nodiscard]] std::string_view AggTypeToStr(AggType) noexcept;
+CondType InvertNotCondition(CondType);
+std::string_view CondTypeToStr(CondType);
+std::string_view CondTypeToStrShort(CondType);
+std::string_view TagTypeToStr(TagType);
+std::string_view AggTypeToStr(AggType) noexcept;
+QueryRankType ToQueryRankType(VectorMetric);
+std::string_view VectorMetricToStr(VectorMetric);
 
 constexpr bool IsComposite(IndexType type) noexcept {
-	return type == IndexCompositeBTree || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT || type == IndexCompositeHash;
+	switch (type) {
+		case IndexCompositeBTree:
+		case IndexCompositeFastFT:
+		case IndexCompositeHash:
+			return true;
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexFastFT:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexTtl:
+		case IndexRTree:
+		case IndexUuidHash:
+		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
+		default:
+			return false;
+	}
+}
+
+constexpr bool IsHashOrBTree(IndexType type) noexcept {
+	switch (type) {
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexUuidHash:
+		case IndexTtl:
+		case IndexCompositeHash:
+		case IndexCompositeBTree:
+			return true;
+		case IndexCompositeFastFT:
+		case IndexFastFT:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexRTree:
+		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
+		default:
+			return false;
+	}
 }
 
 constexpr bool IsFullText(IndexType type) noexcept {
-	return type == IndexFastFT || type == IndexFuzzyFT || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT;
+	switch (type) {
+		case IndexFastFT:
+		case IndexCompositeFastFT:
+			return true;
+		case IndexCompositeBTree:
+		case IndexCompositeHash:
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexTtl:
+		case IndexRTree:
+		case IndexUuidHash:
+		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
+		default:
+			return false;
+	}
 }
 
-constexpr bool IsFastFullText(IndexType type) noexcept { return type == IndexFastFT || type == IndexCompositeFastFT; }
+constexpr bool IsFloatVector(IndexType type) noexcept {
+	switch (type) {
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+			return true;
+		case IndexCompositeBTree:
+		case IndexCompositeFastFT:
+		case IndexCompositeHash:
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexFastFT:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexTtl:
+		case IndexRTree:
+		case IndexUuidHash:
+		case IndexUuidStore:
+		case IndexDummy:
+		default:
+			return false;
+	}
+}
+
+constexpr bool IsGeospatial(IndexType type) noexcept {
+	switch (type) {
+		case IndexRTree:
+			return true;
+		case IndexCompositeBTree:
+		case IndexCompositeHash:
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexTtl:
+		case IndexFastFT:
+		case IndexCompositeFastFT:
+		case IndexUuidHash:
+		case IndexUuidStore:
+		case IndexHnsw:
+		case IndexVectorBruteforce:
+		case IndexIvf:
+		case IndexDummy:
+		default:
+			return false;
+	}
+}
 
 }  // namespace reindexer
-
-/// Get readable Join Type
-/// @param type - join type
-/// @returns string with join type name
-[[nodiscard]] std::string_view JoinTypeName(JoinType type);
 
 template <typename T>
 auto& operator<<(T& os, CondType cond) {
@@ -62,57 +209,57 @@ inline std::string_view OpTypeToStr(OpType op) {
 }
 
 template <typename T>
-auto& operator<<(T& os, JoinType jt) {
-	return os << JoinTypeName(jt);
-}
-
-template <typename T>
 T& operator<<(T& os, IndexType it) {
+	using namespace std::string_view_literals;
 	switch (it) {
 		case IndexStrHash:
-			return os << "StrHash";
+			return os << "StrHash"sv;
 		case IndexStrBTree:
-			return os << "StrBTree";
+			return os << "StrBTree"sv;
 		case IndexIntBTree:
-			return os << "IntBTree";
+			return os << "IntBTree"sv;
 		case IndexIntHash:
-			return os << "IntHash";
+			return os << "IntHash"sv;
 		case IndexInt64BTree:
-			return os << "Int64BTree";
+			return os << "Int64BTree"sv;
 		case IndexInt64Hash:
-			return os << "Int64Hash";
+			return os << "Int64Hash"sv;
 		case IndexDoubleBTree:
-			return os << "DoubleBtree";
+			return os << "DoubleBtree"sv;
 		case IndexFastFT:
-			return os << "FastFT";
-		case IndexFuzzyFT:
-			return os << "FuzzyFT";
+			return os << "FastFT"sv;
 		case IndexCompositeBTree:
-			return os << "CompositeBTree";
+			return os << "CompositeBTree"sv;
 		case IndexCompositeHash:
-			return os << "CompositeHash";
+			return os << "CompositeHash"sv;
 		case IndexCompositeFastFT:
-			return os << "CompositeFastHash";
+			return os << "CompositeFastHash"sv;
 		case IndexBool:
-			return os << "Bool";
+			return os << "Bool"sv;
 		case IndexIntStore:
-			return os << "IntStore";
+			return os << "IntStore"sv;
 		case IndexInt64Store:
-			return os << "Int64Store";
+			return os << "Int64Store"sv;
 		case IndexStrStore:
-			return os << "StrStore";
+			return os << "StrStore"sv;
 		case IndexDoubleStore:
-			return os << "DoubleStore";
-		case IndexCompositeFuzzyFT:
-			return os << "CompositeFuzzyFT";
+			return os << "DoubleStore"sv;
 		case IndexTtl:
-			return os << "Ttl";
+			return os << "Ttl"sv;
 		case ::IndexRTree:
-			return os << "RTree";
+			return os << "RTree"sv;
 		case IndexUuidHash:
-			return os << "UuidHash";
+			return os << "UuidHash"sv;
 		case IndexUuidStore:
-			return os << "UuidStore";
+			return os << "UuidStore"sv;
+		case IndexHnsw:
+			return os << "Hnsw"sv;
+		case IndexVectorBruteforce:
+			return os << "VectorBruteforce"sv;
+		case IndexIvf:
+			return os << "Ivf"sv;
+		case IndexDummy:
+			return os << "Dummy"sv;
 	}
 	std::abort();
 }
