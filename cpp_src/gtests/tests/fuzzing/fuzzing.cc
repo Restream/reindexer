@@ -4,16 +4,20 @@
 #include "fuzzing/ns.h"
 #include "fuzzing/query_generator.h"
 
+namespace reindexer_tests {
+
+namespace fuzzing {
+
 TEST_F(Fuzzing, BaseTest) {
 	try {
-		const fuzzing::RandomGenerator::ErrFactorType errorFactor{0, 1};
+		const RandomGenerator::ErrFactorType errorFactor{0, 1};
 		reindexer::WrSerializer ser;
-		fuzzing::RandomGenerator rnd(errorFactor);
-		std::vector<fuzzing::Ns> namespaces;
+		RandomGenerator rnd(errorFactor);
+		std::vector<Ns> namespaces;
 		const size_t N = 1;
 		for (size_t i = 0; i < N; ++i) {
 			namespaces.emplace_back(rnd.GenerateNsName(), errorFactor);
-			fuzzing::Ns& ns = namespaces.back();
+			Ns& ns = namespaces.back();
 			auto err = rx_.OpenNamespace(ns.GetName());
 			EXPECT_TRUE(err.ok()) << err.what();
 			if (!err.ok()) {
@@ -21,7 +25,7 @@ TEST_F(Fuzzing, BaseTest) {
 			}
 			auto& indexes = ns.GetIndexes();
 			for (size_t j = 0; j < indexes.size();) {
-				const fuzzing::Index& idx = indexes[j];
+				const Index& idx = indexes[j];
 				const auto idxDef = idx.IndexDef(ns.GetRandomGenerator(), ns.GetScheme(), indexes);
 				err = rx_.AddIndex(ns.GetName(), idxDef);
 				EXPECT_TRUE(err.ok()) << err.what();
@@ -29,11 +33,11 @@ TEST_F(Fuzzing, BaseTest) {
 					ns.AddIndexToScheme(idx, j);  // TODO move to fuzzing::Ns
 					std::vector<FieldData> fields;
 					std::visit(reindexer::overloaded{
-								   [&](const fuzzing::Index::Child& c) {
+								   [&](const Index::Child& c) {
 									   fields.push_back(FieldData{ns.GetScheme().GetJsonPath(c.fieldPath),
 																  ToKeyValueType(ns.GetScheme().GetFieldType(c.fieldPath))});
 								   },
-								   [&](const fuzzing::Index::Children& c) {
+								   [&](const Index::Children& c) {
 									   for (const auto& child : c) {
 										   fields.push_back(FieldData{ns.GetScheme().GetJsonPath(child.fieldPath),
 																	  ToKeyValueType(ns.GetScheme().GetFieldType(child.fieldPath))});
@@ -67,11 +71,11 @@ TEST_F(Fuzzing, BaseTest) {
 				if (!err.ok()) {
 					continue;
 				}
-				enum Op : uint8_t { Insert, Upsert, Update, Delete, END = Delete };
+				enum [[nodiscard]] Op : uint8_t { Insert, Upsert, Update, Delete, END = Delete };
 				switch (rnd.RndWhich<Op, 10, 100, 1, 1>()) {
 					case Insert:
 						err = rx_.Insert(rnd.NsName(ns.GetName()), item);
-						if (err.ok() && item.GetID() != -1) {
+						if (err.ok() && item.GetID().IsValid()) {
 							saveItem(std::move(item), ns.GetName());
 						}
 						break;
@@ -83,7 +87,7 @@ TEST_F(Fuzzing, BaseTest) {
 						break;
 					case Update:
 						err = rx_.Update(rnd.NsName(ns.GetName()), item);
-						if (err.ok() && item.GetID() != -1) {
+						if (err.ok() && item.GetID().IsValid()) {
 							saveItem(std::move(item), ns.GetName());
 						}
 						break;
@@ -103,23 +107,25 @@ TEST_F(Fuzzing, BaseTest) {
 			err = rx_.Select(reindexer::Query(ns.GetName()).ReqTotal(), qr);
 			EXPECT_TRUE(err.ok()) << err.what();
 		}
-		fuzzing::QueryGenerator queryGenerator{namespaces, errorFactor};
+		QueryGenerator queryGenerator{namespaces, errorFactor};
 		for (size_t i = 0; i < 100; ++i) {
 			auto query = queryGenerator();
 			reindexer::QueryResults qr;
 			auto err = rx_.Select(query, qr);
 			EXPECT_TRUE(err.ok()) << err.what();
 			if (err.ok()) {
-				Verify(qr.ToLocalQr(), std::move(query), rx_);
+				Verify(qr, std::move(query), rx_);
 			}
 		}
 	} catch (const std::exception& err) {
 		FAIL() << err.what();
-	} catch (const reindexer::Error& err) {
-		FAIL() << err.what();
 	}
 }
 
+}  // namespace fuzzing
+}  // namespace reindexer_tests
+
+// NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
 int main(int argc, char** argv) {
 	::testing::InitGoogleTest(&argc, argv);
 
@@ -127,8 +133,8 @@ int main(int argc, char** argv) {
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});
 	args::Group progOptions("options");
 	args::ValueFlag<std::string> dbDsn(progOptions, "DSN",
-									   "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'", {'d', "dsn"},
-									   args::Options::Single | args::Options::Global);
+									   "DSN to 'reindexer'. Can be 'cproto://[user@password:]<ip>:<port>/<dbname>' or 'builtin://<path>'",
+									   {'d', "dsn"}, args::Options::Single | args::Options::Global);
 	args::ValueFlag<std::string> output(progOptions, "FILENAME", "A file for saving initial states of random engines", {'s', "save"},
 										args::Options::Single | args::Options::Global);
 	args::ValueFlag<std::string> input(progOptions, "FILENAME", "A file for initial states of random engines recovery", {'r', "repeat"},
@@ -146,15 +152,15 @@ int main(int argc, char** argv) {
 	}
 	std::string out = args::get(output);
 	if (!out.empty()) {
-		fuzzing::RandomGenerator::SetOut(std::move(out));
+		reindexer_tests::fuzzing::RandomGenerator::SetOut(std::move(out));
 	}
 	const std::string in = args::get(input);
 	if (!in.empty()) {
-		fuzzing::RandomGenerator::SetIn(in);
+		reindexer_tests::fuzzing::RandomGenerator::SetIn(in);
 	}
 	std::string dsn = args::get(dbDsn);
 	if (!dsn.empty()) {
-		Fuzzing::SetDsn(std::move(dsn));
+		reindexer_tests::fuzzing::Fuzzing::SetDsn(std::move(dsn));
 	}
 
 	return RUN_ALL_TESTS();

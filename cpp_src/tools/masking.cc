@@ -1,6 +1,6 @@
 #include "masking.h"
 #include <array>
-#include "fmt/printf.h"
+#include "fmt/format.h"
 
 namespace reindexer {
 static constexpr auto initCRC32Table() {
@@ -40,5 +40,5 @@ std::string maskLogin(std::string_view login) {
 	return res;
 }
 
-std::string maskPassword(std::string_view password) { return fmt::sprintf("%x", CRC32(password.data(), password.length())); }
+std::string maskPassword(std::string_view password) { return fmt::format("{:#x}", CRC32(password.data(), password.length())); }
 }  // namespace reindexer

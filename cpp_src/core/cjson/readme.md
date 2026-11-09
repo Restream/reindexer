@@ -1,17 +1,17 @@
 
+`CJSON` (Compact JSON) is Reindexer's binary format for representing JSON data internally.
+Each field is encoded as a `ctag` followed by `data` — the payload bytes for that type.
+In the `CJSON`-blob `ctag` is a varuint-encoded integer that contains the field type, the field name (`TagName`), and — when the value is also stored in the indexed payload — the matching payload field index.
 
-
-`CJSON` (Compact JSON) is binary internal reindexer format for transparently representing JSON data.
-Each field of CJSON is encoded to `ctag` - varuint, which encodes type and name of field, and `data` binary representation of field data in format dependent of type.
-
+CJSON has two closely related variants: **tuple** and **transport**. Transport CJSON (network or on-disk) inlines indexed values in the blob; `FieldIndex` always stays zero. **Tuple** CJSON (in-memory storage and queries) keeps indexed values in the flat `PayloadValue` buffer; the tuple holds only a `ctag` with `FieldIndex` pointing at the payload field (no inline bytes for scalar indexed fields; indexed arrays may carry a length prefix). Non-indexed fields still store their data inline in both variants.
 
 ## Ctag format
 
 | Bits | Field      | Description                                                                                              |
 |------|------------|----------------------------------------------------------------------------------------------------------|
 | 3    | TypeTag0   | Type of field. One of TAG_XXX                                                                            |
-| 12   | NameIndex  | Index of field's name in names dictionary. 0 - empty name                                                |
-| 10   | FieldIndex | Field index reference in internal reindexer payload. 0 - no reference.                                   |
+| 12   | NameIndex  | `TagName` stored in the tag: dictionary index + 1; 0 means no name (array elements, nested objects)      |
+| 10   | FieldIndex | Payload field index + 1; 0 means no indexed-field reference (`field` = -1 in the API)                    |
 | 4    | Reserved   | Reserved for future use.                                                                                 |
 | 3    | TypeTag1   | Additional high-order bits for the field type. Together with TypeTag0 they define the actual data type.  |
 
@@ -20,78 +20,94 @@ Each field of CJSON is encoded to `ctag` - varuint, which encodes type and name 
 
 | Name       | Value | Description                                      |
 |------------|-------|--------------------------------------------------|
-| TAG_VARINT | 0     | Data is number in varint format                  |
-| TAG_DOUBLE | 1     | Data is number in double format                  |
-| TAG_STRING | 2     | Data is string with varint length                |
+| TAG_VARINT | 0     | Signed integer: ZigZag and Varint                  |
+| TAG_DOUBLE | 1     | IEEE 754 double (8 bytes)                        |
+| TAG_STRING | 2     | Varint length + raw bytes (`string_pack`)        |
 | TAG_BOOL   | 3     | Data is bool                                     |
 | TAG_NULL   | 4     | Null                                             |
 | TAG_ARRAY  | 5     | Data is array of elements                        |
 | TAG_OBJECT | 6     | Data is object                                   |
 | TAG_END    | 7     | End of object                                    |
-| TAG_UUID   | 8     | Data in UUID format. High bit stored in TypeTag1 |
+| TAG_UUID   | 8     | 16-byte UUID                                     |
+| TAG_FLOAT  | 9     | Data is number in float format (32 bits)         |
 
 
 ## Arrays
 
 Arrays can be stored in 2 different ways:
 
-- homogeneous array, with all elements of same type (Format: TAG_ARRAY + Atag(TAG_{item} + COUNT), every item write in item format)
-- heterogeneous array, with elements of various types (Format: TAG_ARRAY + Atag(TAG_OBJECT + COUNT), every item write in item format with Ctag(TAG_{item} + NameIndex=0 + FieldIndex=0))
+- homogeneous array — all elements share one type (`TAG_ARRAY` + `atag` with element type and count; each element is written in that type's encoding, without per-element `ctag`)
+- heterogeneous array — elements may differ (`TAG_ARRAY` + `atag(TAG_OBJECT, count)`; each element has its own `ctag` with empty name and no field reference)
 
 
-### Atag - array tag format
+### atag (array tag)
 
-Atag is 4 byte int, which encodes type and count elements in array (TTTTTTTTNNNNNNNNNNNNNNNNNNNNNNNN)
+`atag` is a little-endian `uint32_t`: 6-bit element type in the high bits, 24-bit count in the low bits (`TTTTTTNNNNNNNNNNNNNNNNNNNNNNNN`).
 
-| Bits | Field   | Description                                                                                             |
-|------|---------|---------------------------------------------------------------------------------------------------------|
-| 6    | TypeTag | Type of array's elements. If TAG_OBJECT, than array is mixed, and each element contains individual ctag |
-| 24   | Count   | Count of elements in array                                                                              |
+| Bits | Field   | Description                                                                                              |
+|------|---------|----------------------------------------------------------------------------------------------------------|
+| 6    | TypeTag | Element type. `TAG_OBJECT` means a heterogeneous array; each element is prefixed with its own `ctag`    |
+| 24   | Count   | Number of elements in the array                                                                          |
 
 
 ## Record format
 
-````
-record := 
-  ctag := (TAG_OBJECT,name)
-    [field := 
-      ctag := (TAG_VARINT,name) data := <varint> |
-      ctag := (TAG_DOUBLE,name) data := <8 byte double> |
-      ctag := (TAG_BOOL,name) data := <1 byte: 0 - False, 1 - True> |
-      ctag := (TAG_STRING,name) data := <varint(string length)>, <char array> |
-      ctag := (TAG_NULL,name) |
-      ctag := (TAG_ARRAY,name) 
-        data := atag := TAG_OBJECT|TAG_VARINT|TAG_DOUBLE|TAG_BOOL, count) 
-        array := [ctag := TAG_XXX] <data>,[[ctag := TAG_XXX>]<data>]] ... |
-      ctag (TAG_OBJECT,name)> 
-        [subfield := field]
-      ...
-      ctag := (TAG_END)
+```
+record :=
+  ctag := (TAG_OBJECT)
+    [ cjson_field :=
+        ctag := (TAG_VARINT,name,field) data := <zigzag + varint> |
+        ctag := (TAG_DOUBLE,name,field) data := <8 bytes double> |
+        ctag := (TAG_FLOAT,name,field) data := <4 bytes float> |
+        ctag := (TAG_UUID,name,field) data := <16 bytes UUID> |
+        ctag := (TAG_BOOL,name,field) data := <1 byte: 0 - false, 1 - true> |
+        ctag := (TAG_STRING,name,field) data := <varint(length)>, <char array> |
+        ctag := (TAG_NULL,name) |
+        hom_array :=
+          ctag := (TAG_ARRAY,name,field)
+            atag := (TAG_VARINT|TAG_DOUBLE|TAG_FLOAT|TAG_UUID|TAG_BOOL|TAG_STRING, count)
+              [ array_element := <scalar data encoding> ]
+              ... |
+        het_array :=
+          ctag := (TAG_ARRAY,name,field)
+            atag := (TAG_OBJECT, count)
+              [ array_element := 
+                ctag := (TAG_VARINT|TAG_DOUBLE|TAG_FLOAT|TAG_UUID|TAG_BOOL|TAG_STRING) data := <scalar data encoding> |
+                ctag := (TAG_OBJECT) [cjson_subfield := cjson_field ...] |
+                hom_array |
+                het_array
+              ]
+              ...
+        ctag := (TAG_OBJECT,name)
+          [ cjson_subfield := cjson_field ]
+          ...
+        ctag := (TAG_END)
     ]
     ...
   ctag := (TAG_END)
-````
+```
 
 ## CJSON pack format
 
-| # | Field                | Description                                                                |
-|---|----------------------|----------------------------------------------------------------------------|
-| 1 | Offset to names dict | Offset to names dictionary. 0 if there are no new names dictionary in pack |
-| 2 | Records              | Tree of records. Begins with TAG_OBJECT, end TAG_END                       |
-| 3 | Names dictionary     | Dictionary of field names                                                  |
+| # | Field                | Description                                                                     |
+|---|----------------------|---------------------------------------------------------------------------------|
+| 1 | Offset to names dict | `uint32_t` offset from the start of the blob; 0 if no embedded names dictionary |
+| 2 | Records              | CJSON body: root `TAG_OBJECT`, closed with `TAG_END`                            |
+| 3 | Names dictionary     | Present only when field 1 is non-zero; serialized `TagsMatcher` name list       |
+
 ```
-names_dictionary := 
-  <varint(start_index)>
-  <varint(count)>
-  [[<varint(string length)>, <name char array>],
-   [<varint(string length)>, <name char array>],
-   ...
-  ]
+names_dictionary :=
+  <uint32(count)>
+  [<varint(name length)>, <name bytes>]   // repeated `count` times
+  ...
 ```
+
+When the namespace `TagsMatcher` is bundled with the blob, the stream starts with `ctag(TAG_END)` and a `uint32_t` offset to the appended matcher update — see `ItemImpl::GetCJSON` / `FromCJSON`.
 
 
 ## Example of CJSON
 
+Initial JSON:
 ```json
 {
     "name": "Hello",
@@ -102,58 +118,124 @@ names_dictionary :=
     }
 }
 ```
+
+Names dictionary (TagsMatcher; `ctag` uses `TagName` = index + 1):
 ```
-(TAG_OBJECT)                                    06 
-  (TAG_STRING,1) 5,"Hello"                      0A 05 48 65 6C 6C 6F
-  (TAG_VARINT,2) 2010                           10 B4 1F
-  (TAG_ARRAY,3) (TAG_VARINT,5) 1 2 3 4 5        1B 05 00 00 00 01 02 03 04 05
-  (TAG_OBJECT,4)                                26
-     (TAG_STRING,1) 4,"Info"                    0A 04 49 6E 66 6F
-  (TAG_END)                                     07
-(TAG_END)                                       07
+0 - "name"     -> TagName 1
+1 - "year"     -> TagName 2
+2 - "articles" -> TagName 3
+3 - "info"     -> TagName 4
 ```
+
+In the examples below, all fields are non-indexed: `field` is 0 in the dump (no payload field reference; API value -1).
+
+CJSON representation:
+```
+ctag(type: TAG_OBJECT, name: 0, field: 0)       06
+  ctag(type: TAG_STRING, name: 1, field: 0)     0A
+    5,"Hello"                                   05 48 65 6C 6C 6F
+  ctag(type: TAG_VARINT, name: 2, field: 0)     10
+    2010                                        B4 1F
+  ctag(type: TAG_ARRAY, name: 3, field: 0)      1B
+    atag(type: TAG_VARINT, len: 5)              05 00 00 00
+      1 2 3 4 5                                 01 02 03 04 05
+  ctag(type: TAG_OBJECT, name: 4, field: 0)     26
+    ctag(type: TAG_STRING, name: 1, field: 0)   0A
+      4,"Info"                                  04 49 6E 66 6F
+  ctag(type: TAG_END, name: 0, field: 0)        07
+ctag(type: TAG_END, name: 0, field: 0)          07
+```
+
 
 
 ### Array representations
 
-Thus, a heterogeneous array with two elements: the first string is "hello", the second boolean value is "true", can be encoded as follows:
+CJSON uses `atag` to describe an array's element type and length.
+
+#### Homogeneous arrays
+
+Initial JSON with homogeneous array:
 ```json
 {
-    "test": ["hi",true]
+    "str_arr": ["hi","bro"]
 }
 ```
-```
-(TAG_ARRAY, field index) (TAG_OBJECT, array len) (TAG_STRING, string len, char array) (TAG_BOOL, value)
-```
-```
-\065\002\000\000\006\002\002hi\003\001\a
-```
-| Value            | Descripton                     |
-------------------|--------------------------------|
-| \065             | Ctag(TAG_ARRAY)                |
-| \002\000\000\006 | Atag(2 item TAG_OBJECT)        |
-| \002             | Ctag(TAG_STRING)               |
-| \002hi           | Item string, 2 character, "hi" |
-| \003             | Ctag(TAG_BOOL)                 |
-| \001             | Item boolean, 'true'           |
 
+Names dictionary:
+```
+0 - "str_arr" -> TagName 1
+```
 
-Homogeneous array
+CJSON representation:
+```
+ctag(type: TAG_OBJECT, name: 0, field: 0)       06
+  ctag(type: TAG_ARRAY, name: 1, field: 0)      0D
+    atag(type: TAG_STRING, len: 2)              02 00 00 02
+      2,"hi"                                    02 68 69
+      3,"bro"                                   03 62 72 6F
+ctag(type: TAG_END, name: 0, field: 0)          07
+```
 
+#### Heterogeneous arrays
+
+To encode heterogeneous CJSON uses `atag` with `TAG_OBJECT` type and emits dedicated `ctag` for each array element.
+
+Initial JSON with heterogeneous array:
 ```json
 {
-    "test": ["hi","bro"]
+    "het_arr": ["hi", true, 123]
 }
 ```
+
+Names dictionary:
 ```
-(TAG_ARRAY, field index) (TAG_STRING, array len) (string len, char array) (string len, char array)
+0 - "het_arr" -> TagName 1
 ```
+
+CJSON representation:
 ```
-\065\002\000\000\002\002hi\003bro\a
+ctag(type: TAG_OBJECT, name: 0, field: 0)       06
+  ctag(type: TAG_ARRAY, name: 1, field: 0)      0D
+    atag(type: TAG_OBJECT, len: 3)              03 00 00 06
+      ctag(type: TAG_STRING, name: 0, field: 0) 02
+        2,"hi"                                  02 68 69
+      ctag(type: TAG_BOOL, name: 0, field: 0)   03
+        1                                       01
+      ctag(type: TAG_VARINT, name: 0, field: 0) 00
+        123                                     F6 01
+ctag(type: TAG_END, name: 0, field: 0)          07
 ```
-| Value            | Descripton                      |
--------------------|---------------------------------|
-| \065             | Ctag(TAG_ARRAY)                 |
-| \002\000\000\002 | Atag(2 item TAG_STRING)         |
-| \002hi           | Item string, 2 character, "hi"  |
-| \003bro          | Item string, 3 character, "bro" |
+
+Heterogeneous arrays cannot be indexed.
+
+#### Nested arrays
+
+Nested arrays are encoded as heterogeneous, i.e. with `TAG_OBJECT` in `atag` and dedicated `ctag` for each internal element.
+
+JSON with nested array:
+```json
+{
+    "mult_array": [99, [42, 2, 3], [24, 42]]
+}
+```
+
+Names dictionary:
+```
+0 - "mult_array"` -> TagName 1
+```
+
+CJSON representation:
+```
+ctag(type: TAG_OBJECT, name: 0, field: 0)       06
+  ctag(type: TAG_ARRAY, name: 1, field: 0)      0D
+    atag(type: TAG_OBJECT, len: 3)              03 00 00 06
+      ctag(type: TAG_VARINT, name: 0, field: 0) 00
+        99                                      C6 01
+      ctag(type: TAG_ARRAY, name: 0, field: 0)  05
+        atag(type: TAG_VARINT, len: 3)          03 00 00 00
+          42 2 3                                54 04 06
+      ctag(type: TAG_ARRAY, name: 0, field: 0)  05
+        atag(type: TAG_VARINT, len: 2)          02 00 00 00
+          24 42                                 30 54
+ctag(type: TAG_END, name: 0, field: 0)          07
+```

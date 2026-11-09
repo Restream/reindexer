@@ -3,7 +3,6 @@
 #if REINDEX_WITH_GPERFTOOLS && !defined(_WIN32)
 #include <dlfcn.h>
 #include <stdlib.h>
-#include <mutex>
 #endif	// REINDEX_WITH_GPERFTOOLS
 
 namespace reindexer {

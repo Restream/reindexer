@@ -11,7 +11,7 @@ constexpr std::string_view kUnixProtocolName = "unix";
 
 class WrSerializer;
 
-struct ClientStat {
+struct [[nodiscard]] ClientStat {
 	void GetJSON(WrSerializer& ser) const;
 	int connectionId = 0;
 	std::string_view protocol = kTcpProtocolName;
@@ -33,11 +33,11 @@ struct ClientStat {
 	uint32_t txCount = 0;
 };
 
-struct TxStats {
+struct [[nodiscard]] TxStats {
 	std::atomic<uint32_t> txCount = {0};
 };
 
-struct ClientConnectionStat {
+struct [[nodiscard]] ClientConnectionStat {
 	std::shared_ptr<reindexer::net::connection_stat> connectionStat;
 	std::shared_ptr<reindexer::TxStats> txStats;
 	std::string ip;
@@ -49,7 +49,7 @@ struct ClientConnectionStat {
 	std::string appName;
 };
 
-class IClientsStats {
+class [[nodiscard]] IClientsStats {
 public:
 	virtual void GetClientInfo(std::vector<ClientStat>& datas) = 0;
 	virtual void AddConnection(int64_t connectionId, ClientConnectionStat&& conn) = 0;

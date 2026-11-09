@@ -21,27 +21,27 @@ const watcherChSize = 1000
 var ctxIDCounter uint64 = 1
 
 var resultChPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		newCh := make(chan struct{})
 		return &newCh
 	},
 }
 
-//Wrapper of 'chan ctxWatcherCmd' for correct processing of the closed chan if StopWatchOnCtx called after Finalize
+// Wrapper of 'chan ctxWatcherCmd' for correct processing of the closed chan if StopWatchOnCtx called after Finalize
 type watcherTSWrapper struct {
 	ch       chan ctxWatcherCmd
 	isClosed bool
 	mtx      sync.RWMutex
 }
 
-//CtxWatcher perfomrs contexts canceling on expiration with some delay
+// CtxWatcher perfomrs contexts canceling on expiration with some delay
 type CtxWatcher struct {
 	resultChPool sync.Pool
 	cmdChArr     []watcherTSWrapper
 	watchDelay   time.Duration
 }
 
-//CCtxWrapper is a wrapper over C-context
+// CCtxWrapper is a wrapper over C-context
 type CCtxWrapper struct {
 	cCtx         C.reindexer_ctx_info
 	goCtx        context.Context
@@ -111,7 +111,7 @@ func (watcher *CtxWatcher) putAwaitCh(ch chan struct{}) {
 	resultChPool.Put(&ch)
 }
 
-//StartWatchOnCtx creates context wrapper and puts it to the watch queue
+// StartWatchOnCtx creates context wrapper and puts it to the watch queue
 func (watcher *CtxWatcher) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, error) {
 	if ctx.Done() != nil {
 		var execTimeout int64
@@ -120,7 +120,7 @@ func (watcher *CtxWatcher) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, er
 		}
 
 		if deadline, ok := ctx.Deadline(); ok {
-			execTimeout = int64(deadline.Sub(time.Now()) / time.Millisecond)
+			execTimeout = int64(time.Until(deadline) / time.Millisecond)
 			if execTimeout <= 0 {
 				return CCtxWrapper{}, context.DeadlineExceeded
 			}
@@ -167,7 +167,7 @@ func (watcher *CtxWatcher) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, er
 	}, nil
 }
 
-//StopWatchOnCtx removes context from watch queue
+// StopWatchOnCtx removes context from watch queue
 func (watcher *CtxWatcher) StopWatchOnCtx(ctxInfo CCtxWrapper) {
 	if ctxInfo.isCancelable {
 		ctxInfo.watcherCh.mtx.RLock()
@@ -228,7 +228,7 @@ func (watcher *CtxWatcher) watchRoutine(watchCh chan ctxWatcherCmd) {
 	}
 }
 
-//Finalize CtxWatcher
+// Finalize CtxWatcher
 func (watcher *CtxWatcher) Finalize() error {
 	for idx := range watcher.cmdChArr {
 		chWr := &watcher.cmdChArr[idx]

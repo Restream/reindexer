@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"sync/atomic"
 
-	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v5/bindings"
 )
 
 type pool struct {

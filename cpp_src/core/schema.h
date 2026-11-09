@@ -16,22 +16,26 @@ namespace reindexer {
 class TagsMatcher;
 class PayloadType;
 class WrSerializer;
+
+namespace builders {
 class ProtobufSchemaBuilder;
+}  // namespace builders
+using builders::ProtobufSchemaBuilder;
 
 std::string_view kvTypeToJsonSchemaType(KeyValueType type);
 
-class FieldProps {
+class [[nodiscard]] FieldProps {
 public:
 	FieldProps() = default;
-	FieldProps(KeyValueType _type, bool _isArray = false, bool _isRequired = false, bool _allowAdditionalProps = false,
-			   const std::string& _xGoType = {})
+	FieldProps(KeyValueType _type, IsArray _isArray = IsArray_False, IsRequired _isRequired = IsRequired_False,
+			   AllowAdditionalProps _allowAdditionalProps = AllowAdditionalProps_False, const std::string& _xGoType = {})
 		: type(kvTypeToJsonSchemaType(_type)),
 		  xGoType(_xGoType),
 		  isArray(_isArray),
 		  isRequired(_isRequired),
 		  allowAdditionalProps(_allowAdditionalProps) {}
-	FieldProps(std::string _type, bool _isArray = false, bool _isRequired = false, bool _allowAdditionalProps = false,
-			   const std::string& _xGoType = {})
+	FieldProps(std::string _type, IsArray _isArray = IsArray_False, IsRequired _isRequired = IsRequired_False,
+			   AllowAdditionalProps _allowAdditionalProps = AllowAdditionalProps_False, const std::string& _xGoType = {})
 		: type(std::move(_type)),
 		  xGoType(_xGoType),
 		  isArray(_isArray),
@@ -54,12 +58,12 @@ public:
 
 class Schema;
 
-struct SchemaFieldType {
+struct [[nodiscard]] SchemaFieldType {
 	KeyValueType type_{KeyValueType::Undefined{}};
 	bool isArray_{false};
 };
 
-class SchemaFieldsTypes {
+class [[nodiscard]] SchemaFieldsTypes {
 public:
 	void AddObject(std::string objectType);
 	void AddField(KeyValueType type, bool isArray);
@@ -77,7 +81,7 @@ private:
 	int generatedObjectsNames = {0};
 };
 
-class PrefixTree {
+class [[nodiscard]] PrefixTree {
 public:
 	using PathT = h_vector<std::string, 10>;
 
@@ -89,12 +93,12 @@ public:
 	std::vector<std::string> GetSuggestions(std::string_view path) const;
 	std::vector<std::string> GetPaths() const;
 	bool HasPath(std::string_view path, bool allowAdditionalFields) const noexcept;
-	Error BuildProtobufSchema(WrSerializer& schema, TagsMatcher& tm, PayloadType& pt) noexcept;
+	Error BuildProtobufSchema(WrSerializer& schema, TagsMatcher& tm, const PayloadType& pt) noexcept;
 
 	class PrefixTreeNode;
 	using map = fast_hash_map<std::string, std::unique_ptr<PrefixTreeNode>, hash_str, equal_str, less_str>;
 
-	class PrefixTreeNode {
+	class [[nodiscard]] PrefixTreeNode {
 	public:
 		PrefixTreeNode() = default;
 		PrefixTreeNode(FieldProps&& p) : props(std::move(p)) {}
@@ -116,7 +120,7 @@ private:
 	SchemaFieldsTypes fieldsTypes_;
 };
 
-class Schema {
+class [[nodiscard]] Schema {
 public:
 	Schema() = default;
 	explicit Schema(std::string_view json);
@@ -132,13 +136,13 @@ public:
 	Error FromJSON(std::string_view json);
 	void GetJSON(WrSerializer&) const;
 	std::string_view GetJSON() const noexcept { return originalJson_; }
-	Error BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt);
+	Error BuildProtobufSchema(TagsMatcher& tm, const PayloadType& pt);
 	Error GetProtobufSchema(WrSerializer& schema) const;
 	int GetProtobufNsNumber() const noexcept { return protobufNsNumber_; }
 	const PrefixTree::PrefixTreeNode* GetRoot() const noexcept { return &paths_.root_; }
 	static std::string AppendProtobufNumber(std::string_view json, int protobufNsNumber);
 
-	std::vector<int> MakeCsvTagOrdering(const TagsMatcher& tm) const;
+	std::vector<TagName> MakeCsvTagOrdering(const TagsMatcher& tm) const;
 	bool IsEmpty() const noexcept;
 
 private:

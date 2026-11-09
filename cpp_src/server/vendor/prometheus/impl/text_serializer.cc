@@ -40,7 +40,7 @@ const std::string& EscapeLabelValue(const std::string& value, std::string* tmp) 
 			tmp->push_back(c);
 		}
 	}
-	return copy ? *tmp : value;
+	return copy ? *tmp : value;	 // NOLINT(bugprone-return-const-ref-from-parameter)
 }
 
 // Write a line header: metric name and labels
@@ -124,7 +124,7 @@ void SerializeHistogram(std::ostream& out, const MetricFamily& family, const Cli
 		WriteTail(out, metric);
 	}
 
-	if (last != std::numeric_limits<double>::infinity()) {
+	if (!std::isinf(last)) {
 		WriteHead(out, family, metric, "_bucket", "le", "+Inf");
 		out << hist.sample_count;
 		WriteTail(out, metric);

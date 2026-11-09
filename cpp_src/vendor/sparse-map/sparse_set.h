@@ -82,7 +82,8 @@ namespace tsl {
 template <class Key, class Hash = std::hash<Key>, class KeyEqual = std::equal_to<Key>, class Allocator = std::allocator<Key>,
 		  class GrowthPolicy = tsl::sh::power_of_two_growth_policy<2>,
 		  tsl::sh::exception_safety ExceptionSafety = tsl::sh::exception_safety::basic,
-		  tsl::sh::sparsity Sparsity = tsl::sh::sparsity::medium>
+		  tsl::sh::sparsity Sparsity = tsl::sh::sparsity::medium,
+		  std::size_t HashPrefixBits = tsl::sh::default_hash_prefix_bits<Key>::value>
 class sparse_set {
 private:
 	template <typename U>
@@ -92,13 +93,13 @@ private:
 	public:
 		using key_type = Key;
 
-		const key_type &operator()(const Key &key) const noexcept { return key; }
+		const key_type& operator()(const Key& key) const noexcept { return key; }
 
-		key_type &operator()(Key &key) noexcept { return key; }
+		key_type& operator()(Key& key) noexcept { return key; }
 	};
 
 	using ht = detail_sparse_hash::sparse_hash<Key, KeySelect, void, Hash, KeyEqual, Allocator, GrowthPolicy, ExceptionSafety, Sparsity,
-											   tsl::sh::probing::quadratic>;
+											   tsl::sh::probing::quadratic, HashPrefixBits>;
 
 public:
 	using key_type = typename ht::key_type;
@@ -120,42 +121,42 @@ public:
 	 */
 	sparse_set() : sparse_set(ht::DEFAULT_INIT_BUCKET_COUNT) {}
 
-	explicit sparse_set(size_type bucket_count, const Hash &hash = Hash(), const KeyEqual &equal = KeyEqual(),
-						const Allocator &alloc = Allocator())
+	explicit sparse_set(size_type bucket_count, const Hash& hash = Hash(), const KeyEqual& equal = KeyEqual(),
+						const Allocator& alloc = Allocator())
 		: m_ht(bucket_count, hash, equal, alloc, ht::DEFAULT_MAX_LOAD_FACTOR) {}
 
-	sparse_set(size_type bucket_count, const Allocator &alloc) : sparse_set(bucket_count, Hash(), KeyEqual(), alloc) {}
+	sparse_set(size_type bucket_count, const Allocator& alloc) : sparse_set(bucket_count, Hash(), KeyEqual(), alloc) {}
 
-	sparse_set(size_type bucket_count, const Hash &hash, const Allocator &alloc) : sparse_set(bucket_count, hash, KeyEqual(), alloc) {}
+	sparse_set(size_type bucket_count, const Hash& hash, const Allocator& alloc) : sparse_set(bucket_count, hash, KeyEqual(), alloc) {}
 
-	explicit sparse_set(const Allocator &alloc) : sparse_set(ht::DEFAULT_INIT_BUCKET_COUNT, alloc) {}
+	explicit sparse_set(const Allocator& alloc) : sparse_set(ht::DEFAULT_INIT_BUCKET_COUNT, alloc) {}
 
 	template <class InputIt>
-	sparse_set(InputIt first, InputIt last, size_type bucket_count = ht::DEFAULT_INIT_BUCKET_COUNT, const Hash &hash = Hash(),
-			   const KeyEqual &equal = KeyEqual(), const Allocator &alloc = Allocator())
+	sparse_set(InputIt first, InputIt last, size_type bucket_count = ht::DEFAULT_INIT_BUCKET_COUNT, const Hash& hash = Hash(),
+			   const KeyEqual& equal = KeyEqual(), const Allocator& alloc = Allocator())
 		: sparse_set(bucket_count, hash, equal, alloc) {
 		insert(first, last);
 	}
 
 	template <class InputIt>
-	sparse_set(InputIt first, InputIt last, size_type bucket_count, const Allocator &alloc)
+	sparse_set(InputIt first, InputIt last, size_type bucket_count, const Allocator& alloc)
 		: sparse_set(first, last, bucket_count, Hash(), KeyEqual(), alloc) {}
 
 	template <class InputIt>
-	sparse_set(InputIt first, InputIt last, size_type bucket_count, const Hash &hash, const Allocator &alloc)
+	sparse_set(InputIt first, InputIt last, size_type bucket_count, const Hash& hash, const Allocator& alloc)
 		: sparse_set(first, last, bucket_count, hash, KeyEqual(), alloc) {}
 
-	sparse_set(std::initializer_list<value_type> init, size_type bucket_count = ht::DEFAULT_INIT_BUCKET_COUNT, const Hash &hash = Hash(),
-			   const KeyEqual &equal = KeyEqual(), const Allocator &alloc = Allocator())
+	sparse_set(std::initializer_list<value_type> init, size_type bucket_count = ht::DEFAULT_INIT_BUCKET_COUNT, const Hash& hash = Hash(),
+			   const KeyEqual& equal = KeyEqual(), const Allocator& alloc = Allocator())
 		: sparse_set(init.begin(), init.end(), bucket_count, hash, equal, alloc) {}
 
-	sparse_set(std::initializer_list<value_type> init, size_type bucket_count, const Allocator &alloc)
+	sparse_set(std::initializer_list<value_type> init, size_type bucket_count, const Allocator& alloc)
 		: sparse_set(init.begin(), init.end(), bucket_count, Hash(), KeyEqual(), alloc) {}
 
-	sparse_set(std::initializer_list<value_type> init, size_type bucket_count, const Hash &hash, const Allocator &alloc)
+	sparse_set(std::initializer_list<value_type> init, size_type bucket_count, const Hash& hash, const Allocator& alloc)
 		: sparse_set(init.begin(), init.end(), bucket_count, hash, KeyEqual(), alloc) {}
 
-	sparse_set &operator=(std::initializer_list<value_type> ilist) {
+	sparse_set& operator=(std::initializer_list<value_type> ilist) {
 		m_ht.clear();
 
 		m_ht.reserve(ilist.size());
@@ -189,13 +190,13 @@ public:
 	 */
 	void clear() noexcept { m_ht.clear(); }
 
-	std::pair<iterator, bool> insert(const value_type &value) { return m_ht.insert(value); }
+	std::pair<iterator, bool> insert(const value_type& value) { return m_ht.insert(value); }
 
-	std::pair<iterator, bool> insert(value_type &&value) { return m_ht.insert(std::move(value)); }
+	std::pair<iterator, bool> insert(value_type&& value) { return m_ht.insert(std::move(value)); }
 
-	iterator insert(const_iterator hint, const value_type &value) { return m_ht.insert_hint(hint, value); }
+	iterator insert(const_iterator hint, const value_type& value) { return m_ht.insert_hint(hint, value); }
 
-	iterator insert(const_iterator hint, value_type &&value) { return m_ht.insert_hint(hint, std::move(value)); }
+	iterator insert(const_iterator hint, value_type&& value) { return m_ht.insert_hint(hint, std::move(value)); }
 
 	template <class InputIt>
 	void insert(InputIt first, InputIt last) {
@@ -212,7 +213,7 @@ public:
 	 * Mainly here for compatibility with the `std::unordered_map` interface.
 	 */
 	template <class... Args>
-	std::pair<iterator, bool> emplace(Args &&...args) {
+	std::pair<iterator, bool> emplace(Args&&... args) {
 		return m_ht.emplace(std::forward<Args>(args)...);
 	}
 
@@ -224,14 +225,14 @@ public:
 	 * Mainly here for compatibility with the `std::unordered_map` interface.
 	 */
 	template <class... Args>
-	iterator emplace_hint(const_iterator hint, Args &&...args) {
+	iterator emplace_hint(const_iterator hint, Args&&... args) {
 		return m_ht.emplace_hint(hint, std::forward<Args>(args)...);
 	}
 
 	iterator erase(iterator pos) { return m_ht.erase(pos); }
 	iterator erase(const_iterator pos) { return m_ht.erase(pos); }
 	iterator erase(const_iterator first, const_iterator last) { return m_ht.erase(first, last); }
-	size_type erase(const key_type &key) { return m_ht.erase(key); }
+	size_type erase(const key_type& key) { return m_ht.erase(key); }
 
 	/**
 	 * Use the hash value `precalculated_hash` instead of hashing the key. The
@@ -239,15 +240,15 @@ public:
 	 * behaviour is undefined. Useful to speed-up the lookup if you already have
 	 * the hash.
 	 */
-	size_type erase(const key_type &key, std::size_t precalculated_hash) { return m_ht.erase(key, precalculated_hash); }
+	size_type erase(const key_type& key, std::size_t precalculated_hash) { return m_ht.erase(key, precalculated_hash); }
 
 	/**
 	 * This overload only participates in the overload resolution if the typedef
 	 * `KeyEqual::is_transparent` exists. If so, `K` must be hashable and
 	 * comparable to `Key`.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	size_type erase(const K &key) {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	size_type erase(const K& key) {
 		return m_ht.erase(key);
 	}
 
@@ -259,17 +260,17 @@ public:
 	 * behaviour is undefined. Useful to speed-up the lookup if you already have
 	 * the hash.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	size_type erase(const K &key, std::size_t precalculated_hash) {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	size_type erase(const K& key, std::size_t precalculated_hash) {
 		return m_ht.erase(key, precalculated_hash);
 	}
 
-	void swap(sparse_set &other) { other.m_ht.swap(m_ht); }
+	void swap(sparse_set& other) { other.m_ht.swap(m_ht); }
 
 	/*
 	 * Lookup
 	 */
-	size_type count(const Key &key) const { return m_ht.count(key); }
+	size_type count(const Key& key) const { return m_ht.count(key); }
 
 	/**
 	 * Use the hash value `precalculated_hash` instead of hashing the key. The
@@ -277,15 +278,15 @@ public:
 	 * behaviour is undefined. Useful to speed-up the lookup if you already have
 	 * the hash.
 	 */
-	size_type count(const Key &key, std::size_t precalculated_hash) const { return m_ht.count(key, precalculated_hash); }
+	size_type count(const Key& key, std::size_t precalculated_hash) const { return m_ht.count(key, precalculated_hash); }
 
 	/**
 	 * This overload only participates in the overload resolution if the typedef
 	 * `KeyEqual::is_transparent` exists. If so, `K` must be hashable and
 	 * comparable to `Key`.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	size_type count(const K &key) const {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	size_type count(const K& key) const {
 		return m_ht.count(key);
 	}
 
@@ -297,12 +298,12 @@ public:
 	 * behaviour is undefined. Useful to speed-up the lookup if you already have
 	 * the hash.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	size_type count(const K &key, std::size_t precalculated_hash) const {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	size_type count(const K& key, std::size_t precalculated_hash) const {
 		return m_ht.count(key, precalculated_hash);
 	}
 
-	iterator find(const Key &key) { return m_ht.find(key); }
+	iterator find(const Key& key) { return m_ht.find(key); }
 
 	/**
 	 * Use the hash value `precalculated_hash` instead of hashing the key. The
@@ -310,22 +311,22 @@ public:
 	 * behaviour is undefined. Useful to speed-up the lookup if you already have
 	 * the hash.
 	 */
-	iterator find(const Key &key, std::size_t precalculated_hash) { return m_ht.find(key, precalculated_hash); }
+	iterator find(const Key& key, std::size_t precalculated_hash) { return m_ht.find(key, precalculated_hash); }
 
-	const_iterator find(const Key &key) const { return m_ht.find(key); }
+	const_iterator find(const Key& key) const { return m_ht.find(key); }
 
 	/**
 	 * @copydoc find(const Key& key, std::size_t precalculated_hash)
 	 */
-	const_iterator find(const Key &key, std::size_t precalculated_hash) const { return m_ht.find(key, precalculated_hash); }
+	const_iterator find(const Key& key, std::size_t precalculated_hash) const { return m_ht.find(key, precalculated_hash); }
 
 	/**
 	 * This overload only participates in the overload resolution if the typedef
 	 * `KeyEqual::is_transparent` exists. If so, `K` must be hashable and
 	 * comparable to `Key`.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	iterator find(const K &key) {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	iterator find(const K& key) {
 		return m_ht.find(key);
 	}
 
@@ -337,16 +338,16 @@ public:
 	 * behaviour is undefined. Useful to speed-up the lookup if you already have
 	 * the hash.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	iterator find(const K &key, std::size_t precalculated_hash) {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	iterator find(const K& key, std::size_t precalculated_hash) {
 		return m_ht.find(key, precalculated_hash);
 	}
 
 	/**
 	 * @copydoc find(const K& key)
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	const_iterator find(const K &key) const {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	const_iterator find(const K& key) const {
 		return m_ht.find(key);
 	}
 
@@ -358,27 +359,27 @@ public:
 	 * behaviour is undefined. Useful to speed-up the lookup if you already have
 	 * the hash.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	const_iterator find(const K &key, std::size_t precalculated_hash) const {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	const_iterator find(const K& key, std::size_t precalculated_hash) const {
 		return m_ht.find(key, precalculated_hash);
 	}
 
-	bool contains(const Key &key) const { return m_ht.contains(key); }
+	bool contains(const Key& key) const { return m_ht.contains(key); }
 
 	/**
 	 * Use the hash value 'precalculated_hash' instead of hashing the key. The
 	 * hash value should be the same as hash_function()(key). Useful to speed-up
 	 * the lookup if you already have the hash.
 	 */
-	bool contains(const Key &key, std::size_t precalculated_hash) const { return m_ht.contains(key, precalculated_hash); }
+	bool contains(const Key& key, std::size_t precalculated_hash) const { return m_ht.contains(key, precalculated_hash); }
 
 	/**
 	 * This overload only participates in the overload resolution if the typedef
 	 * KeyEqual::is_transparent exists. If so, K must be hashable and comparable
 	 * to Key.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	bool contains(const K &key) const {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	bool contains(const K& key) const {
 		return m_ht.contains(key);
 	}
 
@@ -389,12 +390,12 @@ public:
 	 * hash value should be the same as hash_function()(key). Useful to speed-up
 	 * the lookup if you already have the hash.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	bool contains(const K &key, std::size_t precalculated_hash) const {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	bool contains(const K& key, std::size_t precalculated_hash) const {
 		return m_ht.contains(key, precalculated_hash);
 	}
 
-	std::pair<iterator, iterator> equal_range(const Key &key) { return m_ht.equal_range(key); }
+	std::pair<iterator, iterator> equal_range(const Key& key) { return m_ht.equal_range(key); }
 
 	/**
 	 * Use the hash value `precalculated_hash` instead of hashing the key. The
@@ -402,16 +403,16 @@ public:
 	 * behaviour is undefined. Useful to speed-up the lookup if you already have
 	 * the hash.
 	 */
-	std::pair<iterator, iterator> equal_range(const Key &key, std::size_t precalculated_hash) {
+	std::pair<iterator, iterator> equal_range(const Key& key, std::size_t precalculated_hash) {
 		return m_ht.equal_range(key, precalculated_hash);
 	}
 
-	std::pair<const_iterator, const_iterator> equal_range(const Key &key) const { return m_ht.equal_range(key); }
+	std::pair<const_iterator, const_iterator> equal_range(const Key& key) const { return m_ht.equal_range(key); }
 
 	/**
 	 * @copydoc equal_range(const Key& key, std::size_t precalculated_hash)
 	 */
-	std::pair<const_iterator, const_iterator> equal_range(const Key &key, std::size_t precalculated_hash) const {
+	std::pair<const_iterator, const_iterator> equal_range(const Key& key, std::size_t precalculated_hash) const {
 		return m_ht.equal_range(key, precalculated_hash);
 	}
 
@@ -420,8 +421,8 @@ public:
 	 * `KeyEqual::is_transparent` exists. If so, `K` must be hashable and
 	 * comparable to `Key`.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	std::pair<iterator, iterator> equal_range(const K &key) {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	std::pair<iterator, iterator> equal_range(const K& key) {
 		return m_ht.equal_range(key);
 	}
 
@@ -433,24 +434,24 @@ public:
 	 * behaviour is undefined. Useful to speed-up the lookup if you already have
 	 * the hash.
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	std::pair<iterator, iterator> equal_range(const K &key, std::size_t precalculated_hash) {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	std::pair<iterator, iterator> equal_range(const K& key, std::size_t precalculated_hash) {
 		return m_ht.equal_range(key, precalculated_hash);
 	}
 
 	/**
 	 * @copydoc equal_range(const K& key)
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	std::pair<const_iterator, const_iterator> equal_range(const K &key) const {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	std::pair<const_iterator, const_iterator> equal_range(const K& key) const {
 		return m_ht.equal_range(key);
 	}
 
 	/**
 	 * @copydoc equal_range(const K& key, std::size_t precalculated_hash)
 	 */
-	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type * = nullptr>
-	std::pair<const_iterator, const_iterator> equal_range(const K &key, std::size_t precalculated_hash) const {
+	template <class K, class KE = KeyEqual, typename std::enable_if<has_is_transparent<KE>::value>::type* = nullptr>
+	std::pair<const_iterator, const_iterator> equal_range(const K& key, std::size_t precalculated_hash) const {
 		return m_ht.equal_range(key, precalculated_hash);
 	}
 
@@ -467,7 +468,7 @@ public:
 	float max_load_factor() const { return m_ht.max_load_factor(); }
 	void max_load_factor(float ml) { m_ht.max_load_factor(ml); }
 
-	void rehash(size_type count) { m_ht.rehash(count); }
+	void rehash(size_type count) noexcept { m_ht.rehash(count); }
 	void reserve(size_type count) { m_ht.reserve(count); }
 
 	/*
@@ -485,61 +486,12 @@ public:
 	 */
 	iterator mutable_iterator(const_iterator pos) { return m_ht.mutable_iterator(pos); }
 
-	/**
-	 * Serialize the set through the `serializer` parameter.
-	 *
-	 * The `serializer` parameter must be a function object that supports the
-	 * following call:
-	 *  - `void operator()(const U& value);` where the types `std::uint64_t`,
-	 * `float` and `Key` must be supported for U.
-	 *
-	 * The implementation leaves binary compatibility (endianness, IEEE 754 for
-	 * floats, ...) of the types it serializes in the hands of the `Serializer`
-	 * function object if compatibility is required.
-	 */
-	template <class Serializer>
-	void serialize(Serializer &serializer) const {
-		m_ht.serialize(serializer);
-	}
-
-	/**
-	 * Deserialize a previously serialized set through the `deserializer`
-	 * parameter.
-	 *
-	 * The `deserializer` parameter must be a function object that supports the
-	 * following calls:
-	 *  - `template<typename U> U operator()();` where the types `std::uint64_t`,
-	 * `float` and `Key` must be supported for U.
-	 *
-	 * If the deserialized hash set type is hash compatible with the serialized
-	 * set, the deserialization process can be sped up by setting
-	 * `hash_compatible` to true. To be hash compatible, the Hash, KeyEqual and
-	 * GrowthPolicy must behave the same way than the ones used on the serialized
-	 * set. The `std::size_t` must also be of the same size as the one on the
-	 * platform used to serialize the set. If these criteria are not met, the
-	 * behaviour is undefined with `hash_compatible` sets to true.
-	 *
-	 * The behaviour is undefined if the type `Key` of the `sparse_set` is not the
-	 * same as the type used during serialization.
-	 *
-	 * The implementation leaves binary compatibility (endianness, IEEE 754 for
-	 * floats, size of int, ...) of the types it deserializes in the hands of the
-	 * `Deserializer` function object if compatibility is required.
-	 */
-	template <class Deserializer>
-	static sparse_set deserialize(Deserializer &deserializer, bool hash_compatible = false) {
-		sparse_set set(0);
-		set.m_ht.deserialize(deserializer, hash_compatible);
-
-		return set;
-	}
-
-	friend bool operator==(const sparse_set &lhs, const sparse_set &rhs) {
+	friend bool operator==(const sparse_set& lhs, const sparse_set& rhs) {
 		if (lhs.size() != rhs.size()) {
 			return false;
 		}
 
-		for (const auto &element_lhs : lhs) {
+		for (const auto& element_lhs : lhs) {
 			const auto it_element_rhs = rhs.find(element_lhs);
 			if (it_element_rhs == rhs.cend()) {
 				return false;
@@ -549,9 +501,9 @@ public:
 		return true;
 	}
 
-	friend bool operator!=(const sparse_set &lhs, const sparse_set &rhs) { return !operator==(lhs, rhs); }
+	friend bool operator!=(const sparse_set& lhs, const sparse_set& rhs) { return !operator==(lhs, rhs); }
 
-	friend void swap(sparse_set &lhs, sparse_set &rhs) { lhs.swap(rhs); }
+	friend void swap(sparse_set& lhs, sparse_set& rhs) { lhs.swap(rhs); }
 
 private:
 	ht m_ht;
