@@ -1,13 +1,10 @@
 #include "router.h"
 
-#include <cstdarg>
 #include <unordered_map>
 #include "estl/chunk.h"
 #include "tools/fsops.h"
 
-namespace reindexer {
-namespace net {
-namespace http {
+namespace reindexer::net::http {
 
 using namespace std::string_view_literals;
 
@@ -60,7 +57,7 @@ HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
 	}
 }
 
-int Context::JSON(int code, std::string_view slice) {
+int Context::JSON(int code, std::string_view slice) const {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/json; charset=utf-8"sv});
@@ -68,7 +65,7 @@ int Context::JSON(int code, std::string_view slice) {
 	return 0;
 }
 
-int Context::JSON(int code, chunk&& chunk) {
+int Context::JSON(int code, chunk&& chunk) const {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/json; charset=utf-8"sv});
@@ -76,17 +73,17 @@ int Context::JSON(int code, chunk&& chunk) {
 	return 0;
 }
 
-int Context::CSV(int code, chunk&& chunk) {
+int Context::CSV(int code, chunk&& chunk) const {
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/csv; charset=utf-8"sv});
 	if (auto filename = request->headers.Get("Save-CSV-To"sv); !filename.empty()) {
-		writer->SetHeader(http::Header{"Content-Disposition"sv, fmt::sprintf("attachment; filename=\"%s\"", filename)});
+		writer->SetHeader(http::Header{"Content-Disposition"sv, fmt::format("attachment; filename=\"{}\"", filename)});
 	}
 	writer->Write(std::move(chunk), Writer::WriteMode::PreChunkedBody);
 	return 0;
 }
 
-int Context::MSGPACK(int code, chunk&& chunk) {
+int Context::MSGPACK(int code, chunk&& chunk) const {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/x-msgpack; charset=utf-8"sv});
@@ -94,7 +91,14 @@ int Context::MSGPACK(int code, chunk&& chunk) {
 	return 0;
 }
 
-int Context::Protobuf(int code, chunk&& chunk) {
+void Context::MSGPACK(int code, std::string_view slice) const {
+	writer->SetContentLength(slice.size());
+	writer->SetRespCode(code);
+	writer->SetHeader(http::Header{"Content-Type"sv, "application/x-msgpack; charset=utf-8"sv});
+	writer->Write(slice);
+}
+
+int Context::Protobuf(int code, chunk&& chunk) const {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/protobuf; charset=utf-8"sv});
@@ -102,7 +106,14 @@ int Context::Protobuf(int code, chunk&& chunk) {
 	return 0;
 }
 
-int Context::String(int code, std::string_view slice) {
+void Context::Protobuf(int code, std::string_view slice) const {
+	writer->SetContentLength(slice.size());
+	writer->SetRespCode(code);
+	writer->SetHeader(http::Header{"Content-Type"sv, "application/protobuf; charset=utf-8"sv});
+	writer->Write(slice);
+}
+
+int Context::String(int code, std::string_view slice) const {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "text/plain; charset=utf-8"sv});
@@ -110,7 +121,7 @@ int Context::String(int code, std::string_view slice) {
 	return 0;
 }
 
-int Context::String(int code, chunk&& chunk) {
+int Context::String(int code, chunk&& chunk) const {
 	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "text/plain; charset=utf-8"sv});
@@ -118,7 +129,7 @@ int Context::String(int code, chunk&& chunk) {
 	return 0;
 }
 
-int Context::Redirect(std::string_view url) {
+int Context::Redirect(std::string_view url) const {
 	writer->SetHeader(http::Header{"Location"sv, url});
 	return String(http::StatusMovedPermanently, "");
 }
@@ -154,10 +165,9 @@ static std::string_view lookupContentType(std::string_view path) {
 	return "application/octet-stream"sv;
 }
 
-int Context::File(int code, std::string_view path, std::string_view data, bool isGzip, bool withCache) {
+int Context::File(int code, std::string_view path, std::string_view data, bool isGzip, bool withCache) const {
 	std::string content;
-
-	if (data.length() == 0) {
+	if (data.empty()) {
 		if (fs::ReadFile(isGzip ? std::string(path).append(kGzSuffix) : std::string(path), content) < 0) {
 			return String(http::StatusNotFound, "File not found");
 		}
@@ -197,47 +207,70 @@ int Router::handle(Context& ctx) {
 	int res = 0;
 
 	for (auto& r : routes_[method]) {
-		std::string_view url = ctx.request->path;
-		std::string_view route = r.path;
-		ctx.request->urlParams.clear();
-
-		for (;;) {
-			auto patternPos = route.find(':');
-			auto asteriskPos = route.find('*');
-			if (patternPos == std::string_view::npos || asteriskPos != std::string_view::npos) {
-				if (url.substr(0, asteriskPos) != route.substr(0, asteriskPos)) {
-					break;
-				}
-
-				for (auto& mw : middlewares_) {
-					res = mw.func(mw.object, ctx);
-					if (res != 0) {
-						return res;
-					}
-				}
-				return r.h.func(r.h.object, ctx);
+		if (matchRoute(r.path, ctx.request->path, ctx.request->urlParams)) {
+			res = runMiddlewares(ctx);
+			if (res != 0) {
+				return res;
 			}
-
-			if (url.substr(0, patternPos) != route.substr(0, patternPos)) {
-				break;
-			}
-
-			url = url.substr(patternPos);
-			route = route.substr(patternPos);
-
-			auto nextUrlPos = url.find('/');
-			auto nextRoutePos = route.find('/');
-
-			ctx.request->urlParams.push_back(url.substr(0, nextUrlPos));
-
-			url = url.substr(nextUrlPos == std::string_view::npos ? url.size() : nextUrlPos + 1);
-			route = route.substr(nextRoutePos == std::string_view::npos ? route.size() : nextRoutePos + 1);
+			return r.h.func(r.h.object, ctx);
 		}
 	}
 	res = notFoundHandler_.object != nullptr ? notFoundHandler_.func(notFoundHandler_.object, ctx)
 											 : ctx.String(StatusNotFound, "Not found"sv);
 	return res;
 }
-}  // namespace http
-}  // namespace net
-}  // namespace reindexer
+
+int Router::runMiddlewares(Context& ctx) {
+	for (auto& mw : middlewares_) {
+		const int res = mw.func(mw.object, ctx);
+		if (res != 0) {
+			return res;
+		}
+	}
+	return 0;
+}
+
+const Router::StreamRoute* Router::findStreamRoute(std::string_view method, std::string_view path) const {
+	if (!hasStreamRoutes_) {
+		return nullptr;
+	}
+	const auto methodIdx = lookupMethod(method);
+	if (methodIdx < 0) [[unlikely]] {
+		return nullptr;
+	}
+	h_vector<UrlParam, 4> urlParams;
+	for (auto& r : streamRoutes_[methodIdx]) {
+		if (matchRoute(r.path, path, urlParams)) {
+			return &r;
+		}
+	}
+	return nullptr;
+}
+
+bool Router::matchRoute(std::string_view route, std::string_view url, h_vector<UrlParam, 4>& urlParams) {
+	urlParams.clear();
+
+	for (;;) {
+		auto patternPos = route.find(':');
+		auto asteriskPos = route.find('*');
+		if (patternPos == std::string_view::npos || asteriskPos != std::string_view::npos) {
+			return url.substr(0, asteriskPos) == route.substr(0, asteriskPos);
+		}
+
+		if (url.substr(0, patternPos) != route.substr(0, patternPos)) {
+			return false;
+		}
+
+		url = url.substr(patternPos);
+		route = route.substr(patternPos);
+
+		auto nextUrlPos = url.find('/');
+		auto nextRoutePos = route.find('/');
+
+		urlParams.push_back(url.substr(0, nextUrlPos));
+
+		url = url.substr(nextUrlPos == std::string_view::npos ? url.size() : nextUrlPos + 1);
+		route = route.substr(nextRoutePos == std::string_view::npos ? route.size() : nextRoutePos + 1);
+	}
+}
+}  // namespace reindexer::net::http

@@ -6,12 +6,12 @@
 
 namespace reindexer {
 
-class LocalTransaction {
+class [[nodiscard]] LocalTransaction {
 public:
 	LocalTransaction(NamespaceName nsName, const PayloadType& pt, const TagsMatcher& tm, const FieldsSet& pf,
 					 std::shared_ptr<const Schema> schema, lsn_t lsn)
 		: data_(std::make_unique<SharedTransactionData>(std::move(nsName), lsn, Transaction::ClockT::now(), pt, tm, pf, std::move(schema))),
-		  tx_(std::make_unique<TransactionSteps>()) {}
+		  tx_(std::make_unique<TransactionSteps>(pt)) {}
 	LocalTransaction(Error err) : err_(std::move(err)) {}
 
 	Item GetItem(TransactionStep&& st) {
@@ -43,14 +43,26 @@ public:
 		return data_->nsName;
 	}
 	Error Status() const noexcept { return err_; }
-	void ValidatePK(const FieldsSet& pkFields) {
+	void ValidatePK(const FieldsSet* pkFields) {
 		assertrx(data_);
-		if (tx_ && tx_->HasDeleteItemSteps() && rx_unlikely(pkFields != data_->GetPKFileds())) {
+		if (!pkFields) {
+			throw Error(errLogic, "Trying to modify namespace '{}', but it doesn't contain PK index", GetNsName());
+		}
+		if (tx_ && tx_->HasDeleteItemSteps() && *pkFields != data_->GetPKFileds()) [[unlikely]] {
 			throw Error(errNotValid,
-						"Transaction has Delete-calls and it's PK metadata is outdated (probably PK has been change during the transaction "
-						"creation)");
+						"Transaction has Delete-calls and it's PK metadata is outdated (probably PK has been changed during the "
+						"transaction creation)");
 		}
 	}
+	size_t CalculateNewCapacity(size_t currentSize) const noexcept { return tx_ ? tx_->CalculateNewCapacity(currentSize) : currentSize; }
+	unsigned DeletionsCount() const noexcept { return tx_ ? tx_->DeletionsCount() : 0; }
+	const std::vector<TransactionSteps::FVInsertionsCount>& ExpectedFVInsertionsCount() const& noexcept {
+		static const std::vector<TransactionSteps::FVInsertionsCount> empty;
+		return tx_ ? tx_->ExpectedFVInsertionsCount() : empty;
+	}
+	auto ExpectedFVInsertionsCount() const&& = delete;
+	unsigned UpdateQueriesCount() const noexcept { return tx_ ? tx_->UpdateQueriesCount() : 0; }
+	unsigned DeleteQueriesCount() const noexcept { return tx_ ? tx_->DeleteQueriesCount() : 0; }
 
 private:
 	LocalTransaction(std::unique_ptr<SharedTransactionData>&& d, std::unique_ptr<TransactionSteps>&& tx, Error&& e)

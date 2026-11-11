@@ -1,8 +1,10 @@
-﻿#pragma once
+#pragma once
 
-#include <mutex>
+#include "estl/mutex.h"
 #include "estl/shared_mutex.h"
 #include "servercontrol.h"
+
+namespace reindexer_tests {
 
 using namespace reindexer_server;
 
@@ -14,12 +16,12 @@ const auto kMaxServerStartTime = std::chrono::seconds(15);
 const auto kMaxSyncTime = std::chrono::seconds(15);
 const auto kMaxForceSyncCmdTime = std::chrono::seconds(10);
 
-class ReplicationApi : public ::testing::Test {
+class [[nodiscard]] ReplicationApi : public ::testing::Test {
 public:
-	static const std::string kConfigNs;
+	ReplicationApi();
 
-	void SetUp();
-	void TearDown();
+	void SetUp() override;
+	void TearDown() override;
 
 	// stop is sync
 	bool StopServer(size_t id);
@@ -48,7 +50,9 @@ public:
 	reindexer::shared_timed_mutex restartMutex_;
 
 private:
-	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test/");
+	const std::string kStoragePath;
 	std::vector<ServerControl> svc_;
-	mutable std::mutex m_;
+	mutable reindexer::mutex m_;
 };
+
+}  // namespace reindexer_tests

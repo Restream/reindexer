@@ -1,5 +1,6 @@
 #include "locatorserviceadapter.h"
 #include "cluster/sharding/sharding.h"
+#include "core/query/query_impl.h"
 
 namespace reindexer::sharding {
 std::shared_ptr<client::Reindexer> LocatorServiceAdapter::GetShardConnection(std::string_view ns, int shardId, Error& status) {
@@ -14,7 +15,7 @@ std::pair<int, Variant> LocatorServiceAdapter::GetShardIdKeyPair(std::string_vie
 	return locator_->GetShardIdKeyPair(ns, item);
 }
 
-std::pair<ShardIDsContainer, Variant> LocatorServiceAdapter::GetShardIdKeyPair(const Query& q) const {
+std::pair<ShardIDsContainer, Variant> LocatorServiceAdapter::GetShardIdKeyPair(ConstQueryImpl q) const {
 	return locator_->GetShardIdKeyPair(q);
 }
 
