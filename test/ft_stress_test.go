@@ -2,8 +2,8 @@ package reindexer
 
 import (
 	"bufio"
+	"embed"
 	"math/rand"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -19,10 +19,20 @@ type TestItemFTStress struct {
 	Amount   int    `reindex:"amount,tree"`
 }
 
+const maxId = 6000
+
+const testFtStressNs = "test_items_ft_stress"
+
+func init() {
+	tnamespaces[testFtStressNs] = TestItemFTStress{}
+}
+
+//go:embed ft/dict.txt
+var ftDict embed.FS
 var dictWords []string
 
 func readDict() ([]string, error) {
-	f, err := os.Open("ft/dict.txt")
+	f, err := ftDict.Open("ft/dict.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -57,24 +67,11 @@ func randFtString() string {
 	return result.String()
 }
 
-const maxId = 6000
-const ftStressNsName = "test_items_ft_stress"
-
-func newTestItemFTStress() *TestItemFTStress {
-	return &TestItemFTStress{
-		ID:       rand.Intn(maxId),
-		Name:     randFtString(),
-		Location: randLocation(),
-		Amount:   rand.Intn(maxId),
-	}
-}
-
-func init() {
-	tnamespaces[ftStressNsName] = TestItemFTStress{}
-}
-
 func FTStressTest(t *testing.T) {
 	t.Parallel()
+
+	const ns = testFtStressNs
+
 	var err error
 	dictWords, err = readDict()
 	require.NoError(t, err)
@@ -87,7 +84,7 @@ func FTStressTest(t *testing.T) {
 		defer wg.Done()
 	for_loop:
 		for {
-			DB.Query(ftStressNsName).Match("name", dictRandWord()).Sort("rank()", true).MustExec(t).Close()
+			DB.Query(ns).Match("name", dictRandWord()).Sort("rank()", true).MustExec(t).Close()
 			select {
 			case <-endCh:
 				break for_loop
@@ -102,7 +99,7 @@ func FTStressTest(t *testing.T) {
 		defer wg.Done()
 	for_loop:
 		for {
-			DB.Query(ftStressNsName).Match("name", randFtString()).MustExec(t).Close()
+			DB.Query(ns).Match("name", randFtString()).MustExec(t).Close()
 			select {
 			case <-endCh:
 				break for_loop
@@ -117,7 +114,7 @@ func FTStressTest(t *testing.T) {
 		defer wg.Done()
 	for_loop:
 		for {
-			DB.Query(ftStressNsName).Match("name", trueRandWord(rand.Intn(5)+1)).Sort("id", false).MustExec(t).Close()
+			DB.Query(ns).Match("name", trueRandWord(rand.Intn(5)+1)).Sort("id", false).MustExec(t).Close()
 			select {
 			case <-endCh:
 				break for_loop
@@ -132,7 +129,7 @@ func FTStressTest(t *testing.T) {
 		defer wg.Done()
 	for_loop:
 		for {
-			_, err := DB.Query(nsName).Match("name", dictRandWord()).Delete()
+			_, err := DB.Query(ns).Match("name", dictRandWord()).Delete()
 			require.NoError(t, err)
 			select {
 			case <-endCh:
@@ -148,7 +145,7 @@ func FTStressTest(t *testing.T) {
 		defer wg.Done()
 	for_loop:
 		for {
-			it := DB.Query(nsName).Match("name", dictRandWord()).Set("name", randFtString()).Update()
+			it := DB.Query(ns).Match("name", dictRandWord()).Set("name", randFtString()).Update()
 			require.NoError(t, it.Error())
 			it.Close()
 			select {
@@ -164,7 +161,13 @@ func FTStressTest(t *testing.T) {
 	go func(wg *sync.WaitGroup) {
 		defer wg.Done()
 		for i := 0; i < 3000; i++ {
-			err := DB.Upsert(nsName, newTestItemFTStress())
+			item := TestItemFTStress{
+				ID:       rand.Intn(maxId),
+				Name:     randFtString(),
+				Location: randLocation(),
+				Amount:   rand.Intn(maxId),
+			}
+			err := DB.Upsert(ns, item)
 			require.NoError(t, err)
 			time.Sleep(1 * time.Millisecond)
 		}

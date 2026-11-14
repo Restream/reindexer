@@ -59,6 +59,7 @@ AlwaysBreakBeforeMultilineStrings: true
 AlwaysBreakTemplateDeclarations: Yes
 AttributeMacros:
   - __capability
+  - RX_POST_LMBD_ALWAYS_INLINE
 BinPackArguments: true
 BinPackParameters: true
 BitFieldColonSpacing: Both
@@ -94,7 +95,7 @@ BreakConstructorInitializers: BeforeColon
 BreakInheritanceList: BeforeColon
 BreakStringLiterals: true
 ColumnLimit:     140
-CommentPragmas:  '^ IWYU pragma:'
+CommentPragmas:  '^(go:(build|generate)| IWYU pragma:)'
 CompactNamespaces: false
 ConstructorInitializerIndentWidth: 4
 ContinuationIndentWidth: 4
@@ -154,6 +155,11 @@ LambdaBodyIndentation: Signature
 LineEnding:      DeriveLF
 MacroBlockBegin: ''
 MacroBlockEnd:   ''
+Macros:
+  - RX_GET_WITHOUT_MUTEX_ANALYSIS=[]()
+  - RX_MUTEX_ACCESS=private
+  - RX_PRE_LMBD_ALWAYS_INLINE(x)=x
+  - CATCH_AND_RETURN=catch(...){}
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
 ObjCBinPackProtocolList: Auto
@@ -234,6 +240,7 @@ StatementMacros:
   - Q_UNUSED
   - QT_REQUIRE_VERSION
 TabWidth:        4
+TypenameMacros: []
 UseTab:          Always
 VerilogBreakBetweenInstancePorts: true
 WhitespaceSensitiveMacros:

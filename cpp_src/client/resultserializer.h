@@ -1,21 +1,24 @@
 #pragma once
 #include <functional>
 #include <optional>
+#include "core/id_type.h"
 #include "core/namespace/incarnationtags.h"
 #include "core/queryresults/aggregationresult.h"
+#include "core/rank_t.h"
+#include "core/type_consts.h"
 #include "tools/lsn.h"
-#include "tools/serializer.h"
+#include "tools/serilize/serializer.h"
 
 struct msgpack_object;
 
 namespace reindexer {
 namespace client {
 
-class ResultSerializer : public Serializer {
+class [[nodiscard]] ResultSerializer : public Serializer {
 public:
 	using Serializer::Serializer;
-	enum Option { LazyMode = 0x1, ClearAggregations = 0x1 << 1 };
-	class Options {
+	enum [[nodiscard]] Option { LazyMode = 0x1, ClearAggregations = 0x1 << 1 };
+	class [[nodiscard]] Options {
 	public:
 		explicit Options(unsigned v = 0) noexcept : v_(v) {}
 
@@ -26,17 +29,23 @@ public:
 		unsigned v_;
 	};
 
-	struct ItemParams {
-		int id = -1;
-		int16_t nsid = 0;
-		int16_t proc = 0;
+	struct ItemParams;
+
+	using JoinedFieldData = std::vector<ResultSerializer::ItemParams>;
+	using JoinedData = h_vector<JoinedFieldData, 1>;
+
+	struct [[nodiscard]] ItemParams {
+		IdType id = IdType::NotSet();
+		uint16_t nsid = 0;
+		RankT rank{};
 		lsn_t lsn;
 		std::string_view data;
 		bool raw = false;
 		int shardId = ShardingKeyType::ProxyOff;
+		JoinedData joined;
 	};
 
-	struct QueryParams {
+	struct [[nodiscard]] QueryParams {
 		int totalcount = 0;
 		int qcount = 0;
 		int count = 0;
@@ -48,8 +57,8 @@ public:
 		int shardId = ShardingKeyType::ProxyOff;
 	};
 
-	struct ParsingData {
-		struct Range {
+	struct [[nodiscard]] ParsingData {
+		struct [[nodiscard]] Range {
 			unsigned begin = 0;
 			unsigned end = 0;
 		};
@@ -61,10 +70,10 @@ public:
 
 	bool ContainsPayloads() const {
 		Serializer ser(Buf(), Len());
-		return ser.GetVarUint() & kResultsWithPayloadTypes;
+		return ser.GetVarUInt() & kResultsWithPayloadTypes;
 	}
 	void GetRawQueryParams(QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc, Options options,
-						   ParsingData& parsingData);
+						   ParsingData& parsingData, QueryFormat queryFormat);
 	void GetExtraParams(QueryParams& ret, Options opts);
 	ItemParams GetItemData(int flags, int shardId);
 };

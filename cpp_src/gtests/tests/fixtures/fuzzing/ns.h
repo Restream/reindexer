@@ -3,11 +3,13 @@
 #include "ns_scheme.h"
 #include "random_generator.h"
 
+namespace reindexer_tests {
+
 namespace fuzzing {
 
 class Index;
 
-class Ns {
+class [[nodiscard]] Ns {
 public:
 	Ns(std::string name, RandomGenerator::ErrFactorType errorFactor);
 	const std::vector<Index>& GetIndexes() const& noexcept { return indexes_; }
@@ -28,3 +30,5 @@ private:
 };
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

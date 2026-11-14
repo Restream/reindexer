@@ -10,7 +10,7 @@
 namespace reindexer {
 namespace net {
 
-struct connection_stat {
+struct [[nodiscard]] connection_stat {
 	connection_stat() noexcept {
 		start_time = std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now_coarse().time_since_epoch()).count();
 	}
@@ -24,7 +24,7 @@ struct connection_stat {
 	int64_t start_time{0};
 };
 
-class connection_stats_collector {
+class [[nodiscard]] connection_stats_collector {
 public:
 	connection_stats_collector() : stat_(std::make_shared<connection_stat>()) {}
 

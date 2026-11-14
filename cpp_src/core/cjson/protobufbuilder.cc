@@ -1,25 +1,33 @@
 #include "protobufbuilder.h"
+#include <string_view>
 #include "core/schema.h"
 #include "core/type_consts_helpers.h"
 
 namespace reindexer {
 
-ProtobufBuilder::ProtobufBuilder(WrSerializer* wrser, ObjType type, const Schema* schema, const TagsMatcher* tm, const TagsPath* tagsPath,
-								 int fieldIdx)
-	: type_(type), ser_(wrser), tm_(tm), tagsPath_(tagsPath), schema_(schema), sizeHelper_(), itemsFieldIndex_(fieldIdx) {
+namespace {
+bool isTagIndexOrEmptyName(TagIndex) noexcept { return true; }
+bool isTagIndexOrEmptyName(TagName tagName) noexcept { return tagName.IsEmpty(); }
+}  // namespace
+
+ProtobufBuilder::ProtobufBuilder(WrSerializer& wrser, ObjType type, const Schema* schema, const TagsMatcher* tm, const TagsPath* tagsPath,
+								 concepts::TagNameOrIndex auto tag)
+	: type_(type), ser_(wrser), tm_(tm), tagsPath_(tagsPath), schema_(schema), sizeHelper_(), itemsFieldIndex_(toItemsFieldIndex(tag)) {
 	switch (type_) {
 		case ObjType::TypeArray:
 		case ObjType::TypeObject:
-			putFieldHeader(fieldIdx, PBUF_TYPE_LENGTHENCODED);
-			sizeHelper_ = ser_->StartVString();
+			putFieldHeader(tag, PBUF_TYPE_LENGTHENCODED);
+			sizeHelper_ = ser_.StartVString();
 			break;
 		case ObjType::TypeObjectArray:
-			itemsFieldIndex_ = fieldIdx;
+			itemsFieldIndex_ = toItemsFieldIndex(tag);
 			break;
 		case ObjType::TypePlain:
 			break;
 	}
 }
+template ProtobufBuilder::ProtobufBuilder(WrSerializer&, ObjType, const Schema*, const TagsMatcher*, const TagsPath*, TagName);
+template ProtobufBuilder::ProtobufBuilder(WrSerializer&, ObjType, const Schema*, const TagsMatcher*, const TagsPath*, TagIndex);
 
 void ProtobufBuilder::End() {
 	switch (type_) {
@@ -29,7 +37,7 @@ void ProtobufBuilder::End() {
 			break;
 		}
 		case ObjType::TypeObjectArray:
-			itemsFieldIndex_ = -1;
+			itemsFieldIndex_ = TagName::Empty();
 			break;
 		case ObjType::TypePlain:
 			break;
@@ -37,38 +45,43 @@ void ProtobufBuilder::End() {
 	type_ = ObjType::TypePlain;
 }
 
-void ProtobufBuilder::packItem(int fieldIdx, TagType tagType, Serializer& rdser, ProtobufBuilder& array) {
+void ProtobufBuilder::packItem(concepts::TagNameOrIndex auto tag, TagType tagType, Serializer& rdser, ProtobufBuilder& array) {
 	switch (tagType) {
 		case TAG_DOUBLE:
-			array.put(fieldIdx, rdser.GetDouble());
+			array.put(tag, rdser.GetDouble());
 			break;
 		case TAG_VARINT:
-			array.put(fieldIdx, rdser.GetVarint());
+			array.put(tag, rdser.GetVarint());
 			break;
 		case TAG_BOOL:
-			array.put(fieldIdx, rdser.GetBool());
+			array.put(tag, rdser.GetBool());
 			break;
 		case TAG_STRING:
-			array.put(fieldIdx, rdser.GetVString());
+			array.put(tag, rdser.GetVString());
 			break;
 		case TAG_UUID:
-			array.put(fieldIdx, rdser.GetUuid());
+			array.put(tag, rdser.GetUuid());
+			break;
+		case TAG_FLOAT:
+			array.put(tag, rdser.GetFloat());
 			break;
 		case TAG_NULL:
-			array.Null(fieldIdx);
+			array.Null(tag);
 			break;
 		case TAG_ARRAY:
 		case TAG_OBJECT:
 		case TAG_END:
-			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", TagTypeToStr(tagType));
+			throw Error(errParseJson, "Unexpected cjson typeTag '{}' while parsing value", TagTypeToStr(tagType));
 	}
 }
+template void ProtobufBuilder::packItem(TagName, TagType, Serializer&, ProtobufBuilder&);
+template void ProtobufBuilder::packItem(TagIndex, TagType, Serializer&, ProtobufBuilder&);
 
-int ProtobufBuilder::getFieldTag(int fieldIdx) const {
-	if (type_ == ObjType::TypeObjectArray && itemsFieldIndex_ != -1) {
+TagName ProtobufBuilder::getFieldTag(TagName tagName) const {
+	if (type_ == ObjType::TypeObjectArray && !itemsFieldIndex_.IsEmpty()) {
 		return itemsFieldIndex_;
 	}
-	return fieldIdx;
+	return tagName;
 }
 
 std::pair<KeyValueType, bool> ProtobufBuilder::getExpectedFieldType() const {
@@ -80,131 +93,188 @@ std::pair<KeyValueType, bool> ProtobufBuilder::getExpectedFieldType() const {
 	return {KeyValueType::Undefined{}, false};
 }
 
-void ProtobufBuilder::putFieldHeader(int fieldIdx, ProtobufTypes type) { ser_->PutVarUint((getFieldTag(fieldIdx) << kTypeBit) | type); }
+void ProtobufBuilder::putFieldHeader(concepts::TagNameOrIndex auto tag, ProtobufTypes type) {
+	ser_.PutVarUint((unsigned(getFieldTag(tag).AsNumber()) << kTypeBit) | type);
+}
 
-void ProtobufBuilder::put(int fieldIdx, bool val) { return put(fieldIdx, int(val)); }
+std::string_view ProtobufBuilder::tagToName(TagName tagName) { return tm_->tag2name(tagName); }
+std::string_view ProtobufBuilder::tagToName(TagIndex) { return tm_->tag2name(TagName::Empty()); }
 
-void ProtobufBuilder::put(int fieldIdx, int val) {
+void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, bool val) { return put(tag, int(val)); }
+template void ProtobufBuilder::put(TagName, bool);
+template void ProtobufBuilder::put(TagIndex, bool);
+
+void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, int val) {
 	bool done = false;
 	if (const auto res = getExpectedFieldType(); res.second) {
-		res.first.EvaluateOneOf([&](OneOf<KeyValueType::Int, KeyValueType::Bool>) noexcept {},
+		res.first.EvaluateOneOf([&](concepts::OneOf<KeyValueType::Int, KeyValueType::Bool> auto) noexcept {},
 								[&](KeyValueType::Int64) {
-									put(fieldIdx, int64_t(val));
+									put(tag, int64_t(val));
 									done = true;
 								},
 								[&](KeyValueType::Double) {
-									put(fieldIdx, double(val));
+									put(tag, double(val));
 									done = true;
 								},
-								[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
-										  KeyValueType::Undefined, KeyValueType::Uuid>) {
-									throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+								[&](KeyValueType::Float) {
+									put(tag, float(val));
+									done = true;
+								},
+								[&](concepts::OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+													KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector> auto) {
+									throw Error(errParams, "Expected type '{}' for field '{}'", res.first.Name(), tagToName(tag));
 								});
 	}
 	if (!done) {
 		if (type_ != ObjType::TypeArray) {
-			putFieldHeader(fieldIdx, PBUF_TYPE_VARINT);
+			putFieldHeader(tag, PBUF_TYPE_VARINT);
 		}
-		ser_->PutVarUint(val);
+		ser_.PutVarint(val);
 	}
 }
 
-void ProtobufBuilder::put(int fieldIdx, int64_t val) {
+void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, int64_t val) {
 	bool done = false;
 	if (const auto res = getExpectedFieldType(); res.second) {
 		res.first.EvaluateOneOf([&](KeyValueType::Int64) noexcept {},
-								[&](OneOf<KeyValueType::Bool, KeyValueType::Int>) {
-									put(fieldIdx, int(val));
+								[&](concepts::OneOf<KeyValueType::Bool, KeyValueType::Int> auto) {
+									put(tag, int(val));
 									done = true;
 								},
 								[&](KeyValueType::Double) {
-									put(fieldIdx, double(val));
+									put(tag, double(val));
 									done = true;
 								},
-								[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
-										  KeyValueType::Undefined, KeyValueType::Uuid>) {
-									throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+								[&](KeyValueType::Float) {
+									put(tag, float(val));
+									done = true;
+								},
+								[&](concepts::OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+													KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector> auto) {
+									throw Error(errParams, "Expected type '{}' for field '{}'", res.first.Name(), tagToName(tag));
 								});
 	}
 	if (!done) {
 		if (type_ != ObjType::TypeArray) {
-			putFieldHeader(fieldIdx, PBUF_TYPE_VARINT);
+			putFieldHeader(tag, PBUF_TYPE_VARINT);
 		}
-		ser_->PutVarUint(val);
+		ser_.PutVarint(val);
 	}
 }
 
-void ProtobufBuilder::put(int fieldIdx, double val) {
+void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, double val) {
 	bool done = false;
 	if (const auto res = getExpectedFieldType(); res.second) {
 		res.first.EvaluateOneOf([&](KeyValueType::Double) noexcept {},
-								[&](OneOf<KeyValueType::Int, KeyValueType::Bool>) {
-									put(fieldIdx, int(val));
+								[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Bool> auto) {
+									put(tag, int(val));
+									done = true;
+								},
+								[&](KeyValueType::Float) {
+									this->put(tag, float(val));
 									done = true;
 								},
 								[&](KeyValueType::Int64) {
-									put(fieldIdx, int64_t(val));
+									put(tag, int64_t(val));
 									done = true;
 								},
-								[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
-										  KeyValueType::Undefined, KeyValueType::Uuid>) {
-									throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+								[&](concepts::OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+													KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector> auto) {
+									throw Error(errParams, "Expected type '{}' for field '{}'", res.first.Name(), tagToName(tag));
 								});
 	}
 	if (!done) {
 		if (type_ != ObjType::TypeArray) {
-			putFieldHeader(fieldIdx, PBUF_TYPE_FLOAT64);
+			putFieldHeader(tag, PBUF_TYPE_FLOAT64);
 		}
-		ser_->PutDouble(val);
+		ser_.PutDouble(val);
 	}
 }
 
-void ProtobufBuilder::put(int fieldIdx, std::string_view val) {
+void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, float val) {
+	bool done = false;
+	if (const auto res = getExpectedFieldType(); res.second) {
+		res.first.EvaluateOneOf(
+			[&](KeyValueType::Double) {
+				put(tag, double(val));
+				done = true;
+			},
+			[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Bool> auto) {
+				put(tag, int(val));
+				done = true;
+			},
+			[&](KeyValueType::Float) {},
+			[&](KeyValueType::Int64) {
+				put(tag, int64_t(val));
+				done = true;
+			},
+			[&](concepts::OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+								KeyValueType::Undefined, KeyValueType::Uuid, KeyValueType::FloatVector> auto) {
+				throw Error(errParams, "Expected type '{}' for field '{}'", res.first.Name(), tagToName(tag));
+			});
+	}
+	if (!done) {
+		if (type_ != ObjType::TypeArray) {
+			putFieldHeader(tag, PBUF_TYPE_FLOAT32);
+		}
+		ser_.PutFloat(val);
+	}
+}
+
+void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, std::string_view val) {
 	if (const auto res = getExpectedFieldType(); res.second) {
 		if (!res.first.Is<KeyValueType::String>()) {
-			throw Error(errParams, "Expected type 'String' for field '%s'", tm_->tag2name(fieldIdx));
+			throw Error(errParams, "Expected type '{}' for field '{}'", res.first.Name(), tagToName(tag));
 		}
 	}
 	if (type_ != ObjType::TypeArray) {
-		putFieldHeader(fieldIdx, PBUF_TYPE_LENGTHENCODED);
+		putFieldHeader(tag, PBUF_TYPE_LENGTHENCODED);
 	}
-	ser_->PutVString(val);
+	ser_.PutVString(val);
 }
+template void ProtobufBuilder::put(TagIndex, std::string_view);
 
-void ProtobufBuilder::put(int fieldIdx, Uuid val) {
+void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, Uuid val) {
 	if (const auto res = getExpectedFieldType(); res.second) {
 		if (!res.first.Is<KeyValueType::String>()) {
-			throw Error(errParams, "Expected type 'String' for field '%s'", tm_->tag2name(fieldIdx));
+			throw Error(errParams, "Expected type '{}' for field '{}'", res.first.Name(), tagToName(tag));
 		}
 	}
 	if (type_ != ObjType::TypeArray) {
-		putFieldHeader(fieldIdx, PBUF_TYPE_LENGTHENCODED);
+		putFieldHeader(tag, PBUF_TYPE_LENGTHENCODED);
 	}
-	ser_->PutStrUuid(val);
+	ser_.PutStrUuid(val);
 }
+template void ProtobufBuilder::put(TagIndex, Uuid);
 
-void ProtobufBuilder::put(int fieldIdx, const Variant& val) {
-	val.Type().EvaluateOneOf([&](KeyValueType::Int64) { put(fieldIdx, int64_t(val)); }, [&](KeyValueType::Int) { put(fieldIdx, int(val)); },
-							 [&](KeyValueType::Double) { put(fieldIdx, double(val)); },
-							 [&](KeyValueType::String) { put(fieldIdx, std::string_view(val)); },
-							 [&](KeyValueType::Bool) { put(fieldIdx, bool(val)); },
+void ProtobufBuilder::put(concepts::TagNameOrIndex auto tag, const Variant& val) {
+	val.Type().EvaluateOneOf([&](KeyValueType::Int64) { put(tag, int64_t(val)); }, [&](KeyValueType::Int) { put(tag, int(val)); },
+							 [&](KeyValueType::Double) { put(tag, double(val)); }, [&](KeyValueType::Float) { put(tag, float(val)); },
+							 [&](KeyValueType::String) { put(tag, std::string_view(val)); },
+							 [&](KeyValueType::Bool) { put(tag, bool(val)); },
 							 [&](KeyValueType::Tuple) {
-								 auto arrNode = ArrayPacked(fieldIdx);
+								 auto arrNode = ArrayPacked(tag);
 								 for (auto& itVal : val.getCompositeValues()) {
-									 arrNode.Put(fieldIdx, itVal, 0);
+									 arrNode.Put(tag, itVal, 0);
 								 }
 							 },
-							 [&](KeyValueType::Uuid) { put(fieldIdx, Uuid{val}); },
-							 [&](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite>) noexcept {});
+							 [&](KeyValueType::Uuid) { put(tag, Uuid{val}); },
+							 [&](concepts::OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
+												 KeyValueType::FloatVector> auto) noexcept {});
 }
+template void ProtobufBuilder::put(TagName, const Variant&);
+template void ProtobufBuilder::put(TagIndex, const Variant&);
 
-ProtobufBuilder ProtobufBuilder::Object(int fieldIdx, int) {
+ProtobufBuilder ProtobufBuilder::Object(concepts::TagNameOrIndex auto tag, int) {
 	// Main object in Protobuf is never of Object type,
 	// only nested object fields are.
-	if (type_ == ObjType::TypePlain && fieldIdx == 0) {
+	if (type_ == ObjType::TypePlain && isTagIndexOrEmptyName(tag)) {
 		return ProtobufBuilder(std::move(*this));
 	}
-	return ProtobufBuilder(ser_, ObjType::TypeObject, schema_, tm_, tagsPath_, getFieldTag(fieldIdx));
+	return ProtobufBuilder(ser_, ObjType::TypeObject, schema_, tm_, tagsPath_, getFieldTag(tag));
 }
+
+template ProtobufBuilder ProtobufBuilder::Object(TagName, int);
+template ProtobufBuilder ProtobufBuilder::Object(TagIndex, int);
 
 }  // namespace reindexer

@@ -1,7 +1,9 @@
 #include <gtest/gtest-param-test.h>
 #include "ft_api.h"
 
-class FTTyposApi : public FTApi {
+namespace reindexer_tests {
+
+class [[nodiscard]] FTTyposApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_typos_default_namespace"; }
 
@@ -45,7 +47,7 @@ TEST_P(FTTyposApi, SelectWithTypos) {
 	auto cfg = GetDefaultConfig();
 	cfg.stopWords.clear();
 	cfg.stemmers.clear();
-	cfg.enableKbLayout = false;
+	cfg.kbLayoutMode = reindexer::FTConfig::KbLayoutMode::Disable;
 	cfg.enableTranslit = false;
 	const auto kDefaultMaxTypoDist = cfg.maxTypoDistance;
 
@@ -83,6 +85,7 @@ TEST_P(FTTyposApi, SelectWithTypos) {
 	// Not less than 2
 	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}, {"!ABC!", ""}});
 	CheckAllPermutations("", {"AC~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"AC*~"}, "", {{"!ABC!", ""}});
 	CheckAllPermutations("", {"B~"}, "", {});
 	CheckAllPermutations("", {"AX~"}, "", {});
 
@@ -105,6 +108,7 @@ TEST_P(FTTyposApi, SelectWithTypos) {
 	// Not less than 2
 	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}, {"!ABC!", ""}});
 	CheckAllPermutations("", {"AC~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"AC*~"}, "", {{"!ABC!", ""}});
 	CheckAllPermutations("", {"B~"}, "", {});
 	CheckAllPermutations("", {"AX~"}, "", {});
 
@@ -129,6 +133,7 @@ TEST_P(FTTyposApi, SelectWithTypos) {
 	// Not less than 2
 	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}, {"!ABC!", ""}});
 	CheckAllPermutations("", {"AC~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"AC*~"}, "", {{"!ABC!", ""}});
 	CheckAllPermutations("", {"B~"}, "", {});
 	CheckAllPermutations("", {"AX~"}, "", {});
 
@@ -300,7 +305,7 @@ TEST_P(FTTyposApi, TyposDistance) {
 	Add("отличный"sv);
 	Add("солнечный"sv);
 
-	struct Case {
+	struct [[nodiscard]] Case {
 		std::string description;
 		int maxTypoDistance;
 		std::string word;
@@ -336,9 +341,7 @@ TEST_P(FTTyposApi, TyposDistance) {
 		auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
 		ASSERT_TRUE(err.ok()) << err.what();
 		auto q = reindexer::Query("nm1").Where("ft1", CondEq, c.word);
-		reindexer::QueryResults res;
-		err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		CheckResultsByField(res, c.expectedResults, "ft1", c.description);
 	}
 }
@@ -353,7 +356,7 @@ TEST_P(FTTyposApi, TyposDistanceWithMaxTypos) {
 	Add("отличный"sv);
 	Add("солнечный"sv);
 
-	struct Case {
+	struct [[nodiscard]] Case {
 		std::string description;
 		int maxTypos;
 		std::string word;
@@ -430,9 +433,7 @@ TEST_P(FTTyposApi, TyposDistanceWithMaxTypos) {
 		auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
 		ASSERT_TRUE(err.ok()) << err.what();
 		auto q = reindexer::Query("nm1").Where("ft1", CondEq, c.word);
-		reindexer::QueryResults res;
-		err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		CheckResultsByField(res, c.expectedResults, "ft1", c.description);
 	}
 }
@@ -445,7 +446,7 @@ TEST_P(FTTyposApi, LettersPermutationDistance) {
 	Add("отличный"sv);
 	Add("солнечный"sv);
 
-	struct Case {
+	struct [[nodiscard]] Case {
 		std::string description;
 		int maxLettPermDist;
 		std::string word;
@@ -509,9 +510,7 @@ TEST_P(FTTyposApi, LettersPermutationDistance) {
 		auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
 		ASSERT_TRUE(err.ok()) << err.what();
 		auto q = reindexer::Query("nm1").Where("ft1", CondEq, c.word);
-		reindexer::QueryResults res;
-		err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		CheckResultsByField(res, c.expectedResults, "ft1", c.description);
 	}
 }
@@ -526,7 +525,7 @@ TEST_P(FTTyposApi, LettersPermutationDistanceWithMaxTypos) {
 	Add("отличный"sv);
 	Add("солнечный"sv);
 
-	struct Case {
+	struct [[nodiscard]] Case {
 		std::string description;
 		int maxTypos;
 		std::string word;
@@ -638,9 +637,7 @@ TEST_P(FTTyposApi, LettersPermutationDistanceWithMaxTypos) {
 		auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
 		ASSERT_TRUE(err.ok()) << err.what();
 		auto q = reindexer::Query("nm1").Where("ft1", CondEq, c.word);
-		reindexer::QueryResults res;
-		err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		CheckResultsByField(res, c.expectedResults, "ft1", c.description);
 	}
 }
@@ -655,7 +652,7 @@ TEST_P(FTTyposApi, TyposMissingAndExtraLetters) {
 	Add("отличный"sv);
 	Add("солнечный"sv);
 
-	struct Case {
+	struct [[nodiscard]] Case {
 		std::string description;
 		int maxTypos;
 		int maxExtraLetters;
@@ -733,23 +730,21 @@ TEST_P(FTTyposApi, TyposMissingAndExtraLetters) {
 		auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
 		ASSERT_TRUE(err.ok()) << err.what();
 		auto q = reindexer::Query("nm1").Where("ft1", CondEq, c.word);
-		reindexer::QueryResults res;
-		err = rt.reindexer->Select(q, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		auto res = rt.Select(q);
 		CheckResultsByField(res, c.expectedResults, "ft1", c.description);
 	}
 }
 
-INSTANTIATE_TEST_SUITE_P(, FTTyposApi,
-						 ::testing::Values(reindexer::FtFastConfig::Optimization::Memory, reindexer::FtFastConfig::Optimization::CPU),
-						 [](const auto& info) {
-							 switch (info.param) {
-								 case reindexer::FtFastConfig::Optimization::Memory:
-									 return "OptimizationByMemory";
-								 case reindexer::FtFastConfig::Optimization::CPU:
-									 return "OptimizationByCPU";
-								 default:
-									 assert(false);
-									 std::abort();
-							 }
-						 });
+INSTANTIATE_TEST_SUITE_P(, FTTyposApi, ::testing::Values(kRxFtTestTypes), [](const auto& info) {
+	switch (info.param) {
+		case reindexer::FTConfig::Optimization::Memory:
+			return "OptimizationByMemory";
+		case reindexer::FTConfig::Optimization::CPU:
+			return "OptimizationByCPU";
+		default:
+			assert(false);
+			std::abort();
+	}
+});
+
+}  // namespace reindexer_tests

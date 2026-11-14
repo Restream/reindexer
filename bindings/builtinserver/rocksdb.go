@@ -1,4 +1,4 @@
-// +build rocksdb
+//go:build rocksdb
 
 package builtinserver
 

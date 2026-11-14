@@ -1,10 +1,13 @@
 #include "api_encdec.h"
 #include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
+#include "estl/gift_str.h"
 #include "helpers.h"
 #include "tools/jsontools.h"
 
-using benchmark::AllocsTracker;
+using reindexer::IndexOpts;
+
+namespace reindexer_benchmarks {
 
 ApiEncDec::ApiEncDec(Reindexer* db, std::string&& name) : db_(db), benchName_(std::move(name)) {}
 
@@ -15,7 +18,6 @@ ApiEncDec::~ApiEncDec() {
 		std::cerr << "Error while closing namespace '" << nsName_ << "'. Reason: " << err.what() << std::endl;
 	}
 }
-
 void ApiEncDec::RegisterAllCases() {
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	Register("FromCJSON", &ApiEncDec::FromCJSON, this);
@@ -163,48 +165,45 @@ reindexer::Error ApiEncDec::prepareBenchData() {
 	itemCJSON_ = itemForCjsonBench_->GetCJSON();
 	itemJSON_ = itemForCjsonBench_->GetJSON();
 	wser.Reset();
-	reindexer::prettyPrintJSON(std::string(itemJSON_), wser);
+	reindexer::prettyPrintJSON(std::string_view(itemJSON_), wser);
 	itemPrettyJSON_ = wser.Slice();
 	itemMsgPack_ = itemForCjsonBench_->GetMsgPack();
 	return {};
 }
 
 void ApiEncDec::FromCJSON(benchmark::State& state) {
-	reindexer::Item item = db_->NewItem(nsName_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		reindexer::Item item = db_->NewItem(nsName_);
 		const auto err = item.FromCJSON(itemCJSON_);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		if (!item.Status().ok()) {
-			state.SkipWithError(item.Status().what().c_str());
+			state.SkipWithError(item.Status().what());
 		}
 	}
 }
 
 void ApiEncDec::FromCJSONPKOnly(benchmark::State& state) {
-	reindexer::Item item = db_->NewItem(nsName_);
-	{
-		AllocsTracker allocsTracker(state);
-		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-			const auto err = item.FromCJSON(itemCJSON_, true);
-			if (!err.ok()) {
-				state.SkipWithError(err.what().c_str());
-			}
-			if (!item.Status().ok()) {
-				state.SkipWithError(item.Status().what().c_str());
-			}
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		reindexer::Item item = db_->NewItem(nsName_);
+		const auto err = item.FromCJSON(itemCJSON_, true);
+		if (!err.ok()) {
+			state.SkipWithError(err.what());
+		}
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what());
 		}
 	}
-	assertrx(item["id"].Get<int>() == kCjsonBenchItemID);
 }
 
 void ApiEncDec::GetCJSON(benchmark::State& state) {
 	assertrx(itemForCjsonBench_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		const auto ret = itemForCjsonBench_->GetCJSON();
+		auto ret = itemForCjsonBench_->GetCJSON();
 		benchmark::DoNotOptimize(ret);
 	}
 }
@@ -217,21 +216,21 @@ void ApiEncDec::ExtractField(benchmark::State& state) {
 		const auto& fieldName = fieldsToExtract_[rand() % fieldsToExtract_.size()];
 		const auto va = VariantArray((*itemForCjsonBench_)[fieldName]);
 		if (va.size() != 1) {
-			state.SkipWithError(fmt::sprintf("Unexpected result size: %d", va.size()).c_str());
+			state.SkipWithError(fmt::format("Unexpected result size: {}", va.size()).c_str());
 		}
 	}
 }
 
 void ApiEncDec::FromJSON(benchmark::State& state) {
-	reindexer::Item item = db_->NewItem(nsName_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		reindexer::Item item = db_->NewItem(nsName_);
 		const auto err = item.FromJSON(itemJSON_);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		if (!item.Status().ok()) {
-			state.SkipWithError(item.Status().what().c_str());
+			state.SkipWithError(item.Status().what());
 		}
 	}
 }
@@ -240,21 +239,21 @@ void ApiEncDec::GetJSON(benchmark::State& state) {
 	assertrx(itemForCjsonBench_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		const auto ret = itemForCjsonBench_->GetJSON();
+		auto ret = itemForCjsonBench_->GetJSON();
 		benchmark::DoNotOptimize(ret);
 	}
 }
 
 void ApiEncDec::FromPrettyJSON(benchmark::State& state) {
-	reindexer::Item item = db_->NewItem(nsName_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		reindexer::Item item = db_->NewItem(nsName_);
 		const auto err = item.FromJSON(itemPrettyJSON_);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		if (!item.Status().ok()) {
-			state.SkipWithError(item.Status().what().c_str());
+			state.SkipWithError(item.Status().what());
 		}
 	}
 }
@@ -271,16 +270,16 @@ void ApiEncDec::GetPrettyJSON(benchmark::State& state) {
 }
 
 void ApiEncDec::FromMsgPack(benchmark::State& state) {
-	reindexer::Item item = db_->NewItem(nsName_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		reindexer::Item item = db_->NewItem(nsName_);
 		size_t offset = 0;
 		const auto err = item.FromMsgPack(itemMsgPack_, offset);
 		if (!err.ok()) {
-			state.SkipWithError(err.what().c_str());
+			state.SkipWithError(err.what());
 		}
 		if (!item.Status().ok()) {
-			state.SkipWithError(item.Status().what().c_str());
+			state.SkipWithError(item.Status().what());
 		}
 	}
 }
@@ -289,7 +288,9 @@ void ApiEncDec::GetMsgPack(benchmark::State& state) {
 	assertrx(itemForCjsonBench_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		const auto ret = itemForCjsonBench_->GetMsgPack();
+		auto ret = itemForCjsonBench_->GetMsgPack();
 		benchmark::DoNotOptimize(ret);
 	}
 }
+
+}  // namespace reindexer_benchmarks

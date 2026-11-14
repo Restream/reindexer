@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-class CGOCtxPool {
+class [[nodiscard]] CGOCtxPool {
 public:
 	CGOCtxPool() = delete;
 	CGOCtxPool(size_t baseSize) : ctxPool_(baseSize) {}
@@ -19,7 +19,7 @@ private:
 	ContextsPoolImpl<CancelContextImpl> ctxPool_;
 };
 
-class CGORdxCtxKeeper {
+class [[nodiscard]] CGORdxCtxKeeper {
 public:
 	CGORdxCtxKeeper() = delete;
 	CGORdxCtxKeeper(const CGORdxCtxKeeper&) = delete;
@@ -31,7 +31,8 @@ public:
 
 	~CGORdxCtxKeeper() {
 		if (ctx_) {
-			pool_.removeContext(ctxInfo_);
+			[[maybe_unused]] bool removed = pool_.removeContext(ctxInfo_);
+			assertrx_dbg(removed);
 		}
 	}
 

@@ -1,8 +1,7 @@
 #pragma once
+#include <span>
 #include <variant>
-#include "estl/span.h"
 #include "tools/errors.h"
-#include "tools/serializer.h"
 
 namespace gason {
 struct JsonNode;
@@ -10,23 +9,30 @@ struct JsonNode;
 
 namespace reindexer {
 
-class JsonBuilder;
+class WrSerializer;
 
-struct SetClusterLeaderCommand {
+namespace builders {
+class JsonBuilder;
+}  // namespace builders
+
+struct [[nodiscard]] SetClusterLeaderCommand {
 	int leaderServerId = -1;
-	void GetJSON(JsonBuilder& json) const;
+	void GetJSON(builders::JsonBuilder& json) const;
 	void FromJSON(const gason::JsonNode& payload);
 };
 
-struct ClusterControlRequestData {
-	enum class Type { Empty = 0, ChangeLeader = 1 };
+struct [[nodiscard]] ForceElectionsCommand {};
+
+struct [[nodiscard]] ClusterControlRequestData {
+	enum class [[nodiscard]] Type { Empty = 0, ChangeLeader = 1, ForceElections = 2 };
 
 	ClusterControlRequestData() = default;
 	ClusterControlRequestData(SetClusterLeaderCommand&& value) : type(Type::ChangeLeader), data(std::move(value)) {}
+	ClusterControlRequestData(ForceElectionsCommand&& value) : type(Type::ForceElections), data(std::move(value)) {}
 	void GetJSON(WrSerializer& ser) const;
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json) noexcept;
 
 	Type type = Type::Empty;
-	std::variant<SetClusterLeaderCommand> data;
+	std::variant<SetClusterLeaderCommand, ForceElectionsCommand> data;
 };
 }  // namespace reindexer

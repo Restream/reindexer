@@ -154,30 +154,30 @@ std::string ScanScalar(Stream& INPUT, ScanScalarParams& params) {
 		if (pastOpeningBreak) {
 			switch (params.fold) {
 				case DONT_FOLD:
-					scalar += "\n";
+					scalar += '\n';
 					break;
 				case FOLD_BLOCK:
 					if (!emptyLine && !nextEmptyLine && !moreIndented && !nextMoreIndented && INPUT.column() >= params.indent) {
-						scalar += " ";
+						scalar += ' ';
 					} else if (nextEmptyLine) {
 						foldedNewlineCount++;
 					} else {
-						scalar += "\n";
+						scalar += '\n';
 					}
 
 					if (!nextEmptyLine && foldedNewlineCount > 0) {
 						scalar += std::string(foldedNewlineCount - 1, '\n');
 						if (foldedNewlineStartedMoreIndented || nextMoreIndented | !foundNonEmptyLine) {
-							scalar += "\n";
+							scalar += '\n';
 						}
 						foldedNewlineCount = 0;
 					}
 					break;
 				case FOLD_FLOW:
 					if (nextEmptyLine) {
-						scalar += "\n";
+						scalar += '\n';
 					} else if (!emptyLine && !escapedNewline) {
-						scalar += " ";
+						scalar += ' ';
 					}
 					break;
 			}
