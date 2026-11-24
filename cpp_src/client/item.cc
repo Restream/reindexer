@@ -2,10 +2,12 @@
 #include "client/itemimplbase.h"
 #include "tools/catch_and_return.h"
 
-namespace reindexer {
-namespace client {
+namespace reindexer::client {
 
-Item::Item() : status_(errNotValid) {}
+const static Error kInvalidItemStatus{errNotValid, "Item is not valid"};
+
+// NOLINTNEXTLINE (bugprone-throw-keyword-missing)
+Item::Item() : status_(kInvalidItemStatus) {}
 
 Item::Item(Item&& other) noexcept = default;
 
@@ -20,8 +22,7 @@ Error Item::FromJSON(std::string_view slice, char** endp, bool pkOnly) { return 
 Error Item::FromCJSON(std::string_view slice) & noexcept {
 	try {
 		impl_->FromCJSON(slice);
-	}
-	CATCH_AND_RETURN;
+	} CATCH_AND_RETURN;
 	return {};
 }
 void Item::FromCJSONImpl(std::string_view slice) & { impl_->FromCJSON(slice); }
@@ -37,5 +38,4 @@ Item& Item::Unsafe(bool enable) noexcept {
 	return *this;
 }
 
-}  // namespace client
-}  // namespace reindexer
+}  // namespace reindexer::client

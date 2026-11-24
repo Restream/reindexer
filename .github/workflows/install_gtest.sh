@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-git clone --branch release-1.12.1 https://github.com/google/googletest.git
+git clone --branch v1.17.0 https://github.com/google/googletest.git
 cd googletest
 mkdir build
 cd build

@@ -7,7 +7,7 @@
 namespace reindexer {
 namespace tools {
 
-class RandomGenerator {
+class [[nodiscard]] RandomGenerator {
 public:
 	static uint16_t getu16(uint16_t from = std::numeric_limits<uint16_t>::min(), uint16_t to = std::numeric_limits<uint16_t>::max()) {
 		return get32<uint16_t>(from, to);

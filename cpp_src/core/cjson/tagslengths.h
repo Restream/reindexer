@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-enum TagValues : int {
+enum [[nodiscard]] TagValues : int {
 	StartObject = -1,
 	EndObject = -2,
 	StartArrayItem = -3,

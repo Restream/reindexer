@@ -1,8 +1,10 @@
 #include <client/reindexer.h>
+#include <core/query/query.h>
 
 using namespace reindexer::client;
 using reindexer::Error;
 using reindexer::Query;
+using reindexer::IndexOpts;
 
 int main() {
 	// Initialize database

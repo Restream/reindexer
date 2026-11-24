@@ -3,7 +3,7 @@
 namespace reindexer {
 
 template <typename... Ts>
-struct overloaded : Ts... {
+struct [[nodiscard]] overloaded : Ts... {
 	using Ts::operator()...;
 };
 template <typename... Ts>

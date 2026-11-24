@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-class fast_hash_set_variant : public fast_hash_set<Variant, std::hash<Variant>, Variant::EqualTo, Variant::Less> {
+class [[nodiscard]] fast_hash_set_variant : public fast_hash_set<Variant, std::hash<Variant>, Variant::EqualTo, Variant::Less> {
 	using Base = fast_hash_set<Variant, std::hash<Variant>, Variant::EqualTo, Variant::Less>;
 
 public:

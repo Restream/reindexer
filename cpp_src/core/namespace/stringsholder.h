@@ -9,7 +9,7 @@ namespace reindexer {
 
 class Index;
 
-class StringsHolder : private std::vector<key_string> {
+class [[nodiscard]] StringsHolder : private std::vector<key_string> {
 	using Base = std::vector<key_string>;
 
 public:

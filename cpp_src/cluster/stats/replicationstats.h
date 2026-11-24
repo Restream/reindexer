@@ -2,54 +2,64 @@
 
 #include <optional>
 #include "cluster/config.h"
-#include "cluster/consts.h"
-#include "core/perfstatcounter.h"
-#include "core/transaction/transaction.h"
 #include "estl/fast_hash_map.h"
+#include "estl/lock.h"
 #include "estl/shared_mutex.h"
-#include "tools/stringstools.h"
+#include "estl/spin_lock.h"
 
-namespace reindexer {
-namespace cluster {
+namespace reindexer::cluster {
 
-struct SyncStats {
+struct [[nodiscard]] SyncStats {
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
-	bool operator==(const SyncStats& r) const noexcept { return count == r.count && maxTimeUs == r.maxTimeUs && avgTimeUs == r.avgTimeUs; }
-	bool operator!=(const SyncStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const SyncStats& r) const noexcept = default;
+	bool operator!=(const SyncStats& r) const noexcept = default;
 
 	size_t count;
 	size_t maxTimeUs;
 	size_t avgTimeUs;
 };
 
-struct InitialSyncStats {
+struct [[nodiscard]] InitialSyncStats {
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
-	bool operator==(const InitialSyncStats& r) const noexcept {
-		return forceSyncs == r.forceSyncs && walSyncs == r.walSyncs && totalTimeUs == r.totalTimeUs;
-	}
-	bool operator!=(const InitialSyncStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const InitialSyncStats& r) const noexcept = default;
+	bool operator!=(const InitialSyncStats& r) const noexcept = default;
 
 	SyncStats forceSyncs;
 	SyncStats walSyncs;
 	size_t totalTimeUs;
 };
 
-struct NodeStats {
-	enum class Status { None, Offline, Online, RaftError };
-	enum class SyncState { None, Syncing, AwaitingResync, OnlineReplication, InitialLeaderSync };
+// State of the cluster's part of the async replication config on the RAFT cluster's node
+struct [[nodiscard]] AsyncReplConfigStats {
+	void FromJSON(const gason::JsonNode&);
+	void GetJSON(JsonBuilder& builder) const;
+	bool operator==(const AsyncReplConfigStats&) const noexcept = default;
+	bool operator!=(const AsyncReplConfigStats&) const noexcept = default;
+
+	// Is not set, if the node's source is unknown
+	std::optional<int64_t> sourceId = std::nullopt;
+	// Result of the last applying of the cluster's part on the node
+	Error applyError{};
+};
+
+struct [[nodiscard]] NodeStats {
+	enum class [[nodiscard]] Status { None, Offline, Online, RaftError };
+	enum class [[nodiscard]] SyncState { None, Syncing, AwaitingResync, OnlineReplication, InitialLeaderSync, Suspended };
 
 	void FromJSON(const gason::JsonNode&);
 	void GetJSON(JsonBuilder& builder) const;
-	bool operator==(const NodeStats& r) const noexcept {
-		return dsn == r.dsn && updatesCount == r.updatesCount && serverId == r.serverId && status == r.status && role == r.role &&
-			   isSynchronized == r.isSynchronized && syncState == r.syncState && namespaces == r.namespaces && lastError == r.lastError;
-	}
-	bool operator!=(const NodeStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const NodeStats& r) const noexcept(noexcept(dsn == r.dsn)) = default;
+	bool operator!=(const NodeStats& r) const noexcept(noexcept(dsn != r.dsn)) = default;
 
+	// Node, the updates are replicated to. RAFT cluster target is replicated to its leader only, so the DSN is empty,
+	// until the leader is found and validated
 	DSN dsn;
+	// All the DSNs of the RAFT cluster target. Empty for the single node target
+	std::vector<DSN> dsns;
 	int64_t updatesCount;
+	int64_t nssSyncQueue;
 	int serverId;
 	Status status;
 	SyncState syncState;
@@ -57,20 +67,17 @@ struct NodeStats {
 	bool isSynchronized;
 	std::vector<std::string> namespaces;
 	Error lastError;
+	// Is set for the nodes of the RAFT cluster only
+	std::optional<AsyncReplConfigStats> asyncReplConfig;
 };
 
-struct ReplicationStats {
-	Error FromJSON(span<char> json);
+struct [[nodiscard]] ReplicationStats {
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& builder) const;
 	void GetJSON(WrSerializer& ser) const;
-	bool operator==(const ReplicationStats& r) const noexcept {
-		return type == r.type && pendingUpdatesCount == r.pendingUpdatesCount && updateDrops == r.updateDrops &&
-			   allocatedUpdatesCount == r.allocatedUpdatesCount && allocatedUpdatesSizeBytes == r.allocatedUpdatesSizeBytes &&
-			   walSyncs == r.walSyncs && forceSyncs == r.forceSyncs && initialSync == r.initialSync && logLevel == r.logLevel &&
-			   nodeStats == r.nodeStats;
-	}
-	bool operator!=(const ReplicationStats& r) const noexcept { return !(*this == r); }
+	bool operator==(const ReplicationStats& r) const noexcept(noexcept(nodeStats == r.nodeStats)) = default;
+	bool operator!=(const ReplicationStats& r) const noexcept(noexcept(nodeStats != r.nodeStats)) = default;
 
 	std::string type;
 	int64_t updateDrops;
@@ -84,86 +91,87 @@ struct ReplicationStats {
 	LogLevel logLevel;
 };
 
-struct SyncStatsCounter {
-	void Hit(std::chrono::microseconds time) noexcept {
-		std::lock_guard lck(mtx_);
-		totalTimeUs += time.count();
-		++count;
-		if (maxTimeUs < time.count()) {
-			maxTimeUs = time.count();
-		}
-	}
-	void Reset() noexcept {
-		std::lock_guard lck(mtx_);
-		count = 0;
-		maxTimeUs = 0;
-		totalTimeUs = 0;
-	}
-	SyncStats Get() const;
+struct [[nodiscard]] SyncStatsCounter {
+	void Hit(std::chrono::microseconds time) noexcept RX_REQUIRES(!mtx_);
+	void Reset() noexcept RX_REQUIRES(!mtx_);
+	SyncStats Get() const RX_REQUIRES(!mtx_);
 
-	size_t count = 0;
-	int64_t maxTimeUs = 0;
-	int64_t totalTimeUs = 0;
+	size_t count RX_GUARDED_BY(mtx_) = 0;
+	int64_t maxTimeUs RX_GUARDED_BY(mtx_) = 0;
+	int64_t totalTimeUs RX_GUARDED_BY(mtx_) = 0;
 	mutable spinlock mtx_;
 };
 
-struct NodeStatsCounter {
+struct [[nodiscard]] NodeStatsCounter {
+	static constexpr size_t kNoActiveDsn = std::numeric_limits<size_t>::max();
+
 	NodeStatsCounter(DSN d, std::vector<std::string> nss) : dsn(std::move(d)), namespaces(std::move(nss)) {}
-	void OnUpdateApplied(int64_t updateId) noexcept { lastAppliedUpdateId_.store(updateId, std::memory_order_relaxed); }
+	NodeStatsCounter(std::vector<DSN> dsns, std::vector<std::string> nss) : clusterDsns(std::move(dsns)), namespaces(std::move(nss)) {
+		assertrx_throw(!clusterDsns.empty());
+	}
+	void OnUpdateApplied(int64_t updateId) noexcept { lastAppliedUpdateId.store(updateId, std::memory_order_relaxed); }
 	void OnStatusChanged(NodeStats::Status st) noexcept { status.store(st, std::memory_order_relaxed); }
 	void OnSyncStateChanged(NodeStats::SyncState st) noexcept { syncState.store(st, std::memory_order_relaxed); }
 	void OnServerIdChanged(int sId) noexcept { serverId.store(sId, std::memory_order_relaxed); }
-	void SaveLastError(const Error& err) {
-		std::lock_guard lck(mtx_);
-		lastError = err;
+	void OnActiveDsnChanged(std::optional<size_t> idx) noexcept {
+		assertrx_dbg(!idx.has_value() || *idx < clusterDsns.size());
+		activeDsnIdx.store(idx.value_or(kNoActiveDsn), std::memory_order_relaxed);
 	}
-	Error GetLastError() const {
-		std::lock_guard lck(mtx_);
-		return lastError;
+	void OnEnqueueNamespacesSync(size_t count) noexcept { nssSyncQueueSize.store(count, std::memory_order_relaxed); }
+	void OnNamespaceSynchronized() noexcept {
+		[[maybe_unused]] auto curVal = nssSyncQueueSize.fetch_sub(1, std::memory_order_relaxed);
+		assertrx_dbg(curVal > 0);
 	}
-	void Reset() noexcept {
-		status.store(NodeStats::Status::None, std::memory_order_relaxed);
-		syncState.store(NodeStats::SyncState::None, std::memory_order_relaxed);
-		lastAppliedUpdateId_.store(-1, std::memory_order_relaxed);
-		SaveLastError(Error());
-	}
-	NodeStats Get() const;
+	void SaveLastError(const Error& err) noexcept RX_REQUIRES(!mtx_);
+	void SaveAsyncReplConfig(const AsyncReplConfigStats& stats) noexcept RX_REQUIRES(!mtx_);
+	NodeStats Get() const RX_REQUIRES(!mtx_);
 
 	const DSN dsn;
+	const std::vector<DSN> clusterDsns;
 	const std::vector<std::string> namespaces;
-	std::atomic<int64_t> lastAppliedUpdateId_ = {-1};
+	std::atomic<size_t> activeDsnIdx = {kNoActiveDsn};
+	std::atomic<int64_t> lastAppliedUpdateId = {-1};
+	std::atomic<int64_t> nssSyncQueueSize = {0};
 	std::atomic<int> serverId = {-1};
 	std::atomic<NodeStats::Status> status = {NodeStats::Status::None};
 	std::atomic<NodeStats::SyncState> syncState = {NodeStats::SyncState::None};
-	Error lastError;  // Change under lock
+	Error lastError RX_GUARDED_BY(mtx_);
+	std::optional<AsyncReplConfigStats> asyncReplConfig RX_GUARDED_BY(mtx_);
 	mutable spinlock mtx_;
 };
 
-class ReplicationStatCounter {
+class [[nodiscard]] ReplicationStatCounter {
 public:
 	static constexpr size_t kLeaderUID = std::numeric_limits<size_t>::max();
 
+	// Values of this node's element, which are evaluated by the owner on reading instead of collecting
+	struct [[nodiscard]] ThisNodeOverrides {
+		AsyncReplConfigStats asyncReplConfig;
+		Error lastError;
+	};
+
 	ReplicationStatCounter(std::string t) : type_(std::move(t)) {}
 	template <typename NodeT>
-	void Init(const std::vector<NodeT>& nodes) {
-		std::lock_guard wlck(mtx_);
+	void Init(const std::vector<NodeT>& nodes) RX_REQUIRES(!mtx_) {
+		lock_guard wlck(mtx_);
 		nodeCounters_.clear();
 		thisNode_.reset();
 		nodeCounters_.reserve(nodes.size());
 		for (size_t i = 0; i < nodes.size(); ++i) {
-			nodeCounters_.emplace(i, std::make_unique<NodeStatsCounter>(nodes[i].GetRPCDsn(), nodes[i].GetNssVector()));
+			nodeCounters_.emplace(i, makeNodeCounter(nodes[i], nodes[i].GetNssVector()));
 		}
 	}
 	template <typename NodeT>
-	void Init(const NodeT& thisNode, const std::vector<NodeT>& nodes, const std::vector<std::string>& namespaces) {
-		std::lock_guard wlck(mtx_);
+	void Init(const NodeT& thisNode, const std::vector<NodeT>& nodes, const std::vector<std::string>& namespaces) RX_REQUIRES(!mtx_) {
+		lock_guard wlck(mtx_);
 		nodeCounters_.clear();
 		thisNode_.emplace(thisNode.GetRPCDsn(), namespaces);
 		thisNode_->serverId.store(thisNode.serverId, std::memory_order_relaxed);
 		thisNode_->status.store(NodeStats::Status::Online, std::memory_order_relaxed);
 		nodeCounters_.reserve(nodes.size());
 		for (size_t i = 0; i < nodes.size(); ++i) {
-			nodeCounters_.emplace(i, std::make_unique<NodeStatsCounter>(nodes[i].GetRPCDsn(), namespaces));
+			// Only the nodes of the RAFT cluster have the async replication config's stats
+			nodeCounters_.emplace(i, makeNodeCounter(nodes[i], namespaces)).first->second->SaveAsyncReplConfig(AsyncReplConfigStats());
 		}
 	}
 	void OnWalSync(std::chrono::microseconds time) noexcept { walSyncs_.Hit(time); }
@@ -177,7 +185,7 @@ public:
 		lastPushedUpdateId_.store(updateId, std::memory_order_relaxed);
 		allocatedUpdatesSizeBytes_.fetch_add(size, std::memory_order_relaxed);
 	}
-	void OnUpdateApplied(size_t nodeId, int64_t updateId) const noexcept {
+	void OnUpdateApplied(size_t nodeId, int64_t updateId) const noexcept RX_REQUIRES(!mtx_) {
 		shared_lock rlck(mtx_);
 		auto found = nodeCounters_.find(nodeId);
 		if (found != nodeCounters_.end()) {
@@ -195,51 +203,29 @@ public:
 		lastErasedUpdateId_.store(updateId, std::memory_order_relaxed);
 		allocatedUpdatesSizeBytes_.fetch_sub(size, std::memory_order_relaxed);
 	}
-	void OnStatusChanged(size_t nodeId, NodeStats::Status status) const noexcept {
-		shared_lock rlck(mtx_);
-		auto found = nodeCounters_.find(nodeId);
-		if (found != nodeCounters_.end()) {
-			found->second->OnStatusChanged(status);
-		}
-	}
-	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) {
-		shared_lock rlck(mtx_);
-		if (nodeId == kLeaderUID && thisNode_.has_value()) {
-			thisNode_->OnSyncStateChanged(state);
-		} else {
-			auto found = nodeCounters_.find(nodeId);
-			if (found != nodeCounters_.end()) {
-				found->second->OnSyncStateChanged(state);
-			}
-		}
-	}
-	void OnServerIdChanged(size_t nodeId, int serverId) const noexcept {
-		shared_lock rlck(mtx_);
-		auto found = nodeCounters_.find(nodeId);
-		if (found != nodeCounters_.end()) {
-			found->second->OnServerIdChanged(serverId);
-		}
-	}
-	void SaveNodeError(size_t nodeId, const Error& lastError) {
-		shared_lock rlck(mtx_);
-		auto found = nodeCounters_.find(nodeId);
-		if (found != nodeCounters_.end()) {
-			found->second->SaveLastError(lastError);
-		}
-	}
-	void Reset() noexcept {
-		walSyncs_.Reset();
-		forceSyncs_.Reset();
-		initialForceSyncs_.Reset();
-		initialWalSyncs_.Reset();
-		std::lock_guard lck(mtx_);
-		for (auto& node : nodeCounters_) {
-			node.second->Reset();
-		}
-	}
-	ReplicationStats Get() const;
+	void OnStatusChanged(size_t nodeId, NodeStats::Status status) const noexcept RX_REQUIRES(!mtx_);
+	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) noexcept RX_REQUIRES(!mtx_);
+	void OnNamespaceSynchronized(size_t nodeId) noexcept RX_REQUIRES(!mtx_);
+	void OnEnqueueNamespacesSync(size_t nodeId, size_t count) noexcept RX_REQUIRES(!mtx_);
+	void OnServerIdChanged(size_t nodeId, int serverId) const noexcept RX_REQUIRES(!mtx_);
+	void OnActiveDsnChanged(size_t nodeId, std::optional<size_t> dsnIdx) const noexcept RX_REQUIRES(!mtx_);
+	void SaveNodeError(size_t nodeId, const Error& lastError) noexcept RX_REQUIRES(!mtx_);
+	void SaveNodeAsyncReplConfig(size_t nodeId, const AsyncReplConfigStats& stats) noexcept RX_REQUIRES(!mtx_);
+	void Clear() noexcept RX_REQUIRES(!mtx_);
+	ReplicationStats Get(const ThisNodeOverrides& thisNodeOverrides = {}) const RX_REQUIRES(!mtx_);
 
 private:
+	template <typename NodeT>
+	static std::unique_ptr<NodeStatsCounter> makeNodeCounter(const NodeT& node, std::vector<std::string> nss) {
+		if constexpr (requires { node.IsClusterTarget(); }) {
+			if (node.IsClusterTarget()) {
+				return std::make_unique<NodeStatsCounter>(node.GetDSNs(), std::move(nss));
+			}
+			return std::make_unique<NodeStatsCounter>(node.GetDSNs().front(), std::move(nss));
+		} else {
+			return std::make_unique<NodeStatsCounter>(node.GetRPCDsn(), std::move(nss));
+		}
+	}
 	static int64_t getUpdatesCountById(int64_t lastPushedId, int64_t lastErasedId) noexcept;
 
 	const std::string type_;
@@ -253,10 +239,9 @@ private:
 	SyncStatsCounter initialForceSyncs_;
 	SyncStatsCounter initialWalSyncs_;
 	std::atomic<size_t> initialSyncTotalTimeUs_ = {0};
-	fast_hash_map<size_t, std::unique_ptr<NodeStatsCounter>> nodeCounters_;
-	std::optional<NodeStatsCounter> thisNode_;
+	fast_hash_map<size_t, std::unique_ptr<NodeStatsCounter>> nodeCounters_ RX_GUARDED_BY(mtx_);
+	std::optional<NodeStatsCounter> thisNode_ RX_GUARDED_BY(mtx_);
 	mutable read_write_spinlock mtx_;
 };
 
-}  // namespace cluster
-}  // namespace reindexer
+}  // namespace reindexer::cluster

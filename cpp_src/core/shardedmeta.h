@@ -1,20 +1,20 @@
 #pragma once
 
-#include "estl/span.h"
+#include <span>
 #include "tools/errors.h"
 
 namespace reindexer {
 
 class WrSerializer;
 
-struct ShardedMeta {
+struct [[nodiscard]] ShardedMeta {
 	ShardedMeta(int _shardId = ShardingKeyType::ProxyOff, std::string&& _data = std::string())
 		: shardId(_shardId), data(std::move(_data)) {}
 
 	int shardId;
 	std::string data;
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	void GetJSON(WrSerializer& ser) const;
 };
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -81,4 +81,5 @@ func TestSelectFunctions(t *testing.T) {
 		require.ErrorContains(t, err, "Unable to apply snippet function to the non-string field 'id'")
 		require.Nil(t, result)
 	})
+
 }

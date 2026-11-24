@@ -1,5 +1,9 @@
 
+#include <cstdlib>
+#include <cstring>
 #include <iomanip>
+#include <iostream>
+#include "tools/scope_guard.h"
 
 #if REINDEX_WITH_LIBDL
 #ifndef _GNU_SOURCE
@@ -36,36 +40,22 @@ namespace debug {
 
 using namespace std::string_view_literals;
 
-TraceEntry::TraceEntry(TraceEntry&& other) noexcept
-	: funcName_(other.funcName_),
-	  objFile_(other.objFile_),
-	  srcFile_(other.srcFile_),
-	  srcLine_(other.srcLine_),
-	  ofs_(other.ofs_),
-	  addr_(other.addr_),
-	  baseAddr_(other.baseAddr_),
-	  holder_(other.holder_) {
-	other.holder_ = nullptr;
-}
+constexpr static std::string_view kUnresolvedFunctionName = "<unresolved_function>"sv;
+constexpr static std::string_view kUnresolvedFileName = "<unresolver_filename>"sv;
 
-TraceEntry& TraceEntry::operator=(TraceEntry&& other) noexcept {
-	if (this != &other) {
-		funcName_ = other.funcName_;
-		objFile_ = other.objFile_;
-		srcFile_ = other.srcFile_;
-		srcLine_ = other.srcLine_;
-		ofs_ = other.ofs_;
-		addr_ = other.addr_;
-		baseAddr_ = other.baseAddr_;
-		holder_ = other.holder_;
-		other.holder_ = nullptr;
+static std::string_view cstr_view(const OwnedCStr& str) { return str ? std::string_view(str.get()) : std::string_view(); }
+
+static OwnedCStr duplicate_cstr(const char* value) {
+	if (!value) {
+		return {nullptr, &std::free};
 	}
-	return *this;
-}
-
-TraceEntry::~TraceEntry() {
-	free(holder_);
-	holder_ = nullptr;
+	const auto len = std::strlen(value);
+	auto* copy = static_cast<char*>(std::malloc(len + 1));
+	if (!copy) {
+		return {nullptr, &std::free};
+	}
+	std::memcpy(copy, value, len + 1);
+	return {copy, &std::free};
 }
 
 TraceEntry::TraceEntry(uintptr_t addr) {
@@ -81,15 +71,18 @@ TraceEntry::TraceEntry(uintptr_t addr) {
 	ofs_ = uintptr_t(addr) - uintptr_t(dl_info.dli_saddr);
 	baseAddr_ = uintptr_t(dl_info.dli_fbase);
 
-	int status;
-	if ((holder_ = abi::__cxa_demangle(dl_info.dli_sname, NULL, NULL, &status)) != 0) {
-		funcName_ = holder_;
+	int status = 0;
+	if (const char* demangled = abi::__cxa_demangle(dl_info.dli_sname, nullptr, nullptr, &status)) {
+		// NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
+		const auto deallocGrd = MakeScopeGuard([demangled] { free(const_cast<void*>(static_cast<const void*>(demangled))); });
+		SetFuncName(demangled);
 	} else if (dl_info.dli_sname) {
+		// dli_sname lifetime is maganed by the dlsym loader, no holder allocation required
 		funcName_ = dl_info.dli_sname;
 	} else {
-		funcName_ = "<unresolved_function>"sv;
+		SetFuncName(nullptr);
 	}
-#endif
+#endif	// REINDEX_WITH_LIBDL
 }
 
 std::ostream& TraceEntry::Dump(std::ostream& os) const {
@@ -117,38 +110,60 @@ std::ostream& TraceEntry::Dump(std::ostream& os) const {
 	return os;
 }
 
+void TraceEntry::SetFuncName(const char* function) noexcept {
+	if (!function || function == kUnresolvedFunctionName) {
+		funcNameHolder_.reset();
+		funcName_ = kUnresolvedFunctionName;
+		return;
+	}
+#if REINDEX_WITH_LIBDL
+	int status = 0;
+	if (char* demangled = abi::__cxa_demangle(function, nullptr, nullptr, &status)) {
+		funcNameHolder_.reset(demangled);
+		funcName_ = cstr_view(funcNameHolder_);
+		return;
+	}
+#endif	// REINDEX_WITH_LIBDL
+	funcNameHolder_ = duplicate_cstr(function);
+	funcName_ = cstr_view(funcNameHolder_);
+}
+
+void TraceEntry::SetSrcFile(const char* filename, int lineno) noexcept {
+	if (!filename || filename == kUnresolvedFileName) {
+		srcFileHolder_.reset();
+		srcFile_ = kUnresolvedFileName;
+		srcLine_ = 0;
+	} else {
+		srcFileHolder_ = duplicate_cstr(filename);
+		srcFile_ = cstr_view(srcFileHolder_);
+		srcLine_ = lineno;
+	}
+}
+
 #if REINDEX_WITH_LIBBACKTRACE
-class TraceResolverLibbacktrace : public TraceResolver {
+class [[nodiscard]] TraceResolverLibbacktrace : public TraceResolver {
 public:
 	TraceResolverLibbacktrace() { init(); }
 
 	bool Resolve(TraceEntry& te) override final {
-		backtrace_pcinfo(state_, te.addr_, callback, errorCallback, &te);
+		backtrace_pcinfo(state_, te.Addr(), callback, errorCallback, &te);
 		return true;
 	}
 
-protected:
-	bool init() {
-		state_ = backtrace_create_state("/proc/self/exe", 1, errorCallback, NULL);
-		return true;
-	}
+private:
+	void init() { state_ = backtrace_create_state("/proc/self/exe", 1, errorCallback, NULL); }
 	static void errorCallback(void* /*data*/, const char* msg, int errnum) {
 		std::cerr << "libbacktarce error:" << msg << " " << errnum << std::endl;
 	}
 
-	static int callback(void* data, uintptr_t /*pc*/, const char* filename, int lineno, const char* /*function*/) {
+	static int callback(void* data, uintptr_t /*pc*/, const char* filename, int lineno, const char* function) {
 		TraceEntry* te = reinterpret_cast<TraceEntry*>(data);
-		if (filename) {
-			te->srcFile_ = filename;
-			te->srcLine_ = lineno;
-		} else {
-			te->srcFile_ = "<unresolver_filename>"sv;
-			te->srcLine_ = 0;
-		}
+		te->SetFuncName(function);
+		te->SetSrcFile(filename, lineno);
+
 		return 0;
 	}
 
-protected:
 	backtrace_state* state_ = nullptr;
 };
 
@@ -156,7 +171,7 @@ std::unique_ptr<TraceResolver> TraceResolver::New() { return std::unique_ptr<Tra
 
 #elif REINDEX_WITH_APPLE_SYMBOLICATION
 
-class TraceResolverApple : public TraceResolver {
+class [[nodiscard]] TraceResolverApple : public TraceResolver {
 public:
 	TraceResolverApple() { init(); }
 	~TraceResolverApple() { CSRelease(cs_); }
@@ -167,9 +182,9 @@ public:
 			return false;
 		}
 
-		auto info = CSSymbolicatorGetSourceInfoWithAddressAtTime(cs_, te.addr_, CS_NOW);
+		auto info = CSSymbolicatorGetSourceInfoWithAddressAtTime(cs_, te.Addr(), CS_NOW);
 		auto sym = (info.csCppData && info.csCppObj) ? CSSourceInfoGetSymbol(info)
-													 : CSSymbolicatorGetSymbolWithAddressAtTime(cs_, te.addr_, CS_NOW);
+													 : CSSymbolicatorGetSymbolWithAddressAtTime(cs_, te.Addr(), CS_NOW);
 
 		if (!sym.csCppData || !sym.csCppObj) {
 			return false;
@@ -178,8 +193,7 @@ public:
 		auto owner = CSSymbolGetSymbolOwner(sym);
 		if (owner.csCppData && owner.csCppObj) {
 			if (info.csCppData && info.csCppObj) {
-				te.srcFile_ = CSSourceInfoGetPath(info);
-				te.srcLine_ = CSSourceInfoGetLineNumber(info);
+				te.SetSrcFile(CSSourceInfoGetPath(info), CSSourceInfoGetLineNumber(info));
 			}
 		}
 		ret = true;
@@ -187,7 +201,7 @@ public:
 		return ret;
 	}
 
-protected:
+private:
 	bool init() {
 		auto hlib = dlopen("/System/Library/PrivateFrameworks/CoreSymbolication.framework/Versions/A/CoreSymbolication", RTLD_NOW);
 		if (!hlib) {
@@ -214,7 +228,7 @@ protected:
 		return ok;
 	}
 
-	struct CSTypeRef {
+	struct [[nodiscard]] CSTypeRef {
 		void* csCppData;
 		void* csCppObj;
 	};
@@ -246,9 +260,9 @@ protected:
 };
 
 std::unique_ptr<TraceResolver> TraceResolver::New() { return std::unique_ptr<TraceResolver>(new TraceResolverApple()); }
-#else
+#else	// !REINDEX_WITH_APPLE_SYMBOLICATION
 
 std::unique_ptr<TraceResolver> TraceResolver::New() { return std::unique_ptr<TraceResolver>(new TraceResolver()); }
-#endif
+#endif	// !REINDEX_WITH_APPLE_SYMBOLICATION
 }  // namespace debug
 }  // namespace reindexer

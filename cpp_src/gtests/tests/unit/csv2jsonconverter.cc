@@ -2,9 +2,9 @@
 #include "core/cjson/jsonbuilder.h"
 #include "vendor/gason/gason.h"
 
-namespace reindexer {
+namespace reindexer_tests {
 
-enum class CSVState { UnquotedField, QuotedField, QuotedQuote };
+enum class [[nodiscard]] CSVState { UnquotedField, QuotedField, QuotedQuote };
 
 std::vector<std::string> parseCSVRow(std::string_view row) {
 	CSVState state = CSVState::UnquotedField;
@@ -61,12 +61,12 @@ std::string csv2json(std::string_view row, const std::vector<std::string>& schem
 	auto fields = parseCSVRow(row);
 
 	if (schema.size() < fields.size()) {
-		throw Error(errParams, "Not completed schema for csv to json conversion");
+		throw reindexer::Error(::errParams, "Not completed schema for csv to json conversion");
 	}
 
-	WrSerializer json;
+	reindexer::WrSerializer json;
 	{
-		JsonBuilder builder(json);
+		reindexer::builders::JsonBuilder builder(json);
 		for (size_t i = 0; i < fields.size(); ++i) {
 			if (!fields[i].empty()) {
 				try {
@@ -80,7 +80,7 @@ std::string csv2json(std::string_view row, const std::vector<std::string>& schem
 		}
 	}
 
-	return std::string{json.Slice()};
+	return std::string(json.Slice());
 }
 
-}  // namespace reindexer
+}  // namespace reindexer_tests

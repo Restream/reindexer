@@ -4,25 +4,30 @@
 #include "client/snapshot.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/namespace/snapshot/snapshot.h"
+#include "core/query/query.h"
+#include "core/system_ns_names.h"
 #include "rpcclient_api.h"
+#include "vendor/gason/gason.h"
 
-class SnapshotTestApi : public RPCClientTestApi {
+namespace reindexer_tests {
+
+class [[nodiscard]] SnapshotTestApi : public RPCClientTestApi {
 protected:
-	struct NsDataState {
+	struct [[nodiscard]] NsDataState {
 		lsn_t lsn;
 		lsn_t nsVersion;
-		uint64_t dataHash = 0;
+		uint64_t checksum = 0;
 		int64_t dataCount = 0;
 	};
 
 	void SetUp() {
-		fs::RmDirAll(kBaseTestsetDbPath);
+		std::ignore = fs::RmDirAll(kBaseTestsetDbPath);
 		StartServer();
 	}
 	void TearDown() {
 		[[maybe_unused]] auto err = RPCClientTestApi::StopAllServers();
-		assertf(err.ok(), "%s", err.what());
-		fs::RmDirAll(kBaseTestsetDbPath);
+		assertf(err.ok(), "{}", err.what());
+		std::ignore = fs::RmDirAll(kBaseTestsetDbPath);
 	}
 
 	void StartServer() {
@@ -122,9 +127,9 @@ protected:
 
 	template <typename RxT>
 	NsDataState GetNsDataState(RxT& rx, const std::string& ns) {
-		Query qr = Query("#memstats").Where("name", CondEq, ns);
+		Query q = Query(kMemStatsNamespace).Where("name", CondEq, ns);
 		typename RxT::QueryResultsT res;
-		auto err = rx.Select(qr, res);
+		auto err = rx.Select(q, res);
 		EXPECT_TRUE(err.ok()) << err.what();
 		NsDataState state;
 		for (auto it : res) {
@@ -136,18 +141,18 @@ protected:
 			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
 			state.lsn.FromJSON(root["replication"]["last_lsn_v2"]);
 			state.dataCount = root["replication"]["data_count"].As<int64_t>();
-			state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
+			state.checksum = root["replication"]["checksum"].As<uint64_t>();
 		}
 		return state;
 	}
 
-	void Connect(net::ev::dynamic_loop& loop, reindexer::client::CoroReindexer& rxClient, reindexer::Reindexer& localRx) {
+	void Connect(reindexer::net::ev::dynamic_loop& loop, reindexer::client::CoroReindexer& rxClient, reindexer::Reindexer& localRx) {
 		Connect(localRx);
 		Connect(loop, rxClient);
 	}
-	void Connect(net::ev::dynamic_loop& loop, reindexer::client::CoroReindexer& rxClient) {
+	void Connect(reindexer::net::ev::dynamic_loop& loop, reindexer::client::CoroReindexer& rxClient) {
 		reindexer::client::ConnectOpts opts;
-		opts.CreateDBIfMissing();
+		std::ignore = opts.CreateDBIfMissing();
 		auto err = rxClient.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
@@ -159,7 +164,7 @@ protected:
 	void CompareData(reindexer::client::CoroReindexer& rxClient, reindexer::Reindexer& localRx) {
 		auto remoteState = GetNsDataState(rxClient, kNsName);
 		auto localState = GetNsDataState(localRx, kNsName);
-		EXPECT_EQ(remoteState.dataHash, localState.dataHash);
+		EXPECT_EQ(remoteState.checksum, localState.checksum);
 		EXPECT_EQ(remoteState.dataCount, localState.dataCount);
 		EXPECT_EQ(remoteState.lsn, localState.lsn);
 		EXPECT_EQ(remoteState.nsVersion, localState.nsVersion);
@@ -181,7 +186,9 @@ protected:
 		for (auto it1 = csn.begin(); it1 != csn.end() || it2 != sn.end(); ++it1, ++it2) {
 			ASSERT_TRUE(it1 != csn.end());
 			ASSERT_TRUE(it2 != sn.end());
+			// NOLINTNEXTLINE (performance-unnecessary-copy-initialization)
 			auto ch1 = it1.Chunk();
+			// NOLINTNEXTLINE (performance-unnecessary-copy-initialization)
 			auto ch2 = it2.Chunk();
 			EXPECT_EQ(ch1.Records().size(), ch2.Records().size());
 			EXPECT_EQ(ch1.IsTx(), ch2.IsTx());
@@ -194,6 +201,7 @@ protected:
 	size_t GetWALItemsCount(client::Snapshot& sn) {
 		size_t count = 0;
 		for (auto& ch : sn) {
+			// NOLINTNEXTLINE (performance-unnecessary-copy-initialization)
 			auto chunk = ch.Chunk();
 			if (chunk.IsWAL()) {
 				count += chunk.Records().size();
@@ -216,14 +224,13 @@ protected:
 		nsArray.End();
 		jb.End();
 
-		constexpr std::string_view kConfigNsName = "#config";
-		auto item = rxClient.NewItem(kConfigNsName);
+		auto item = rxClient.NewItem(reindexer::kConfigNamespace);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		auto err = item.FromJSON(ser.Slice());
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = rxClient.Upsert(kConfigNsName, item);
+		err = rxClient.Upsert(reindexer::kConfigNamespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
@@ -246,3 +253,5 @@ private:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 };
+
+}  // namespace reindexer_tests

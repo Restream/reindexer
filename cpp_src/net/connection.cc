@@ -1,5 +1,6 @@
 #include "connection.h"
 #include <errno.h>
+#include "estl/mutex.h"
 
 namespace reindexer {
 namespace net {
@@ -25,8 +26,11 @@ template <typename Mutex>
 void Connection<Mutex>::restart(socket&& s) {
 	assertrx(!sock_.valid());
 	sock_ = std::move(s);
+	// A reused connection is attached before it gets the new socket, so attach() keeps the address of the previous client
+	clientAddr_ = sock_.addr();
 	wrBuf_.clear();
 	rdBuf_.clear();
+	shrinkRdBufIfNeeded();
 	curEvents_ = 0;
 	closeConn_ = false;
 	if (stats_) {
@@ -77,7 +81,7 @@ void Connection<Mutex>::closeConn() {
 	io_.loop.break_loop();
 	if (sock_.valid()) {
 		io_.stop();
-		if rx_unlikely (sock_.close() != 0) {
+		if (sock_.close() != 0) [[unlikely]] {
 			perror("sock_.close() error");
 		}
 	}
@@ -87,6 +91,8 @@ void Connection<Mutex>::closeConn() {
 		stats_->stop();
 	}
 	onClose();
+	rdBuf_.clear();
+	shrinkRdBufIfNeeded();
 	closeConn_ = false;
 }
 
@@ -99,11 +105,11 @@ void Connection<Mutex>::callback(ev::io& /*watcher*/, int revents) {
 	++rwCounter_;
 
 	if (sock_.ssl) {
-		if (int ssl_events = openssl::ssl_handshake<&openssl::SSL_accept>(sock_.ssl); ssl_events < 0) {
+		if (int sslEvents = openssl::ssl_handshake<&openssl::SSL_accept>(sock_.ssl); sslEvents < 0) {
 			closeConn();
 			return;
-		} else if (ssl_events > 0) {
-			io_.start(sock_.fd(), ssl_events);
+		} else if (sslEvents > 0) {
+			update_cur_events(sslEvents);
 			return;
 		}
 	}
@@ -120,8 +126,13 @@ void Connection<Mutex>::callback(ev::io& /*watcher*/, int revents) {
 		write_cb();
 	}
 
-	int nevents = ev::READ | (wrBuf_.size() ? ev::WRITE : 0);
+	// A closing connection does not read any more, so it only waits until the rest of the response is written.
+	// Otherwise the unread data in the socket would wake the loop again and again
+	update_cur_events(closeConn_ ? ev::WRITE : (ev::READ | (wrBuf_.size() ? ev::WRITE : 0)));
+}
 
+template <typename Mutex>
+void Connection<Mutex>::update_cur_events(int nevents) noexcept {
 	if (curEvents_ != nevents && sock_.valid()) {
 		(curEvents_) ? io_.set(nevents) : io_.start(sock_.fd(), nevents);
 		curEvents_ = nevents;
@@ -183,6 +194,11 @@ typename Connection<Mutex>::ReadResT Connection<Mutex>::read_cb() {
 			continue;
 		}
 
+		if (nread == 0 && wrBuf_.size()) {
+			// The client has finished sending, but the response is not written yet: the connection is closed after it is written
+			closeConn_ = true;
+			return ReadResT::Default;
+		}
 		if ((nread < 0 && !socket::would_block(err)) || nread == 0) {
 			// Setting SO_LINGER with 0 timeout to avoid TIME_WAIT state on client
 			sock_.setLinger0();
@@ -194,8 +210,12 @@ typename Connection<Mutex>::ReadResT Connection<Mutex>::read_cb() {
 			}
 			rdBuf_.advance_head(nread);
 			if (!closeConn_) {
-				if (onRead() == ReadResT::Rebalanced) {
+				const auto res = onRead();
+				if (res == ReadResT::Rebalanced) {
 					return ReadResT::Rebalanced;
+				}
+				if (res == ReadResT::Yield) {
+					return ReadResT::Default;
 				}
 			}
 		}
@@ -220,7 +240,7 @@ void Connection<Mutex>::timeout_cb(ev::periodic& /*watcher*/, int /*time*/) {
 		return;
 	}
 
-	fprintf(stderr, "Dropping RPC-connection on the idle timeout\n");
+	fprintf(stderr, "reindexer: dropping RPC-connection on the idle timeout\n");
 	closeConn();
 }
 template <typename Mutex>
@@ -228,8 +248,8 @@ void Connection<Mutex>::async_cb(ev::async&) {
 	callback(io_, ev::WRITE);
 }
 
-template class Connection<reindexer::dummy_mutex>;
-template class Connection<std::mutex>;
+template class Connection<reindexer::DummyMutex>;
+template class Connection<reindexer::mutex>;
 
 }  // namespace net
 }  // namespace reindexer

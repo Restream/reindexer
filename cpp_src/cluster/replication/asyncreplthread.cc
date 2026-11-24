@@ -1,14 +1,27 @@
 #include "asyncreplthread.h"
+#include "sharedsyncstate.h"
 
-namespace reindexer {
-namespace cluster {
+namespace reindexer::cluster {
+
+AsyncThreadParam::AsyncThreadParam(const std::vector<AsyncReplNodeConfig>* n, SharedSyncState& syncState)
+	: nodes_(n), syncState_(syncState) {
+	assert(nodes_);
+}
+
+bool AsyncThreadParam::IsLeader() const noexcept { return GetReplPermission().error.ok(); }
+
+AsyncReplPermission AsyncThreadParam::GetReplPermission() const noexcept { return syncState_.GetAsyncReplPermission(); }
 
 AsyncReplThread::AsyncReplThread(int serverId, ReindexerImpl& thisNode, std::shared_ptr<BaseT::UpdatesQueueT> q,
-								 const std::vector<AsyncReplNodeConfig>& nodesList, AsyncReplicationMode replMode,
-								 SharedSyncState<>& syncState, ReplicationStatsCollector statsCollector, const Logger& l)
-	: base_(serverId, thisNode, std::move(q), AsyncThreadParam(&nodesList, replMode, syncState), statsCollector, l) {}
+								 std::shared_ptr<NamespacesSyncScheduler> scheduler, const std::vector<AsyncReplNodeConfig>& nodesList,
+								 SharedSyncState& syncState, ReplicationStatsCollector statsCollector, const Logger& l)
+	: base_(serverId, thisNode, std::move(q), std::move(scheduler), AsyncThreadParam(&nodesList, syncState), statsCollector, l),
+	  syncState_(syncState) {
+	syncState_.AddAsyncReplPermissionObserver(this, [this] { base_.SendUpdatesAsyncNotification(); });
+}
 
 AsyncReplThread::~AsyncReplThread() {
+	syncState_.RemoveAsyncReplPermissionObserver(this);
 	if (th.joinable()) {
 		SendTerminate();
 		th.join();
@@ -31,5 +44,4 @@ void AsyncReplThread::AwaitTermination() {
 	base_.SetTerminate(false);
 }
 
-}  // namespace cluster
-}  // namespace reindexer
+}  // namespace reindexer::cluster

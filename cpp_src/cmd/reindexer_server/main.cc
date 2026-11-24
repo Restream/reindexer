@@ -4,12 +4,13 @@
 #include "spdlog/spdlog.h"
 #include "tools/cpucheck.h"
 
+// NOLINTNEXTLINE (bugprone-exception-escape) Get stacktrace is probably better, than generic error-message
 int main(int argc, char* argv[]) {
 	reindexer::debug::backtrace_init();
 
 	try {
 		reindexer::CheckRequiredSSESupport();
-	} catch (Error& err) {
+	} catch (std::exception& err) {
 		std::cerr << err.what();
 		return EXIT_FAILURE;
 	}

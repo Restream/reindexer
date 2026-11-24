@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-#include "estl/span.h"
+#include <span>
 #include "gason/gason.h"
 #include "tools/stringstools.h"
 
@@ -14,9 +14,33 @@ class WrSerializer;
 constexpr int kJsonShiftWidth = 4;
 
 void jsonValueToString(gason::JsonValue o, WrSerializer& ser, int shift = kJsonShiftWidth, int indent = 0, bool escapeStrings = true);
-void prettyPrintJSON(span<char> json, WrSerializer& ser, int shift = kJsonShiftWidth);
+void prettyPrintJSON(std::span<char> json, WrSerializer& ser, int shift = kJsonShiftWidth);
+void prettyPrintJSON(std::string_view json, WrSerializer& ser, int shift = kJsonShiftWidth);
 
 std::string stringifyJson(const gason::JsonNode& elem, bool escapeStrings = true);
+
+/// @brief Reading values of certain type from json node to a container.
+/// @param node - json node.
+/// @returns container with node values of type T.
+template <typename T, template <typename, auto...> class ContainerT, auto... Args>
+ContainerT<T, Args...> readNodeValues(const gason::JsonNode& node) {
+	ContainerT<T, Args...> values;
+	if (node.isEmpty()) {
+		return values;
+	}
+	const auto tag{node.value.getTag()};
+	if (tag == gason::JsonTag::OBJECT) {
+		throw Error{errParseJson, "Cannot read json object value"};
+	}
+	if (tag == gason::JsonTag::ARRAY) {
+		for (const auto& item : node) {
+			values.emplace_back(item.As<T>());
+		}
+	} else {
+		values.emplace_back(node.As<T>());
+	}
+	return values;
+}
 
 namespace details {
 /**
@@ -38,14 +62,14 @@ namespace details {
 template <bool required, typename T, typename JsonT, typename... Args>
 Error tryReadJsonValue(std::string* errLog, const gason::JsonNode& parent, std::string_view valueName, T& value, Args&&... args) {
 	Error result;
-	if (!parent[valueName].empty()) {
+	if (!parent[valueName].isEmpty()) {
 		try {
 			value = parent[valueName].As<JsonT>(value, std::forward<Args>(args)...);
 		} catch (const gason::Exception& ex) {
-			result = Error(errParseJson, "%s", ex.what());
+			result = Error(errParseJson, "{}", ex.what());
 		}
 	} else if constexpr (required) {
-		result = Error(errParseJson, "Required paramenter '%s' is not found.\n", valueName);
+		result = Error(errParseJson, "Required paramenter '{}' is not found.\n", valueName);
 	}
 
 	if (errLog && !result.ok()) {

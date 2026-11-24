@@ -3,6 +3,7 @@
 #include <memory>
 #include <string_view>
 #include <vector>
+#include "core/id_type.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
 
@@ -29,7 +30,7 @@ class ReindexerImpl;
 /// *Thread safety*: Item is thread safe against Reindexer, but not thread safe itself.
 /// Usage of single Item from different threads will race
 
-class Item {
+class [[nodiscard]] Item {
 public:
 	/// Construct empty Item
 	Item();
@@ -44,7 +45,8 @@ public:
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with Json.
-	/// @param endp - pounter to end of parsed part of slice
+	/// @param endp - pointer to end of parsed part of slice; if non-null, trailing data is allowed.
+	/// If 'endp' is null, only whitespace and NUL bytes may follow the JSON object.
 	Error FromJSON(std::string_view slice, char** endp = nullptr, bool = false);
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
@@ -75,7 +77,7 @@ public:
 	Error Status() const noexcept { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
-	int GetID() const noexcept { return id_; }
+	IdType GetID() const noexcept { return id_; }
 	/// Get LSN of item
 	/// @return LSN of item
 	lsn_t GetLSN() const noexcept { return lsn_; }
@@ -106,13 +108,13 @@ public:
 private:
 	explicit Item(ItemImplBase* impl);
 	explicit Item(Error err);
-	void setID(int id) noexcept { id_ = id; }
+	void setID(IdType id) noexcept { id_ = id; }
 	void setLSN(lsn_t lsn) noexcept { lsn_ = lsn; }
 	void setShardID(int shardId) noexcept { shardId_ = shardId; }
 
 	std::unique_ptr<ItemImplBase> impl_;
 	Error status_;
-	int id_ = -1;
+	IdType id_ = IdType::NotSet();
 	lsn_t lsn_;
 	int shardId_ = ShardingKeyType::ProxyOff;
 	friend class client::RPCClient;

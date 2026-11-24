@@ -53,7 +53,7 @@ namespace tsl {
 template <class Key, class Hash = std::hash<Key>, class KeyEqual = std::equal_to<Key>, class Compare = std::less<Key>,
 		  class Allocator = std::allocator<Key>, unsigned int NeighborhoodSize = 62, bool StoreHash = false,
 		  class GrowthPolicy = tsl::power_of_two_growth_policy>
-class hopscotch_sc_set {
+class hopscotch_sc_set {  // NOLINT (bugprone-exception-escape)
 private:
 	template <typename U>
 	using has_is_transparent = tsl::detail_hopscotch_hash::has_is_transparent<U>;

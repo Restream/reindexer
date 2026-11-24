@@ -1,20 +1,18 @@
 #pragma once
 
-#include <string.h>
 #include "net/connection.h"
 #include "net/iserverconnection.h"
 #include "picohttpparser/picohttpparser.h"
 #include "router.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
 
-namespace reindexer {
-namespace net {
-namespace http {
+namespace reindexer::net::http {
 
 const ssize_t kHttpMaxHeaders = 128;
-class ServerConnection final : public IServerConnection, public ConnectionST {
+class [[nodiscard]] ServerConnection final : public IServerConnection, public ConnectionST {
 public:
 	ServerConnection(socket&& s, ev::dynamic_loop& loop, Router& router, size_t maxRequestSize);
+	~ServerConnection() override;
 
 	static ConnectionFactory NewFactory(Router& router, size_t maxRequestSize) {
 		return [&router, maxRequestSize](ev::dynamic_loop& loop, socket&& s, bool allowCustomBalancing) {
@@ -32,55 +30,76 @@ public:
 	void Detach() override final;
 	void Attach(ev::dynamic_loop& loop) override final;
 
-protected:
-	class BodyReader : public Reader {
+private:
+	class [[nodiscard]] BodyReader final : public Reader {
 	public:
-		BodyReader(ServerConnection* conn) : conn_(conn) {}
+		explicit BodyReader(ServerConnection* conn) : conn_(conn) {}
 		ssize_t Read(void* buf, size_t size) override final;
-		std::string Read(size_t size = INT_MAX) override final;
+		std::string Read(size_t size = std::numeric_limits<size_t>::max()) override final;
 		ssize_t Pending() const override final;
 
 	protected:
-		ServerConnection* conn_;
+		ServerConnection* conn_{nullptr};
 	};
-	class ResponseWriter : public Writer {
+	class [[nodiscard]] ResponseWriter : public Writer {
 	public:
-		ResponseWriter(ServerConnection* conn) : headers_(conn->wrBuf_.get_chunk()), conn_(conn) {}
-		virtual bool SetHeader(const Header& hdr) override final;
-		virtual bool SetRespCode(int code) override final;
-		virtual bool SetContentLength(size_t len) override final;
-		virtual bool SetConnectionClose() override final;
-		ssize_t Write(chunk&& chunk, Writer::WriteMode mode = WriteMode::Default) override final;
-		ssize_t Write(std::string_view data) override final;
+		explicit ResponseWriter(ServerConnection* conn) : headers_(conn->wrBuf_.get_chunk()), conn_(conn) {}
+		virtual void SetHeader(const Header& hdr) override final;
+		virtual void SetRespCode(int code) noexcept override final;
+		virtual void SetContentLength(size_t len) noexcept override final;
+		void Write(chunk&& chunk, Writer::WriteMode mode = WriteMode::Default) override final;
+		void Write(std::string_view data) override final;
 		virtual chunk GetChunk() override final;
 
-		bool IsRespSent() { return respSend_; }
-		virtual int RespCode() override final { return code_; }
-		virtual ssize_t Written() override final { return written_; }
+		bool IsRespSent() const noexcept { return respSend_; }
+		virtual int RespCode() noexcept override final { return code_; }
+		virtual ssize_t Written() noexcept override final { return written_; }
 
-	protected:
-		bool isChunkedResponse() { return contentLength_ == -1; }
+	private:
+		bool isChunkedResponse() const noexcept { return contentLength_ == -1; }
 
 		int code_ = StatusOK;
 
 		WrSerializer headers_;
 		bool respSend_ = false;
 		ssize_t contentLength_ = -1, written_ = 0;
-		ServerConnection* conn_;
+		ServerConnection* conn_{nullptr};
 	};
 
+	// State of the request with a streamed body. Owns the request head and the stream handler
+	struct StreamState;
+
 	void handleRequest(Request& req);
+	// Logs the request, ends the response and calls the response callback of the router
+	void finishResponse(Context& ctx);
 	void badRequest(int code, const char* msg);
 	ReadResT onRead() override;
 	void onClose() override;
 	void handleException(Context& ctx, const Error& err);
 
-	void parseParams(std::string_view str);
+	bool startStream(const Router::StreamRoute& route, std::string_view head);
+	bool readStreamBody();
+	bool finishStream();
+	void abortStream(StreamAbortReason reason, const HttpStatus& status);
+	void endStreamRequest(const HttpStatus& status);
+	// Starts the timer again for the end of the idle timeout, if the connection waits for a streamed body
+	void restartStreamTimer();
+	void onStreamTimer(ev::timer& watcher, int time);
+
+	static void parseParams(std::string_view str, Params& params);
 	void writeHttpResponse(int code);
+	void setMsgpackStatus(Context& ctx, bool success, int responseCode, const std::string& status);
+	void setProtobufStatus(Context& ctx, bool success, int responseCode, const std::string& status);
 	void setJsonStatus(Context& ctx, bool success, int responseCode, const std::string& status);
+	void setStatus(Context& ctx, bool success, int responseCode, const std::string& status);
 
 	Router& router_;
 	Request request_;
+	std::unique_ptr<StreamState> stream_;
+	// Idle timeout of the streamed body
+	ev::timer streamTimer_;
+	// Streamed body bytes, which were passed to the handler since the last ReadResT::Yield
+	uint64_t streamReadBytes_ = 0;
 	ssize_t bodyLeft_ = 0;
 	bool formData_ = false;
 	bool enableHttp11_ = false;
@@ -88,6 +107,4 @@ protected:
 	phr_chunked_decoder chunked_decoder_{0, 0, 0, 0};
 	const size_t maxRequestSize_ = 0;
 };
-}  // namespace http
-}  // namespace net
-}  // namespace reindexer
+}  // namespace reindexer::net::http

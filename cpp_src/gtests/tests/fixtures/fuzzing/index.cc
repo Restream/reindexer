@@ -1,23 +1,26 @@
 #include "index.h"
-#include "core/indexdef.h"
+#include <iostream>
+#include "core/definitions/indexdef.h"
 #include "estl/overloaded.h"
 #include "ns_scheme.h"
 #include "random_generator.h"
 
+namespace reindexer_tests {
+
 namespace fuzzing {
+
+using reindexer::IndexOpts;
 
 reindexer::IndexDef Index::IndexDef(RandomGenerator& rnd, const NsScheme& scheme, const std::vector<Index>& indexes) const {
 	const FieldType fldType = std::visit(
 		reindexer::overloaded{[](const Child& c) noexcept { return c.type; }, [](const Children&) noexcept { return FieldType::Struct; }},
 		content_);
-	IndexOpts opts;
-	const bool pk = rnd.PkIndex(isPk_);
-	opts.PK(pk);
-	opts.Array(rnd.RndArrayField(isArray_) == IsArrayT::Yes);
-	opts.Sparse(rnd.RndSparseIndex(isSparse_));
-	opts.Dense(rnd.DenseIndex());
-	opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(rnd.RndInt(IndexOpts::Linear, IndexOpts::RStar)));
-
+	IndexOpts opts = IndexOpts()
+						 .PK(rnd.PkIndex(*isPk_))
+						 .Array(*rnd.RndArrayField(isArray_))
+						 .Sparse(*rnd.RndSparseIndex(isSparse_))
+						 .Dense(rnd.DenseIndex())
+						 .RTreeType(static_cast<IndexOpts::RTreeIndexType>(rnd.RndInt(IndexOpts::Linear, IndexOpts::RStar)));
 	std::string fieldType = rnd.IndexFieldType(fldType);
 	std::string indexType{ToText(rnd.RndIndexType(type_))};
 	reindexer::JsonPaths jsonPaths;
@@ -62,15 +65,15 @@ void Index::Dump(std::ostream& os, const NsScheme& scheme, size_t offset) const 
 	for (size_t i = 0; i <= offset; ++i) {
 		os << "  ";
 	}
-	os << "pk: " << std::boolalpha << isPk_ << '\n';
+	os << "pk: " << std::boolalpha << *isPk_ << '\n';
 	for (size_t i = 0; i <= offset; ++i) {
 		os << "  ";
 	}
-	os << "array: " << std::boolalpha << IsArray() << '\n';
+	os << "array: " << std::boolalpha << *IsArray() << '\n';
 	for (size_t i = 0; i <= offset; ++i) {
 		os << "  ";
 	}
-	os << "sparse: " << std::boolalpha << (IsSparse() == IsSparseT::Yes) << '\n';
+	os << "sparse: " << std::boolalpha << *IsSparse() << '\n';
 	for (size_t i = 0; i <= offset; ++i) {
 		os << "  ";
 	}
@@ -126,3 +129,5 @@ void Index::Dump(std::ostream& os, const NsScheme& scheme, size_t offset) const 
 }
 
 }  // namespace fuzzing
+
+}  // namespace reindexer_tests

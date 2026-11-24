@@ -7,7 +7,7 @@
 #include <spdlog/tweakme.h>
 
 #include <atomic>
-#include <chrono>
+#include "tools/clock.h"
 #include <cstdio>
 #include <exception>
 #include <functional>
@@ -138,7 +138,7 @@ using filename_t = std::string;
     #define SPDLOG_FILENAME_T(s) s
 #endif
 
-using log_clock = std::chrono::system_clock;
+using log_clock = reindexer::system_clock_w;
 using sink_ptr = std::shared_ptr<sinks::sink>;
 using sinks_init_list = std::initializer_list<sink_ptr>;
 using err_handler = std::function<void(const std::string &err_msg)>;

@@ -30,6 +30,7 @@ inline size_t length(const uint8_t* p) noexcept {
 }
 
 inline size_t length(const uint8_t* p) noexcept {
+	// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound) Uncheked access
 	if (p[2] & kLargeJSONStrFlag) {
 		return length<true>(p);
 	}
@@ -37,6 +38,7 @@ inline size_t length(const uint8_t* p) noexcept {
 }
 
 inline std::string_view to_string_view(const uint8_t* p) noexcept {
+	// NOLINTNEXTLINE (clang-analyzer-security.ArrayBound) Uncheked access
 	if (p[2] & kLargeJSONStrFlag) {
 		const auto len = length<true>(p);
 		uintptr_t uptr;

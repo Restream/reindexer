@@ -25,9 +25,12 @@ done
 
 CLUSTER_DB_NAME=cluster_db
 BASE_DIR="/tmp/rx_go_cluster"
+if [[ -n $REINDEXER_TEST_DB_ROOT ]]; then
+	BASE_DIR=$REINDEXER_TEST_DB_ROOT/rx_go_cluster
+fi
 BASE_RPC=6000
 BASE_HTTP=7000
-RX_BIN=build/cpp_src/cmd/reindexer_server/reindexer_server
+RX_BIN=reindexer_server
 QR_TIMEOUT=10
 
 CreateDirForClusterNodes $BASE_DIR $NODES_NUMBER $CLUSTER_DB_NAME $BASE_RPC
@@ -45,6 +48,6 @@ do
 	node=$((node+1))
 done
 
-go test ./test -bench . -benchmem -benchtime 100ms -dsn $DSN $CLUSTER -seedcount 50000 -seedcpu 8 -timeout 25m
+go test ./test -bench . -benchmem -benchtime 100ms -dsn $DSN $CLUSTER -seedcount 50000 -seedcpu 8 -timeout 25m -tags tiny_vectors
 
 KillServers

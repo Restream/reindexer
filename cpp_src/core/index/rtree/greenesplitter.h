@@ -6,7 +6,7 @@
 namespace reindexer {
 
 template <typename Entry, typename Node, typename Traits, typename Iterator, size_t MaxEntries, size_t MinEntries>
-class GreeneSplitter : private Splitter<Entry, Node, Traits, Iterator, MaxEntries> {
+class [[nodiscard]] GreeneSplitter : private Splitter<Entry, Node, Traits, Iterator, MaxEntries> {
 	using Base = Splitter<Entry, Node, Traits, Iterator, MaxEntries>;
 
 public:

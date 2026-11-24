@@ -5,7 +5,7 @@ namespace reindexer {
 using std::iterator_traits;
 
 template <class Iterator>
-class trivial_reverse_iterator {
+class [[nodiscard]] trivial_reverse_iterator {
 public:
 	typedef trivial_reverse_iterator this_type;
 	typedef Iterator iterator_type;

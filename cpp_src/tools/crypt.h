@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-enum class HashAlgorithm { MD5, SHA256, SHA512 };
+enum class [[nodiscard]] HashAlgorithm { MD5, SHA256, SHA512 };
 
 Error ParseCryptString(const std::string& input, std::string& outHash, std::string& outSalt, HashAlgorithm& hashAlgorithm);
 

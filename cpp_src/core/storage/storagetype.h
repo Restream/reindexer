@@ -6,7 +6,7 @@
 namespace reindexer {
 namespace datastorage {
 
-enum class StorageType : uint8_t { LevelDB = 0, RocksDB = 1 };
+enum class [[nodiscard]] StorageType : uint8_t { LevelDB = 0, RocksDB = 1 };
 
 const char kLevelDBName[] = "leveldb";
 const char kRocksDBName[] = "rocksdb";
@@ -36,7 +36,7 @@ inline StorageType StorageTypeFromString(std::string_view str) {
 	} else if (str.substr(0, sizeof(kRocksDBName) - 1) == kRocksDBName && HasSpacesOnly(str.substr(sizeof(kRocksDBName) - 1))) {
 		return StorageType::RocksDB;
 	} else {
-		throw Error(errParams, "Invalid storage type string: '%s'", str);
+		throw Error(errParams, "Invalid storage type string: '{}'", str);
 	}
 }
 

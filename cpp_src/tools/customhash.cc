@@ -1,6 +1,7 @@
 #include "customhash.h"
 #include <string_view>
 #include "customlocal.h"
+#include "tools/strntoll.h"
 #include "utf8cpp/utf8.h"
 
 namespace reindexer {
@@ -76,7 +77,6 @@ static uint32_t _Hash_bytes_collate_utf8(const void* ptr, uint32_t len) noexcept
 	return hash;
 }
 
-uint32_t Hash(const std::wstring& s) noexcept { return _Hash_bytes(s.data(), s.length() * sizeof(wchar_t)); }
 template <>
 uint32_t collateHash<CollateASCII>(std::string_view s) noexcept {
 	return _Hash_bytes_collate_ascii(s.data(), s.length());
@@ -91,8 +91,10 @@ uint32_t collateHash<CollateCustom>(std::string_view s) noexcept {
 }
 template <>
 uint32_t collateHash<CollateNumeric>(std::string_view s) noexcept {
-	return _Hash_bytes(s.data(), s.length());
+	const char* pos = nullptr;
+	const auto num = strntoll(s, &pos, 10);
+	const auto numHash = _Hash_bytes(&num, sizeof(num));
+	return pos ? (_Hash_bytes(pos, s.size() - (pos - s.data())) ^ numHash) : numHash;
 }
 
-uint32_t HashTreGram(const wchar_t* ptr) noexcept { return _Hash_bytes(ptr, 3 * sizeof(wchar_t)); }
 }  // namespace reindexer

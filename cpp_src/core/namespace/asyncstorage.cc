@@ -1,39 +1,50 @@
 #include "asyncstorage.h"
 #include "core/storage/storagefactory.h"
+#include "tools/catch_and_return.h"
 #include "tools/logger.h"
 
 namespace reindexer {
 
 void AsyncStorage::Close() {
-	std::lock_guard flushLck(flushMtx_);
+	lock_guard flushLck(flushMtx_);
 	flush(StorageFlushOpts().WithImmediateReopen());
 
-	std::lock_guard lck(storageMtx_);
+	lock_guard lck(storageMtx_);
 	clearUpdates();
 	reset();
 }
 
-AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& storageLock) : isCopiedNsStorage_{true} {
-	if (!storageLock.OwnsThisFlushMutex(o.flushMtx_)) {
+AsyncStorage::AsyncStorage(shared_ptr<datastorage::IDataStorage> storage) : storage_{std::move(storage)}, proxy_(*this) {
+	if (!storage_) {
+		throw Error(errParams, "Cannot adopt an empty storage");
+	}
+	curUpdatesChunck_ = createUpdatesCollection();
+	updateStatusCache();
+}
+
+AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLock& storageLock) : isCopiedNsStorage_{true}, proxy_(*this) {
+	if (!storageLock.OwnsThis(o.flushMtx_)) {
 		throw Error(errLogic, "Storage must be locked during copying (flush mutex)");
 	}
-	if (!storageLock.OwnsThisStorageMutex(o.storageMtx_)) {
+	if (!storageLock.OwnsThis(o.storageMtx_)) {
 		throw Error(errLogic, "Storage must be locked during copying (updates mutex)");
 	}
+	pendingSysRecords_ = o.pendingSysRecords_;
 	storage_ = o.storage_;
 	path_ = o.path_;
+	withProxy_.store(o.withProxy_.load());
 	curUpdatesChunck_ = createUpdatesCollection();
 	updateStatusCache();
 	// Do not copying lastFlushError_ and reopenTs_, because copied storage does not performs actual writes
 }
 
 Error AsyncStorage::Open(datastorage::StorageType storageType, std::string_view nsName, const std::string& path, const StorageOpts& opts) {
-	auto lck = FullLock();
+	FullLock lck{flushMtx_, storageMtx_};
 
 	throwOnStorageCopy();
 
 	if (storage_) {
-		throw Error(errLogic, "Storage already enabled for namespace '%s' on path '%s'", nsName, path_);
+		throw Error(errLogic, "Storage already enabled for namespace '{}' on path '{}'", nsName, path_);
 	}
 	storage_.reset(datastorage::StorageFactory::create(storageType));
 	auto err = storage_->Open(path, opts);
@@ -46,7 +57,7 @@ Error AsyncStorage::Open(datastorage::StorageType storageType, std::string_view 
 }
 
 void AsyncStorage::Destroy() {
-	auto lck = FullLock();
+	FullLock lck{flushMtx_, storageMtx_};
 
 	throwOnStorageCopy();
 
@@ -58,62 +69,42 @@ void AsyncStorage::Destroy() {
 }
 
 AsyncStorage::Cursor AsyncStorage::GetCursor(StorageOpts& opts) {
-	std::unique_lock lck(storageMtx_);
+	unique_lock lck(storageMtx_);
 	throwOnStorageCopy();
 	return Cursor(std::move(lck), std::unique_ptr<datastorage::Cursor>(storage_->GetCursor(opts)), *this);
 }
 
 AsyncStorage::ConstCursor AsyncStorage::GetCursor(StorageOpts& opts) const {
-	std::unique_lock lck(storageMtx_);
+	unique_lock lck(storageMtx_);
 	throwOnStorageCopy();
 	return ConstCursor(std::move(lck), std::unique_ptr<datastorage::Cursor>(storage_->GetCursor(opts)));
 }
 
-void AsyncStorage::WriteSync(const StorageOpts& opts, std::string_view key, std::string_view value) {
-	std::lock_guard lck(storageMtx_);
-	syncOp(
-		[this, &opts](std::string_view k, std::string_view v) {
-			throwOnStorageCopy();
-			return storage_->Write(opts, k, v);
-		},
-		[this](std::string_view k, std::string_view v) { write(true, k, v); }, key, value);
-}
-
-void AsyncStorage::RemoveSync(const StorageOpts& opts, std::string_view key) {
-	std::lock_guard lck(storageMtx_);
-	removeSync(opts, key);
-}
-
 void AsyncStorage::Flush(const StorageFlushOpts& opts) {
 	// Flush must be performed in single thread
-	std::lock_guard flushLck(flushMtx_);
+	lock_guard flushLck(flushMtx_);
 	statusCache_.UpdatePart(bool(storage_.get()), path_);  // Actualize cache part. Just in case
 	flush(opts);
 }
 
 std::string AsyncStorage::GetPath() const noexcept {
-	std::lock_guard lck(storageMtx_);
+	lock_guard lck(storageMtx_);
 	return path_;
 }
 
 datastorage::StorageType AsyncStorage::GetType() const noexcept {
-	std::lock_guard lck(storageMtx_);
+	lock_guard lck(storageMtx_);
 	if (storage_) {
 		return storage_->Type();
 	}
 	return datastorage::StorageType::LevelDB;
 }
 
-void AsyncStorage::InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT& storageLock) {
-	if (!storageLock.OwnsThisFlushMutex(src.flushMtx_)) {
-		throw Error(errLogic, "Storage must be locked during updates inheritance (flush mutex)");
+void AsyncStorage::InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLock& storageLock) {
+	if (!storageLock.OwnsThis(src.flushMtx_) || !storageLock.OwnsThis(src.storageMtx_)) {
+		throw Error(errLogic, "Storage must be fully locked during updates inheritance");
 	}
-	if (!storageLock.OwnsThisStorageMutex(src.storageMtx_)) {
-		throw Error(errLogic, "Storage must be locked during updates inheritance (updates mutex)");
-	}
-
-	std::lock_guard lck(storageMtx_);
-
+	FullLock lck{flushMtx_, storageMtx_};
 	if (!isCopiedNsStorage_) {
 		throw Error(errLogic, "Updates inheritance is supposed to work with copied storages");
 	}
@@ -121,35 +112,132 @@ void AsyncStorage::InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT
 		if (src.storage_.get() != storage_.get()) {
 			throw Error(errLogic, "Unable to inherit storage updates from another underlying storage");
 		}
-		if (src.curUpdatesChunck_) {
-			totalUpdatesCount_.fetch_add(src.curUpdatesChunck_.updatesCount, std::memory_order_release);
-			src.totalUpdatesCount_.fetch_sub(src.curUpdatesChunck_.updatesCount, std::memory_order_release);
-			finishedUpdateChuncks_.push_front(std::move(src.curUpdatesChunck_));
-			if (lastBatchWithSyncUpdates_ >= 0) {
-				++lastBatchWithSyncUpdates_;
+
+		// Allocate everything before the write or ownership transfer. A failure must leave src usable.
+		std::deque<UpdatesPtrT> inherited;
+		auto append = [&inherited](const UpdatesPtrT& updates) {
+			if (updates && updates.updatesCount) {
+				inherited.emplace_back(datastorage::UpdatesCollection::Ptr{updates}, updates.updatesCount);
 			}
+		};
+		for (const auto& updates : src.finishedUpdateChuncks_) {
+			append(updates);
 		}
-		while (src.finishedUpdateChuncks_.size()) {
-			auto& upd = src.finishedUpdateChuncks_.back();
-			totalUpdatesCount_.fetch_add(upd.updatesCount, std::memory_order_release);
-			src.totalUpdatesCount_.fetch_sub(upd.updatesCount, std::memory_order_release);
-			finishedUpdateChuncks_.push_front(std::move(upd));
-			src.finishedUpdateChuncks_.pop_back();
-			if (lastBatchWithSyncUpdates_ >= 0) {
-				++lastBatchWithSyncUpdates_;
-			}
+		append(src.curUpdatesChunck_);
+		for (const auto& updates : finishedUpdateChuncks_) {
+			append(updates);
 		}
+		auto sysRecords = src.pendingSysRecords_;
+		for (const auto& [key, value] : pendingSysRecords_) {
+			sysRecords.insert_or_assign(key, value);
+		}
+		if (!sysRecords.empty()) {
+			src.writeSysRecords(sysRecords);
+		}
+
+		finishedUpdateChuncks_.swap(inherited);
+		totalUpdatesCount_.fetch_add(src.totalUpdatesCount_.load(std::memory_order_relaxed), std::memory_order_release);
+		batchIdCounter_.store(std::max(batchIdCounter_.load(), src.batchIdCounter_.load()), std::memory_order_release);
+		pendingSysRecords_.clear();
+		src.clearUpdates();
 		src.storage_.reset();
-		// Do not update lockfree status here to avoid status flickering on ns copying
+		// Do not update lockfree status here to avoid status flickering on ns copying.
 	}
 	isCopiedNsStorage_ = false;
 }
 
+void AsyncStorage::WriteSysRecords(std::span<const SysRecordUpdate> updates) {
+	lock_guard lck(storageMtx_);
+	stageSysRecords(updates);
+	if (!isCopiedNsStorage_) {
+		flushPendingSysRecords();
+	}
+}
+
+void AsyncStorage::WriteSysRecords(std::span<const SysRecordUpdate> updates, Error& deferredError) {
+	lock_guard lck(storageMtx_);
+	stageSysRecords(updates);
+	if (!isCopiedNsStorage_) {
+		try {
+			flushPendingSysRecords();
+		} catch (Error& err) {
+			if (deferredError.ok()) {
+				deferredError = std::move(err);
+			}
+		}
+	}
+}
+
+void AsyncStorage::stageSysRecords(std::span<const SysRecordUpdate> updates) {
+	if (!storage_) {
+		throw Error(errLogic, "Cannot write system records to a disabled storage");
+	}
+	// Updating a group must be exception-safe even if copying one of the keys/values fails.
+	auto pending = pendingSysRecords_;
+	for (const auto& update : updates) {
+		pending.insert_or_assign(std::string{update.key}, update.value ? std::optional<std::string>{*update.value} : std::nullopt);
+	}
+	pendingSysRecords_.swap(pending);
+}
+
+Error AsyncStorage::ReadSysRecord(std::string_view key, std::string& value) const noexcept {
+	try {
+		lock_guard lck(storageMtx_);
+		if (auto it = pendingSysRecords_.find(key); it != pendingSysRecords_.end()) {
+			if (!isCopiedNsStorage_) {
+				return lastFlushError_.ok() ? Error(errLogic, "System record is awaiting a durable write") : lastFlushError_;
+			}
+			if (!it->second) {
+				return Error(errNotFound, "System record was removed from async storage");
+			}
+			value = *it->second;
+			return Error();
+		}
+		if (!storage_) {
+			return Error(errLogic, "Cannot read system records from a disabled storage");
+		}
+		return storage_->Read(StorageOpts{}.FillCache(), key, value);
+	} CATCH_AND_RETURN
+}
+
+void AsyncStorage::writeSysRecords(const SysRecordUpdates& updates) {
+	if (updates.empty()) {
+		return;
+	}
+	if (!lastFlushError_.ok()) {
+		throw lastFlushError_;
+	}
+	std::unique_ptr<datastorage::UpdatesCollection> batch{storage_->GetUpdatesCollection()};
+	for (const auto& [key, value] : updates) {
+		if (value) {
+			batch->Put(key, *value);
+		} else {
+			batch->Remove(key);
+		}
+	}
+	try {
+		auto err = storage_->Write(StorageOpts{}.Sync(), *batch);
+		if (!err.ok()) {
+			throw err;
+		}
+	} catch (const Error& err) {
+		scheduleFilesReopen(Error{err});
+		throw;
+	}
+}
+
+void AsyncStorage::flushPendingSysRecords() {
+	writeSysRecords(pendingSysRecords_);
+	pendingSysRecords_.clear();
+}
+
 void AsyncStorage::clearUpdates() {
+	pendingSysRecords_.clear();
 	finishedUpdateChuncks_.clear();
 	curUpdatesChunck_.reset();
 	recycled_.clear();
 	totalUpdatesCount_.store(0, std::memory_order_release);
+	batchIdCounter_.store(0, std::memory_order_release);
 }
 
 void AsyncStorage::flush(const StorageFlushOpts& opts) {
@@ -161,17 +249,17 @@ void AsyncStorage::flush(const StorageFlushOpts& opts) {
 	}
 	UpdatesPtrT uptr;
 	try {
-		if (totalUpdatesCount_.load(std::memory_order_acquire)) {
-			std::unique_lock lck(storageMtx_, std::defer_lock_t());
-			if (!lastFlushError_.ok()) {
-				if (reopenTs_ > ClockT::now_coarse() && !opts.IsWithImmediateReopen()) {
-					throw lastFlushError_;
-				} else {
-					tryReopenStorage();
-				}
+		unique_lock lck(storageMtx_);
+		if (!lastFlushError_.ok()) {
+			if (reopenTs_ > ClockT::now_coarse() && !opts.IsWithImmediateReopen()) {
+				throw lastFlushError_;
 			}
-
-			auto flushChunk = [this, &lck](UpdatesPtrT&& uptr) {
+			tryReopenStorage();
+		}
+		// Persist pending system metadata before any item batch that may depend on it.
+		flushPendingSysRecords();
+		if (totalUpdatesCount_.load(std::memory_order_acquire)) {
+			auto flushChunk = [this, &lck](UpdatesPtrT&& uptr) RX_REQUIRES(storageMtx_) RX_NO_THREAD_SAFETY_ANALYSIS {
 				assertrx(lck.owns_lock());
 				lck.unlock();
 
@@ -188,7 +276,7 @@ void AsyncStorage::flush(const StorageFlushOpts& opts) {
 
 					totalUpdatesCount_.fetch_add(uptr.updatesCount, std::memory_order_release);
 					finishedUpdateChuncks_.emplace_front(std::move(uptr));
-					scheduleFilesReopen(Error(errLogic, "Error write to storage in '%s': %s", path_, status.what()));
+					scheduleFilesReopen(Error(errLogic, "Error write to storage in '{}': {}", path_, status.what()));
 					throw lastFlushError_;
 				}
 
@@ -196,14 +284,13 @@ void AsyncStorage::flush(const StorageFlushOpts& opts) {
 				uptr.updatesCount = 0;
 
 				lck.lock();
-				if (lastBatchWithSyncUpdates_ >= 0) {
-					--lastBatchWithSyncUpdates_;
-				}
+				proxy_.Erase(uptr->Id());
 				recycleUpdatesCollection(std::move(uptr));
+				// System metadata may have failed while this batch was in flight. Stop before any further item batch.
+				flushPendingSysRecords();
 			};
 
 			// Flush finished chunks
-			lck.lock();
 			while (finishedUpdateChuncks_.size()) {
 				uptr = std::move(finishedUpdateChuncks_.front());
 				finishedUpdateChuncks_.pop_front();
@@ -246,6 +333,7 @@ AsyncStorage::UpdatesPtrT AsyncStorage::createUpdatesCollection() noexcept {
 		} else {
 			ret.reset(storage_->GetUpdatesCollection());
 		}
+		ret->Id(batchIdCounter_.fetch_add(1, std::memory_order_acq_rel));
 	}
 	return ret;
 }
@@ -253,7 +341,13 @@ AsyncStorage::UpdatesPtrT AsyncStorage::createUpdatesCollection() noexcept {
 void AsyncStorage::recycleUpdatesCollection(AsyncStorage::UpdatesPtrT&& uptr) noexcept {
 	assertrx(uptr.updatesCount == 0);
 	if (storage_ && recycled_.size() < kMaxRecycledChunks) {
-		recycled_.emplace_back(std::move(uptr));
+		try {
+			recycled_.emplace_back(std::move(uptr));
+			// NOLINTBEGIN(bugprone-empty-catch)
+		} catch (...) {
+			assertrx_dbg(false);
+		}
+		// NOLINTEND(bugprone-empty-catch)
 		return;
 	}
 	uptr.reset();
@@ -264,11 +358,11 @@ void AsyncStorage::tryReopenStorage() {
 	if (!lastFlushError_.ok()) {
 		auto err = storage_->Reopen();
 		if (!err.ok()) {
-			logPrintf(LogInfo, "Atempt to reopen storage for '%s' failed: %s", path_, err.what());
+			logFmt(LogInfo, "Atempt to reopen storage for '{}' failed: {}", path_, err.what());
 			scheduleFilesReopen(std::move(lastFlushError_));
 			throw lastFlushError_;
 		}
-		logPrintf(LogInfo, "Storage was reopened for '%s'", path_);
+		logFmt(LogInfo, "Storage was reopened for '{}'", path_);
 		setLastFlushError(Error());
 		reopenTs_ = TimepointT();
 	}

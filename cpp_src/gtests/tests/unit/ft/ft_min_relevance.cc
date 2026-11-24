@@ -1,7 +1,11 @@
 #include <gtest/gtest-param-test.h>
 #include "ft_api.h"
 
-class FTMinRelevanceApi : public FTApi {
+namespace reindexer_tests {
+
+using reindexer::IndexOpts;
+
+class [[nodiscard]] FTMinRelevanceApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_min_relevance"; }
 	void CreateNs() {
@@ -9,10 +13,9 @@ protected:
 		rt.OpenNamespace(nmName);
 		rt.DefineNamespaceDataset(nmName, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
 										   IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0}});
-		reindexer::FtFastConfig cfg(0);
+		reindexer::FTConfig cfg(0);
 		cfg.enableNumbersSearch = true;
 		cfg.logLevel = 5;
-		cfg.maxStepSize = 100;
 		auto err = SetFTConfig(cfg, nmName, "ft1", {"ft1"});
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
@@ -76,3 +79,5 @@ TEST_F(FTMinRelevanceApi, CorrectDocWithMinRelevanceAndEmptyDoc) {
 		ASSERT_TRUE(false) << "Intersection must be empty: " << ss.str();
 	}
 }
+
+}  // namespace reindexer_tests

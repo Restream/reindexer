@@ -1,13 +1,16 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <string_view>
 
 namespace reindexer {
 namespace cluster {
 
-const std::string_view kAsyncReplStatsType = "async";
-const std::string_view kClusterReplStatsType = "cluster";
+constexpr std::string_view kAsyncReplStatsType = "async";
+constexpr std::string_view kClusterReplStatsType = "cluster";
+
+constexpr size_t kMinClusterSize = 3;
 
 constexpr auto kLeaderPingInterval = std::chrono::milliseconds(200);
 constexpr auto kMinLeaderAwaitInterval = kLeaderPingInterval * 5;

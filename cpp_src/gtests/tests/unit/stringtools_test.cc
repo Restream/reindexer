@@ -3,9 +3,11 @@
 #include "gtest/gtest.h"
 #include "tools/stringstools.h"
 
-class CustomStrCompareApi : public virtual ::testing::Test {
+namespace reindexer_tests {
+
+class [[nodiscard]] CustomStrCompareApi : public virtual ::testing::Test {
 public:
-	enum class ComparisonResult { Less, Greater, Equal };
+	enum class [[nodiscard]] ComparisonResult { Less, Greater, Equal };
 	static std::string_view ComparisonResultToString(ComparisonResult r) {
 		switch (r) {
 			case ComparisonResult::Less:
@@ -18,14 +20,14 @@ public:
 		return "<unknown>";
 	}
 
-	struct StringTestCase {
+	struct [[nodiscard]] StringTestCase {
 		std::string str1;
 		std::string str2;
 		ComparisonResult expectedResult;
 
 		friend std::ostream& operator<<(std::ostream& os, const StringTestCase& c) {
-			os << fmt::sprintf("{ str1: '%s', str2: '%s', expected comparison result: %s }", c.str1, c.str2,
-							   ComparisonResultToString(c.expectedResult));
+			os << fmt::format("{{ str1: '{}', str2: '{}', expected comparison result: {} }}", c.str1, c.str2,
+							  ComparisonResultToString(c.expectedResult));
 			return os;
 		}
 	};
@@ -155,8 +157,8 @@ TEST(ConversionStringToNumber, DetectValueTypeTest) {
 	constexpr auto DoubleV = KeyValueType{KeyValueType::Double{}};
 	constexpr auto StringV = KeyValueType{KeyValueType::String{}};
 
-	struct TestCase {
-		struct Empty {};
+	struct [[nodiscard]] TestCase {
+		struct [[nodiscard]] Empty {};
 		TestCase(std::string_view value, KeyValueType expectedType, std::variant<int64_t, double, Empty> expectedValue = Empty{})
 			: value(value),
 			  expectedType(expectedType),
@@ -236,19 +238,27 @@ TEST(ConversionStringToNumber, DetectValueTypeTest) {
 		{"9223372802345370L", StringV},
 		{"92233728070.0145L", StringV},
 
-		{"1.35e10", StringV},
-		{"1.1e-2", StringV},
+		{"1.35e10", DoubleV, 1.35e10},
+		{"1.1e-2", DoubleV, 1.1e-2},
+		{"2.e-2", DoubleV, 2e-2},
+		{"2.e2", DoubleV, 2e2},
+		{"2e-2", DoubleV, 2e-2},
+		{"2e+2", DoubleV, 2e+2},
+		{"2ee2", StringV},
+		{"2e.2", StringV},
+		{"2-2e", StringV},
+		{"2e", StringV},
+		{"2e-", StringV},
+		{"2e+", StringV},
+		{"-e1", StringV},
+
 		{"123.456.7", StringV},
 	};
 
-	auto genToken = [](std::string_view text) {
-		token tok{TokenNumber};
-		tok.text_ = {text.begin(), text.end()};
-		return tok;
-	};
+	auto genToken = [](std::string_view text) { return Token{TokenNumber, text.begin(), text.end()}; };
 
 	for (const auto& testCase : values) {
-		auto res = getVariantFromToken(genToken(testCase.value));
+		auto res = GetVariantFromToken(genToken(testCase.value));
 
 		std::stringstream expected, actual;
 		testCase.expectedValue.Dump(expected);
@@ -259,3 +269,145 @@ TEST(ConversionStringToNumber, DetectValueTypeTest) {
 		EXPECT_TRUE(res.Type().IsSame(testCase.expectedType)) << errMessage;
 	}
 }
+
+TEST(StringToolsTest, EscapeBasicCharacters) {
+	EXPECT_EQ(reindexer::escapeString("hello"), "hello");
+	EXPECT_EQ(reindexer::escapeString(""), "");
+}
+
+TEST(StringToolsTest, EscapeControlCharacters) {
+	EXPECT_EQ(reindexer::escapeString("\b"), "\\b");
+	EXPECT_EQ(reindexer::escapeString("\f"), "\\f");
+	EXPECT_EQ(reindexer::escapeString("\n"), "\\n");
+	EXPECT_EQ(reindexer::escapeString("\r"), "\\r");
+	EXPECT_EQ(reindexer::escapeString("\t"), "\\t");
+	EXPECT_EQ(reindexer::escapeString("\\"), "\\\\");
+	EXPECT_EQ(reindexer::escapeString("\""), "\\\"");
+}
+
+TEST(StringToolsTest, EscapeMixedContent) {
+	EXPECT_EQ(reindexer::escapeString("Hello\nWorld\t!"), "Hello\\nWorld\\t!");
+	EXPECT_EQ(reindexer::escapeString("Path: C:\\Windows\\System"), "Path: C:\\\\Windows\\\\System");
+	EXPECT_EQ(reindexer::escapeString("Quote: \"Hello\""), "Quote: \\\"Hello\\\"");
+}
+
+TEST(StringToolsTest, UnescapeBasicCharacters) {
+	EXPECT_EQ(reindexer::unescapeString("hello"), "hello");
+	EXPECT_EQ(reindexer::unescapeString(""), "");
+}
+
+TEST(StringToolsTest, UnescapeControlCharacters) {
+	EXPECT_EQ(reindexer::unescapeString("\\b"), "\b");
+	EXPECT_EQ(reindexer::unescapeString("\\f"), "\f");
+	EXPECT_EQ(reindexer::unescapeString("\\n"), "\n");
+	EXPECT_EQ(reindexer::unescapeString("\\r"), "\r");
+	EXPECT_EQ(reindexer::unescapeString("\\t"), "\t");
+	EXPECT_EQ(reindexer::unescapeString("\\\\"), "\\");
+	EXPECT_EQ(reindexer::unescapeString("\\\""), "\"");
+	EXPECT_EQ(reindexer::unescapeString("\\/"), "/");
+}
+
+TEST(StringToolsTest, UnescapeMixedContent) {
+	EXPECT_EQ(reindexer::unescapeString("Hello\\nWorld\\t!"), "Hello\nWorld\t!");
+	EXPECT_EQ(reindexer::unescapeString("Path: C:\\\\Windows\\\\System"), "Path: C:\\Windows\\System");
+	EXPECT_EQ(reindexer::unescapeString("Quote: \\\"Hello\\\""), "Quote: \"Hello\"");
+}
+
+TEST(StringToolsTest, UnescapeUnicodeSequences) {
+	EXPECT_EQ(reindexer::unescapeString("\\u0041"), "A");	  // 'A'
+	EXPECT_EQ(reindexer::unescapeString("\\u0061"), "a");	  // 'a'
+	EXPECT_EQ(reindexer::unescapeString("\\u0030"), "0");	  // '0'
+	EXPECT_EQ(reindexer::unescapeString("\\u0020"), " ");	  // space
+	EXPECT_EQ(reindexer::unescapeString("\\u007F"), "\x7F");  // DEL
+
+	EXPECT_EQ(reindexer::unescapeString("\\u0048\\u0065\\u006C\\u006C\\u006F"), "Hello");
+}
+
+TEST(StringToolsTest, UnescapeInvalidUnicode) {
+	// Invalid hex digits
+	EXPECT_EQ(reindexer::unescapeString("\\u00GG"), "\\u00GG");
+	EXPECT_EQ(reindexer::unescapeString("\\u0G12"), "\\u0G12");
+	EXPECT_EQ(reindexer::unescapeString("\\uG012"), "\\uG012");
+
+	// Incomplete sequences
+	EXPECT_EQ(reindexer::unescapeString("\\u"), "\\u");
+	EXPECT_EQ(reindexer::unescapeString("\\u0"), "\\u0");
+	EXPECT_EQ(reindexer::unescapeString("\\u00"), "\\u00");
+	EXPECT_EQ(reindexer::unescapeString("\\u001"), "\\u001");
+}
+
+TEST(StringToolsTest, UnescapeUnknownEscapeSequences) {
+	// Unknown escape sequences should be preserved as literal
+	EXPECT_EQ(reindexer::unescapeString("\\x"), "\\x");
+	EXPECT_EQ(reindexer::unescapeString("\\z"), "\\z");
+	EXPECT_EQ(reindexer::unescapeString("\\'"), "\\'");
+}
+
+void TestRoundTrip(const std::string& original) {
+	std::string escaped = reindexer::escapeString(original);
+	std::string unescaped = reindexer::unescapeString(escaped);
+	EXPECT_EQ(original, unescaped);
+}
+
+TEST(StringToolsTest, RoundTripBasic) {
+	TestRoundTrip("hello world");
+	TestRoundTrip("");
+	TestRoundTrip("normal text");
+}
+
+TEST(StringToolsTest, RoundTripControlCharacters) {
+	TestRoundTrip("\b\f\n\r\t");
+	TestRoundTrip("text with\nnewlines\tand\ttabs");
+	TestRoundTrip("backslash: \\");
+	TestRoundTrip("quotes: \"\"");
+}
+
+TEST(StringToolsTest, RoundTripMixedContent) {
+	TestRoundTrip("Line1\nLine2\tLine3\r\n");
+	TestRoundTrip("Special: \\ \" \b \f");
+	TestRoundTrip("File: C:\\Path\\To\\File.txt");
+}
+
+TEST(StringToolsTest, EscapeEndingWithBackslash) {
+	EXPECT_EQ(reindexer::escapeString("end\\"), "end\\\\");
+	EXPECT_EQ(reindexer::unescapeString("end\\\\"), "end\\");
+}
+
+TEST(StringToolsTest, UnescapeConsecutiveEscapes) {
+	EXPECT_EQ(reindexer::unescapeString("\\\\n"), "\\n");
+	EXPECT_EQ(reindexer::unescapeString("\\n\\t"), "\n\t");
+	EXPECT_EQ(reindexer::unescapeString("\\\\u0041"), "\\u0041");
+}
+
+TEST(StringToolsTest, PerformanceTest_LongString) {
+	std::string long_string(10000, 'a');
+	long_string[5000] = '\n';
+	long_string[6000] = '\t';
+	long_string[7000] = '\\';
+
+	std::string escaped = reindexer::escapeString(long_string);
+	std::string unescaped = reindexer::unescapeString(escaped);
+	EXPECT_EQ(long_string, unescaped);
+}
+
+TEST(StringToolsTest, EscapeSpecificValues) {
+	EXPECT_EQ(reindexer::escapeString("value\\"), "value\\\\");
+	EXPECT_EQ(reindexer::escapeString("value\""), "value\\\"");
+	EXPECT_EQ(reindexer::escapeString("value\\\\"), "value\\\\\\\\");
+	EXPECT_EQ(reindexer::escapeString("value\\\\\\"), "value\\\\\\\\\\\\");
+	EXPECT_EQ(reindexer::escapeString("value\\\\\\\""), "value\\\\\\\\\\\\\\\"");
+	EXPECT_EQ(reindexer::unescapeString("value\\\\"), "value\\");
+	EXPECT_EQ(reindexer::unescapeString("value\\\""), "value\"");
+	EXPECT_EQ(reindexer::unescapeString("value\\\\\\\\"), "value\\\\");
+	EXPECT_EQ(reindexer::unescapeString("value\\\\\\\\\\\\"), "value\\\\\\");
+	EXPECT_EQ(reindexer::unescapeString("value\\\\\\\\\\\\\\\""), "value\\\\\\\"");
+
+	EXPECT_EQ(reindexer::escapeString("hello"), "hello");
+	EXPECT_EQ(reindexer::escapeString("line1\nline2"), "line1\\nline2");
+	EXPECT_EQ(reindexer::escapeString("tab\there"), "tab\\there");
+	EXPECT_EQ(reindexer::unescapeString("hello"), "hello");
+	EXPECT_EQ(reindexer::unescapeString("line1\\nline2"), "line1\nline2");
+	EXPECT_EQ(reindexer::unescapeString("tab\\there"), "tab\there");
+}
+
+}  // namespace reindexer_tests

@@ -3,13 +3,11 @@ package reindexer
 import (
 	"testing"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 )
 
-var testNsName = "test_deep_copy_type_equality"
-
 type DeepCopy interface {
-	DeepCopy() interface{}
+	DeepCopy() any
 }
 
 type PurchaseOption struct {
@@ -47,7 +45,9 @@ type NestedDeepCopyType struct {
 	SimpleDeepCopyType
 }
 
-func (po *PurchaseOption) DeepCopy() interface{} {
+const testDeepCopyNs = "test_deep_copy_type_equality"
+
+func (po *PurchaseOption) DeepCopy() any {
 	return &PurchaseOption{
 		CurID:          po.CurID,
 		BonusPriceID:   po.BonusPriceID,
@@ -68,18 +68,18 @@ func (po *PurchaseOption) DeepCopy() interface{} {
 
 }
 
-func gencopy_poFieldCopy(in *PurchaseOption) *PurchaseOption {
+func gencopyPoFieldCopy(in *PurchaseOption) *PurchaseOption {
 	if in == nil {
 		return nil
 	}
 	return in.DeepCopy().(*PurchaseOption)
 }
 
-func (bt *BrokenDeepCopyType) DeepCopy() interface{} {
+func (bt *BrokenDeepCopyType) DeepCopy() any {
 	return &PurchaseOption{}
 }
 
-func (st *SimpleDeepCopyType) DeepCopy() interface{} {
+func (st *SimpleDeepCopyType) DeepCopy() any {
 	return &SimpleDeepCopyType{
 		ID:    st.ID,
 		Name:  st.Name,
@@ -87,22 +87,22 @@ func (st *SimpleDeepCopyType) DeepCopy() interface{} {
 	}
 }
 
-func (n *NestedDeepCopyType) DeepCopy() interface{} {
+func (n *NestedDeepCopyType) DeepCopy() any {
 	return &NestedDeepCopyType{
-		po:                 gencopy_poFieldCopy(n.po),
+		po:                 gencopyPoFieldCopy(n.po),
 		SimpleDeepCopyType: n.SimpleDeepCopyType,
 	}
 }
 
 func TestDeepCopyEquality(t *testing.T) {
 	nsOpts := reindexer.DefaultNamespaceOptions()
-	DB.DropNamespace(testNsName)
+	DB.DropNamespace(testDeepCopyNs)
 
-	assertErrorMessage(t, OpenNamespaceWrapper(testNsName, nsOpts, PurchaseOption{}), nil)
-	assertErrorMessage(t, DB.DropNamespace(testNsName), nil)
-	assertErrorMessage(t, OpenNamespaceWrapper(testNsName, nsOpts, BrokenDeepCopyType{}), reindexer.ErrDeepCopyType)
+	assertErrorMessage(t, OpenNamespaceWrapper(testDeepCopyNs, nsOpts, PurchaseOption{}), nil)
+	assertErrorMessage(t, DB.DropNamespace(testDeepCopyNs), nil)
+	assertErrorMessage(t, OpenNamespaceWrapper(testDeepCopyNs, nsOpts, BrokenDeepCopyType{}), reindexer.ErrDeepCopyType)
 
-	assertErrorMessage(t, OpenNamespaceWrapper(testNsName, nsOpts, NestedDeepCopyType{}), nil)
-	assertErrorMessage(t, DB.DropNamespace(testNsName), nil)
+	assertErrorMessage(t, OpenNamespaceWrapper(testDeepCopyNs, nsOpts, NestedDeepCopyType{}), nil)
+	assertErrorMessage(t, DB.DropNamespace(testDeepCopyNs), nil)
 
 }

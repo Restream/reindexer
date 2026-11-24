@@ -3,11 +3,13 @@
 #include <vector>
 #include "tools/errors.h"
 
-namespace reindexer {
+namespace reindexer_tests {
 
 std::string GetExeFileName();
 pid_t StartProcess(const std::string& program, const std::vector<std::string>& params);
-Error EndProcess(pid_t PID);
-Error WaitEndProcess(pid_t PID);
+reindexer::Error EndProcess(pid_t PID);
+reindexer::Error WaitEndProcess(pid_t PID);
+// Kills the process without the graceful shutdown and awaits its end
+reindexer::Error KillProcess(pid_t PID) noexcept;
 
-}  // namespace reindexer
+}  // namespace reindexer_tests

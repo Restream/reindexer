@@ -1,24 +1,31 @@
 #pragma once
 
+#include <algorithm>
 #include <deque>
 #include <optional>
-#include <unordered_map>
+#include <thread>
 #include "core/rdxcontext.h"
 #include "estl/contexted_cond_var.h"
 #include "estl/fast_hash_set.h"
 #include "estl/h_vector.h"
+#include "estl/lock.h"
+#include "estl/mutex.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
 namespace updates {
 
-enum class ReplicationResult { None, Approved, Error };
+enum class [[nodiscard]] ReplicationResult { None, Approved, Error };
+enum class [[nodiscard]] EmitterResult : uint8_t { Pending, Applied, Failed };
 
-#define uq_rtfmt(f, ...) return fmt::sprintf("[updates:%s] " f, logModuleName(), __VA_ARGS__)
+constexpr std::string_view kNotReplicatedToEmitterMsg = "Update was not replicated to the emitter node";
+constexpr std::string_view kNotEnoughReplicasMsg = "Unable to send update to enough amount of replicas";
+
+#define uq_rtfmt(f, ...) return fmt::format("[updates:{}] " f, logModuleName(), __VA_ARGS__)
 
 template <typename T, typename StatsCollectorT, typename LoggerT>
-class UpdatesQueue {
+class [[nodiscard]] UpdatesQueue {
 public:
 	using HashT = nocase_hash_str;
 	using CompareT = nocase_equal_str;
@@ -29,19 +36,25 @@ public:
 	constexpr static uint64_t kMaxApproves = kMaxReplicas;
 	constexpr static uint64_t kMaxErrors = kMaxReplicas;
 	template <typename U, uint16_t kBatch>
-	class QueueEntry {
+	class [[nodiscard]] QueueEntry {
 	public:
-		struct DroppedUpdatesT {};
-		struct UpdatesStatus {
+		struct [[nodiscard]] DroppedUpdatesT {};
+		struct [[nodiscard]] UpdatesStatus {
 			bool requireResult = false;
 			bool requireErasure = false;
 			bool hasEnoughApproves = false;
 			Error result;
 		};
 
-		struct Value {
-			struct Counters {
-				uint64_t replicatedToEmmiter : 1;
+		struct [[nodiscard]] Value {
+			struct [[nodiscard]] Counters {
+				EmitterResult GetEmitterResult() const noexcept { return EmitterResult(emitterResult); }
+				void SetEmitterResult(EmitterResult res) noexcept { emitterResult = uint64_t(res); }
+				bool IsResultReady() const noexcept { return GetEmitterResult() != EmitterResult::Pending && consensusDecided; }
+
+				uint64_t emitterResult : 2;
+				// Approves or errors have reached the consensus. Stored, since the queue does not know the consensus size
+				uint64_t consensusDecided : 1;
 				uint64_t requireResult : 1;
 				uint64_t replicas : 16;
 				uint64_t approves : 16;
@@ -54,67 +67,65 @@ public:
 			const U& Data() const noexcept { return data_; }
 
 		private:
-			UpdatesStatus replicated(uint32_t consensusCnt, uint32_t requiredReplicas, bool isEmmiter, Error&& err) {
+			UpdatesStatus replicated(uint32_t consensusCnt, uint32_t requiredReplicas, bool isEmitter, Error&& err) {
 				auto expected = replication_.load(std::memory_order_acquire);
 				Counters repl;
-				UpdatesStatus status;
-				bool error = false;
 				do {
-					status = UpdatesStatus();
 					repl = expected;
-					repl.replicatedToEmmiter = repl.replicatedToEmmiter || isEmmiter;
 					assertrx_dbg(repl.approves < kMaxApproves);
 					assertrx_dbg(repl.errors < kMaxErrors);
 					assertrx_dbg(repl.replicas < kMaxReplicas);
 					if (err.ok()) {
 						++repl.approves;
-						if (repl.requireResult) {
-							status.requireResult = (repl.approves == consensusCnt && repl.replicatedToEmmiter) ||
-												   (isEmmiter && repl.approves >= consensusCnt) ||
-												   (isEmmiter && repl.errors >= consensusCnt);
-						}
 					} else {
 						++repl.errors;
-						error = true;
-						if (repl.requireResult) {
-							status.requireResult = (repl.errors == consensusCnt && repl.replicatedToEmmiter) ||
-												   (isEmmiter && repl.errors >= consensusCnt) ||
-												   (isEmmiter && repl.approves >= consensusCnt);
-						}
 					}
+					if (isEmitter && repl.GetEmitterResult() == EmitterResult::Pending) {
+						repl.SetEmitterResult(err.ok() ? EmitterResult::Applied : EmitterResult::Failed);
+					}
+					repl.consensusDecided = (repl.approves >= consensusCnt || repl.errors >= consensusCnt);
 					if (++repl.replicas == requiredReplicas) {
-						status.requireErasure = true;
-						if (!repl.replicatedToEmmiter) {
+						if (repl.GetEmitterResult() == EmitterResult::Pending) {
 							std::this_thread::sleep_for(std::chrono::seconds(2));
 						}
-						assertf(repl.replicatedToEmmiter, "Required replicas: %d", requiredReplicas);
+						assertf(repl.GetEmitterResult() != EmitterResult::Pending, "Required replicas: {}", requiredReplicas);
 					}
 				} while (!replication_.compare_exchange_strong(expected, repl, std::memory_order_acquire));
+				UpdatesStatus status;
+				status.requireResult = repl.requireResult && repl.IsResultReady() && !expected.IsResultReady();
+				status.requireErasure = (repl.replicas == requiredReplicas);
 				status.hasEnoughApproves = (repl.approves >= consensusCnt);
-				status.result = error ? std::move(err) : Error();
+				if (status.requireResult) {
+					status.result = resultOf(repl, consensusCnt, std::move(err));
+				}
 				return status;
 			}
-			// Simplified version to just count replicas and check erasure condition
-			UpdatesStatus handledNoResult(uint32_t requiredReplicas) noexcept {
-				auto expected = replication_.load(std::memory_order_acquire);
-				Counters repl;
-				UpdatesStatus status;
-				do {
-					status = UpdatesStatus();
-					repl = expected;
-					assertrx_dbg(!repl.requireResult);
-					assertrx_dbg(repl.replicatedToEmmiter);
-					assertrx_dbg(repl.replicas < kMaxReplicas);
-					if (++repl.replicas == requiredReplicas) {
-						status.requireErasure = true;
-					}
-				} while (!replication_.compare_exchange_strong(expected, repl, std::memory_order_acquire));
-				return status;
+			static Error resultOf(const Counters& repl, uint32_t consensusCnt, Error&& err) noexcept {
+				if (repl.approves >= consensusCnt && repl.GetEmitterResult() == EmitterResult::Applied) {
+					return Error();
+				}
+				if (!err.ok()) {
+					return std::move(err);
+				}
+				if (repl.GetEmitterResult() == EmitterResult::Failed) {
+					return Error(errUpdateReplication, kNotReplicatedToEmitterMsg);
+				}
+				return Error(errUpdateReplication, kNotEnoughReplicasMsg);
+			}
+			bool blocksDrop() const noexcept {
+				const auto repl = GetCounters();
+				if (!repl.requireResult) {
+					return false;
+				}
+				if (!repl.consensusDecided) {
+					return true;
+				}
+				return onResult_ && repl.GetEmitterResult() != EmitterResult::Pending;
 			}
 
 			U data_;
 			// steady_clock_w::time_point deadline;  // TODO: Implement deadline logic
-			std::atomic<Counters> replication_ = Counters{0, 0, 0, 1, 0};
+			std::atomic<Counters> replication_{};
 			std::function<void(Error&&)>* onResult_ = nullptr;
 
 			friend UpdatesQueue;
@@ -126,12 +137,12 @@ public:
 		QueueEntry(QueueEntry&&) = default;
 
 		ReplicationResult OnUpdateHandled(uint32_t nodeId, uint32_t consensusCnt, uint32_t requiredReplicas, uint16_t offset,
-										  bool isEmmiter, Error err) {
+										  bool isEmitter, Error err) {
 			ReplicationResult res = ReplicationResult::None;
 			if (offset >= count_.load(std::memory_order_acquire)) {
-				throw Error(errParams, "Unexpected offset: %d", offset);
+				throw Error(errParams, "Unexpected offset: {}", offset);
 			}
-			auto status = data_[offset].replicated(consensusCnt, requiredReplicas, isEmmiter, std::move(err));
+			auto status = data_[offset].replicated(consensusCnt, requiredReplicas, isEmitter, std::move(err));
 			stats_.OnUpdateApplied(nodeId, id_ + offset);
 			if (status.requireResult) {
 				owner_.onResult(id_ + offset, std::move(status.result));
@@ -148,23 +159,9 @@ public:
 			}
 			return res;
 		}
-		void OnUpdateHandledSimple(uint32_t nodeId, uint32_t requiredReplicas, uint16_t offset) {
-			if (offset >= count_.load(std::memory_order_acquire)) {
-				throw Error(errParams, "Unexpected offset: %d", offset);
-			}
-			auto status = data_[offset].handledNoResult(requiredReplicas);
-			stats_.OnUpdateApplied(nodeId, id_ + offset);
-			if (status.requireErasure) {
-				erased_.fetch_add(1, std::memory_order_release);
-				stats_.OnUpdateHandled(id_ + offset);
-				if (IsFullyErased()) {
-					owner_.eraseReplicated();
-				}
-			}
-		}
 		const Value& GetUpdate(uint16_t offset) const {
 			if (offset >= count_.load(std::memory_order_acquire)) {
-				throw Error(errParams, "Unexpected offset: %d", offset);
+				throw Error(errParams, "Unexpected offset: {}", offset);
 			}
 			return data_[offset];
 		}
@@ -191,16 +188,23 @@ public:
 			assertrx(!isFull());
 			auto count = count_.load(std::memory_order_relaxed);
 			totalSizeBytes_ += sizeBytes;
+			const auto emitterResult = val.HasEmitterID() ? EmitterResult::Pending : EmitterResult::Applied;
 			data_[count].data_ = std::move(val);
+			// The leader's own approve is counted from the start
+			data_[count].replication_.store({.emitterResult = uint64_t(emitterResult),
+											 .consensusDecided = 0,
+											 .requireResult = !skipResultCounting,
+											 .replicas = 0,
+											 .approves = 1,
+											 .errors = 0},
+											std::memory_order_relaxed);
 			if constexpr (skipResultCounting) {
-				data_[count].replication_.store({val.HasEmmiterID() ? 0u : 1u, 0u, 0, 1, 0}, std::memory_order_relaxed);
 				assert(!onRes);
 				(void)onRes;
 				data_[count].onResult_ = nullptr;
 				count_.fetch_add(1, std::memory_order_release);
 				addSentResult();
 			} else {
-				data_[count].replication_.store({val.HasEmmiterID() ? 0u : 1u, 1u, 0, 1, 0}, std::memory_order_relaxed);
 				data_[count].onResult_ = onRes;
 				count_.fetch_add(1, std::memory_order_release);
 			}
@@ -211,6 +215,7 @@ public:
 			++resultsSent_;
 		}
 		bool isAllResultsSent() const noexcept { return resultsSent_ == count_.load(std::memory_order_relaxed); }
+		bool isDroppable() const noexcept { return isFull() && (isAllResultsSent() || std::ranges::none_of(data_, &Value::blocksDrop)); }
 		void markInvalidated() noexcept { isInvalidated_.store(true, std::memory_order_relaxed); }
 
 		Value data_[kBatch];
@@ -237,19 +242,27 @@ public:
 		  stats_(std::move(statsCollector)) {}
 
 	void AddDataNotifier(std::thread::id id, std::function<void()> n) {
-		std::unique_lock<std::mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		newDataNotifiers_[id].n = std::move(n);
 	}
 	void RemoveDataNotifier(std::thread::id id) {
-		std::unique_lock<std::mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		newDataNotifiers_.erase(id);
 	}
 	uint64_t GetNextUpdateID() const noexcept {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		return getNextUpdateID();
 	}
+	// Erases full chunks with IDs below 'id' regardless of their replicas counters.
+	// Results are not sent here, so it is only valid for the updates without results awaiting (PushAsync<true>).
+	// Chunks pushed during the call are not erased: the lock is released between chunks, so writes could prolong the loop forever
+	void EraseUntil(uint64_t id) noexcept {
+		unique_lock lck(mtx_);
+		id = std::min(id, getNextUpdateID());
+		eraseFront(lck, [id](const UpdateT& upd) noexcept { return upd.isFull() && upd.NextUpdateID() <= id; });
+	}
 	UpdatePtr Read(uint64_t id, std::optional<std::thread::id> notifier) {
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		if (updatedDropRecord_ && id <= updatedDropRecord_->ID()) {
 			return updatedDropRecord_;
 		}
@@ -273,7 +286,7 @@ public:
 		return queue_[idx];
 	}
 	void SetWritable(bool isWritable, Error&& err) {
-		std::unique_lock<std::mutex> lck(mtx_);
+		unique_lock lck(mtx_);
 		if (!isWritable) {
 			invalidationErr_ = std::move(err);
 			int64_t lastUpdateId = -1;
@@ -281,11 +294,7 @@ public:
 				lastUpdateId += queue_.back()->ID() + queue_.back()->Count();
 			}
 			for (auto& chunk : queue_) {
-				for (size_t i = 0; i < chunk->Count(); ++i) {
-					auto e = invalidationErr_;
-					onResult(chunk->value(i), std::move(e));
-					chunk->markInvalidated();
-				}
+				invalidateChunk(*chunk, invalidationErr_);
 			}
 			if (lastUpdateId >= 0) {
 				stats_.OnUpdatesDrop(lastUpdateId, dataSize_);
@@ -299,7 +308,7 @@ public:
 		}
 	}
 	template <typename ContextT>
-	std::pair<Error, bool> PushAndWait(UpdatesContainerT&& data, std::function<void()> beforeWait, const ContextT&) {
+	std::pair<Error, bool> PushAndWait(UpdatesContainerT&& data, const std::function<void()>& beforeWait, const ContextT&) {
 		struct {
 			size_t dataSize = 0;
 			size_t executedCnt = 0;
@@ -317,12 +326,13 @@ public:
 		localData.dataSize = data.size();
 		std::deque<UpdatePtr> dropped;
 
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		if (invalidated_) {
-			return std::make_pair(invalidationErr_, false);
+			return std::make_pair(invalidationErr_, true);
 		}
 		try {
-			logTraceW([&] { uq_rtfmt("Push new sync updates (%d) for %s", localData.dataSize, data[0].NsName()); });
+			logTraceW([&] { uq_rtfmt("Push new sync updates ({}) for {}", localData.dataSize, data[0].NsName()); }, __FILE__, __LINE__,
+					  __FUNCTION__);
 
 			entriesRange = addDataToQueue(std::move(data), &onResult, dropped);
 
@@ -340,7 +350,7 @@ public:
 				dummyCtx_);	 // Don't pass cancel context here, because data are already on the leader and we have to handle them
 			return std::make_pair(std::move(localData.err), true);
 		} catch (...) {
-			logInfoW([] { return "PushAndWait call has recieved an exception"; });
+			logInfoW([] { return "PushAndWait call has recieved an exception"; }, __FILE__, __LINE__, __FUNCTION__);
 			for (auto i = entriesRange.first; i <= entriesRange.second; ++i) {
 				const auto idx = tryGetIdx(i);
 				if (idx >= 0) {
@@ -355,12 +365,13 @@ public:
 	std::pair<Error, bool> PushAsync(UpdatesContainerT&& data) {
 		std::deque<UpdatePtr> dropped;
 		{
-			std::lock_guard lck(mtx_);
+			lock_guard lck(mtx_);
 			if (invalidated_) {
-				return std::make_pair(invalidationErr_, false);
+				return std::make_pair(invalidationErr_, true);
 			}
 
-			logTraceW([&] { uq_rtfmt("Push new async updates (%d) for %s", data.size(), data[0].NsName()); });
+			logTraceW([&] { uq_rtfmt("Push new async updates ({}) for {}", data.size(), data[0].NsName()); }, __FILE__, __LINE__,
+					  __FUNCTION__);
 
 			addDataToQueue<skipResultCounting>(std::move(data), dropped);
 		}
@@ -376,6 +387,7 @@ public:
 		}
 		return false;
 	}
+	bool IsEnabled() const noexcept { return allowList_.has_value(); }
 	template <typename ContainerT>
 	void Init(std::optional<ContainerT>&& allowList, const LoggerT* l) {
 		log_ = l;
@@ -393,7 +405,7 @@ public:
 	const uint64_t MaxDataSize = 0;
 
 private:
-	struct DataNotifier {
+	struct [[nodiscard]] DataNotifier {
 		std::function<void()> n;
 		bool awaitsData = false;
 	};
@@ -452,7 +464,7 @@ private:
 		return id;
 	}
 	void onResult(uint64_t id, Error&& err) {
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		const auto idx = tryGetIdx(id);
 		if (idx < 0) {
 			return;
@@ -461,13 +473,15 @@ private:
 		const auto offset = id - updPtr->ID();
 		auto& entry = updPtr->value(offset);
 		updPtr->addSentResult();
-		logTraceW([&] {
-			if (entry.onResult_) {
-				uq_rtfmt("Sending result for update with ID %d", id);
-			} else {
-				uq_rtfmt("Trying to send result for update with ID %d, but it doesn't have result handler", id);
-			}
-		});
+		logTraceW(
+			[&] {
+				if (entry.onResult_) {
+					uq_rtfmt("Sending result for update with ID {}", id);
+				} else {
+					uq_rtfmt("Trying to send result for update with ID {}, but it doesn't have result handler", id);
+				}
+			},
+			__FILE__, __LINE__, __FUNCTION__);
 		onResult(entry, std::move(err));
 		eraseReplicated(lck);
 	}
@@ -478,12 +492,18 @@ private:
 		}
 	}
 	void eraseReplicated() noexcept {
-		std::unique_lock lck(mtx_);
+		unique_lock lck(mtx_);
 		eraseReplicated(lck);
 	}
-	void eraseReplicated(std::unique_lock<std::mutex>& lck) noexcept {
-		while (queue_.size() && queue_.front()->isAllResultsSent() && queue_.front()->IsFullyErased()) {
+	void eraseReplicated(unique_lock<mutex>& lck) noexcept RX_NO_THREAD_SAFETY_ANALYSIS {
+		eraseFront(lck, [](const UpdateT& upd) noexcept { return upd.isAllResultsSent() && upd.IsFullyErased(); });
+	}
+	template <typename PredT>
+	void eraseFront(unique_lock<mutex>& lck, PredT&& pred) noexcept RX_NO_THREAD_SAFETY_ANALYSIS {
+		while (queue_.size() && pred(*queue_.front())) {
 			auto updPtr = queue_.front();
+			// Erased chunk can not have pending results: their awaiters would never be notified
+			assertrx_dbg(updPtr->isAllResultsSent());
 			queue_.pop_front();
 			const auto updTotalSizeBytes = updPtr->TotalSizeBytes();
 			dataSize_ -= updTotalSizeBytes;
@@ -504,17 +524,19 @@ private:
 		return idx;
 	}
 	void dropOverflowingUpdates(std::deque<UpdatePtr>& dropped) {
-		if (MaxDataSize && dataSize_ > MaxDataSize && queue_.size() > 1 && queue_.front()->isAllResultsSent()) {
+		if (MaxDataSize && dataSize_ > MaxDataSize && queue_.size() > 1 && queue_.front()->isDroppable()) {
 			int64_t lastChunckId = -1;
 			uint64_t droppedUpdatesSize = 0;
 			std::swap(dropped, queue_);
+			// Results of the droppable chunk await the emitter only
+			const Error overflowErr(errUpdateReplication, "{}: updates queue overflow", kNotReplicatedToEmitterMsg);
 			uint64_t firstUnskipableIdx = 0;
 			for (; firstUnskipableIdx < dropped.size(); ++firstUnskipableIdx) {
 				auto& upd = dropped[firstUnskipableIdx];
-				if (!upd->isAllResultsSent() || !upd->isFull()) {
+				if (!upd->isDroppable()) {
 					break;
 				}
-				upd->markInvalidated();
+				invalidateChunk(*upd, overflowErr);
 				lastChunckId = upd->ID();
 				droppedUpdatesSize += upd->TotalSizeBytes();
 			}
@@ -525,7 +547,8 @@ private:
 
 			if (lastChunckId >= 0) {
 				const auto updateId = lastChunckId + kBatchSize - 1;
-				logWarnW([&] { uq_rtfmt("Dropping updates: %d-%d. %d bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); });
+				logWarnW([&] { uq_rtfmt("Dropping updates: {}-{}. {} bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); },
+						 __FILE__, __LINE__, __FUNCTION__);
 				updatedDropRecord_ =
 					make_intrusive<intrusive_atomic_rc_wrapper<UpdateT>>(updateId, *this, typename UpdateT::DroppedUpdatesT{});
 				stats_.OnUpdatesDrop(updateId, droppedUpdatesSize);
@@ -533,27 +556,37 @@ private:
 			}
 		}
 	}
+	void invalidateChunk(UpdateT& chunk, const Error& err) {
+		if (!chunk.isAllResultsSent()) {
+			for (uint16_t i = 0; i < chunk.Count(); ++i) {
+				if (auto& value = chunk.value(i); value.onResult_) {
+					onResult(value, Error(err));
+				}
+			}
+		}
+		chunk.markInvalidated();
+	}
 	uint64_t getNextUpdateID() const noexcept { return queue_.size() ? queue_.back()->NextUpdateID() : nextChunkID_; }
 	template <typename F>
-	void logWarnW(F&& f) const {
+	void logWarnW(F&& f, const char* file, int line, const char* function) const noexcept {
 		if (log_) {
-			log_->Warn(std::forward<F>(f));
+			log_->Warn(std::forward<F>(f), file, line, function);
 		}
 	}
 	template <typename F>
-	void logInfoW(F&& f) const {
+	void logInfoW(F&& f, const char* file, int line, const char* function) const noexcept {
 		if (log_) {
-			log_->Info(std::forward<F>(f));
+			log_->Info(std::forward<F>(f), file, line, function);
 		}
 	}
 	template <typename F>
-	void logTraceW(F&& f) const {
+	void logTraceW(F&& f, const char* file, int line, const char* function) const noexcept {
 		if (log_) {
-			log_->Trace(std::forward<F>(f));
+			log_->Trace(std::forward<F>(f), file, line, function);
 		}
 	}
 
-	mutable std::mutex mtx_;
+	mutable mutex mtx_;
 	contexted_cond_var condResultReady_;
 	std::unordered_map<std::thread::id, DataNotifier> newDataNotifiers_;
 	bool invalidated_ = false;
