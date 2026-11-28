@@ -8,12 +8,14 @@
 #include "tools/dsn.h"
 #include "tools/fsops.h"
 
-class RPCClientTestApi : public ::testing::Test {
+namespace reindexer_tests {
+
+class [[nodiscard]] RPCClientTestApi : public ::testing::Test {
 public:
 	virtual ~RPCClientTestApi() = default;
 
 protected:
-	class CancelRdxContext : public reindexer::IRdxCancelContext {
+	class [[nodiscard]] CancelRdxContext : public reindexer::IRdxCancelContext {
 	public:
 		reindexer::CancelType GetCancelType() const noexcept override {
 			return canceld_.load() ? reindexer::CancelType::Explicit : reindexer::CancelType::None;
@@ -26,7 +28,7 @@ protected:
 		std::atomic<bool> canceld_ = {false};
 	};
 
-	class TestServer {
+	class [[nodiscard]] TestServer {
 	public:
 		TestServer(const RPCServerConfig& conf) : terminate_(false), serverIsReady_(false), conf_(conf) {}
 		void Start(const std::string& addr, Error errOnLogin = Error());
@@ -39,8 +41,8 @@ protected:
 	private:
 		std::unique_ptr<RPCServerFake> server_;
 		std::unique_ptr<std::thread> serverThread_;
-		net::ev::dynamic_loop loop_;
-		net::ev::async stop_;
+		reindexer::net::ev::dynamic_loop loop_;
+		reindexer::net::ev::async stop_;
 		std::atomic<bool> terminate_;
 		std::atomic<bool> serverIsReady_;
 		DSN dsn_;
@@ -51,7 +53,7 @@ protected:
 	void SetUp() {}
 	void TearDown() {
 		[[maybe_unused]] auto err = StopAllServers();
-		assertf(err.ok(), "%s", err.what());
+		assertf(err.ok(), "{}", err.what());
 		fakeServers_.clear();
 		realServers_.clear();
 	}
@@ -75,7 +77,7 @@ public:
 	static const uint16_t kDefaultHttpPort = 33333;
 
 private:
-	struct ServerData {
+	struct [[nodiscard]] ServerData {
 		ServerData() { server.reset(new reindexer_server::Server()); }
 
 		std::unique_ptr<reindexer_server::Server> server;
@@ -85,3 +87,5 @@ private:
 	std::unordered_map<std::string, std::unique_ptr<TestServer>> fakeServers_;
 	std::unordered_map<std::string, ServerData> realServers_;
 };
+
+}  // namespace reindexer_tests

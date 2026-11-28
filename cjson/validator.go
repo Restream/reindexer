@@ -73,7 +73,7 @@ func (enc *Validator) validateLevel(src reflect.Type, fieldName string, parsed *
 	return nil
 }
 
-func (enc *Validator) Validate(src interface{}) error {
+func (enc *Validator) Validate(src any) error {
 	t := reflect.TypeOf(src)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()

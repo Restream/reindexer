@@ -25,6 +25,9 @@ done
 
 CLUSTER_DB_NAME=items
 BASE_DIR="/tmp/rx_java_cluster"
+if [[ -n $REINDEXER_TEST_DB_ROOT ]]; then
+	BASE_DIR=$REINDEXER_TEST_DB_ROOT/rx_java_cluster
+fi
 BASE_RPC=6534
 BASE_HTTP=9088
 RX_BIN=reindexer_server

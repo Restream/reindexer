@@ -1,17 +1,18 @@
 #pragma once
 
+#include <type_traits>
 #include "coroutine.h"
 #include "estl/h_vector.h"
+#include "tools/scope_guard.h"
+#include "waiters_queue.h"
 
-#include <algorithm>
-
-namespace reindexer {
-namespace coroutine {
+namespace reindexer::coroutine {
 
 /// @class Buffered channel, which allows to asynchronously send data between coroutines
 /// The behaviour is similar to Golang's buffered channels
 template <typename T>
-class channel {
+	requires std::is_nothrow_move_constructible_v<T> && std::is_nothrow_default_constructible_v<T>
+class [[nodiscard]] channel {
 public:
 	/// Creates channel with required capacity
 	channel(size_t cap = 1) : buf_(cap) {
@@ -32,27 +33,42 @@ public:
 	template <typename U>
 	void push(U&& obj) {
 		assertrx(current());  // For now channels should not be used from main routine dew to current resume/suspend logic
-		bool await = false;
+		waiters_queue::hook waiter(current());
+
+		auto waiterGuard = MakeScopeGuard([this, &waiter]() noexcept {
+			if (waiter.linked()) {
+				writers_.erase(waiter);
+			}
+		});
+
+#ifdef RX_WITH_STDLIB_DEBUG
+		if (!full() && !closed_) {
+			// Extra ordering check
+			assertrx_dbg(writers_.empty());
+		}
+#endif	// RX_WITH_STDLIB_DEBUG
+
 		while (full() || closed_) {
 			if (closed_) {
-				if (await) {
-					remove_waiter(writers_);
-				}
 				throw std::logic_error("Attempt to write in closed channel");
 			}
-			if (!await) {
-				await = true;
-				writers_.emplace_back(current());
+			if (!waiter.linked()) {
+				writers_.push_back(waiter);
 			}
 			suspend();
 		}
 
 		push_impl(std::forward<U>(obj));
-		if (await) {
-			remove_waiter(writers_);
+		// Unlink before waking readers: a still-linked writer could be cyclically resumed by the reader's pop().
+		if (waiter.linked()) {
+			writers_.erase(waiter);
 		}
+		// FIXME: #2558: these resume() calls switch fibers and may run during stack unwinding when a channel op is reached
+		// from a destructor on the exception path (e.g. tokens_pool::~token -> return_token() -> push()). Resuming a fiber
+		// with an in-flight exception corrupts the per-thread exception machinery
 		while (readers_.size() && !empty()) {
-			resume(readers_.front());
+			[[maybe_unused]] auto res = resume(readers_.front());
+			assertrx_dbg(!res);
 		}
 	}
 
@@ -63,36 +79,42 @@ public:
 	/// If channel is full and there are writers awaiting space in this channel, current coroutine will call resume() and switch to those
 	/// writers.
 	/// @return Pair of value and flag. Flag shows if it's actual value from channel (true) or default constructed one (false)
-	std::pair<T, bool> pop() {
+	std::pair<T, bool> pop() noexcept {
 		assertrx(current());  // For now channels should not be used from main routine dew to current resume/suspend logic
-		bool await = false;
+		waiters_queue::hook waiter(current());
 		while (empty() && !closed_) {
-			if (!await) {
-				await = true;
-				readers_.emplace_back(current());
+			if (!waiter.linked()) {
+				readers_.push_back(waiter);
 			}
 			suspend();
 		}
 
 		auto obj = pop_impl();
-		if (await) {
-			remove_waiter(readers_);
+		if (waiter.linked()) {
+			readers_.erase(waiter);
 		}
+		// FIXME: #2558 deferred resume needed on the unwind path here too — see the detailed note in push().
 		while (writers_.size() && !full()) {
-			resume(writers_.front());
+			[[maybe_unused]] auto res = resume(writers_.front());
+			assertrx_dbg(!res);
 		}
 		return obj;
 	}
 
 	/// Close channel.
 	/// All reades and writers will be resumed immediately
-	void close() {
+	void close() noexcept {
+		// FIXME: #2558 deferred resume needed on the unwind path here too — see the detailed note in push(). Direct
+		// consumers currently call close() from coroutine bodies (or destructors that themselves suspend, hence never run
+		// during unwinding), so this is latent rather than active today.
 		closed_ = true;
 		while (readers_.size()) {
-			resume(readers_.front());
+			[[maybe_unused]] auto res = resume(readers_.front());
+			assertrx_dbg(!res);
 		}
 		while (writers_.size()) {
-			resume(writers_.front());
+			[[maybe_unused]] auto res = resume(writers_.front());
+			assertrx_dbg(!res);
 		}
 	}
 	/// Reopens closed channel
@@ -115,14 +137,12 @@ public:
 	size_t writers() const noexcept { return writers_.size(); }
 
 private:
-	using waiters_container = h_vector<routine_t, 2>;
-
-	std::pair<T, bool> pop_impl() {
+	std::pair<T, bool> pop_impl() noexcept {
 		if (data_size_) {
-			auto obj = std::move(buf_[r_ptr_]);
+			size_t r_cur = r_ptr_;
 			r_ptr_ = (r_ptr_ + 1) % buf_.size();
 			--data_size_;
-			return std::make_pair(std::move(obj), true);
+			return std::make_pair(std::move(buf_[r_cur]), true);
 		}
 		return std::make_pair(T(), false);
 	}
@@ -133,16 +153,14 @@ private:
 		++data_size_;
 		assertrx(data_size_ <= buf_.size());
 	}
-	static void remove_waiter(waiters_container& waiters) { waiters.erase(std::find(waiters.begin(), waiters.end(), current())); }
 
 	h_vector<T, 2> buf_;
 	size_t r_ptr_ = 0;
 	size_t w_ptr_ = 0;
 	size_t data_size_ = 0;
-	waiters_container writers_;
-	waiters_container readers_;
+	waiters_queue writers_;
+	waiters_queue readers_;
 	bool closed_ = false;
 };
 
-}  // namespace coroutine
-}  // namespace reindexer
+}  // namespace reindexer::coroutine

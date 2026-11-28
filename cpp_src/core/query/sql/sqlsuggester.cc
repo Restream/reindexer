@@ -1,11 +1,11 @@
 
 #include "sqlsuggester.h"
-#include "core/defnsconfigs.h"
-#include "core/namespacedef.h"
+#include "core/definitions/namespacedef.h"
+#include "core/namespace/indexes/index_names.h"
 #include "core/query/query.h"
-#include "sqltokentype.h"
-
-#include <unordered_map>
+#include "core/system_ns_names.h"
+#include "sql_suggestions.h"
+#include "sqltokenmatching.h"
 
 namespace reindexer {
 
@@ -13,22 +13,25 @@ static bool checkIfTokenStartsWith(std::string_view src, std::string_view patter
 	return checkIfStartsWith(src, pattern) && src.length() < pattern.length();
 }
 
-std::vector<std::string> SQLSuggester::GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces,
-													  GetSchemaF getSchema) {
+SQLSuggestions SQLSuggester::GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchema) {
 	Query query;
-	SQLSuggester suggester{query};
+	SQLSuggester suggester{Impl(query)};
 	suggester.ctx_.suggestionsPos = pos;
 	suggester.ctx_.autocompleteMode = true;
 	suggester.enumNamespaces_ = std::move(enumNamespaces);
 	suggester.getSchema_ = std::move(getSchema);
 
+	SQLSuggestions result;
 	try {
-		tokenizer tokens{q};
-		(void)(suggester.Parse(tokens));
-		// NOLINTBEGIN(bugprone-empty-catch)
-	} catch (const Error&) {
+		Tokenizer tokens{q};
+		std::ignore = suggester.Parse(tokens);
+	} catch (const SqlParserError& e) {
+		result.errorRange = e.Range();
+		result.errorMessage = e.whatStr();
+	} catch (const SQLParser::ErrorEOF&) {	// NOLINT(bugprone-empty-catch)
+	} catch (const Error& e) {
+		result.errorMessage = e.whatStr();
 	}
-	// NOLINTEND(bugprone-empty-catch)
 
 	for (SqlParsingCtx::SuggestionData& item : suggester.ctx_.suggestions) {
 		suggester.checkForTokenSuggestions(item);
@@ -36,52 +39,11 @@ std::vector<std::string> SQLSuggester::GetSuggestions(std::string_view q, size_t
 
 	for (auto& it : suggester.ctx_.suggestions) {
 		if (!it.variants.empty()) {
-			return {it.variants.begin(), it.variants.end()};
+			result.suggestions = {std::make_move_iterator(it.variants.begin()), std::make_move_iterator(it.variants.end())};
+			break;
 		}
 	}
-	return {};
-}
-
-std::unordered_map<int, std::unordered_set<std::string>> sqlTokenMatchings = {
-	{Start, {"explain", "select", "delete", "update", "truncate", "local"}},
-	{StartAfterLocal, {"explain", "select"}},
-	{StartAfterExplain, {"select", "delete", "update", "local"}},
-	{StartAfterLocalExplain, {"select"}},
-	{AggregationSqlToken, {"sum", "avg", "max", "min", "facet", "count", "distinct", "rank", "count_cached"}},
-	{SelectConditionsStart, {"where", "limit", "offset", "order", "join", "left", "inner", "equal_position", "merge", "or", ";"}},
-	{NestedSelectConditionsStart, {"where", "limit", "offset", "order", "equal_position"}},
-	{ConditionSqlToken, {">", ">=", "<", "<=", "<>", "in", "allset", "range", "is", "==", "="}},
-	{WhereFieldValueSqlToken, {"null", "empty", "not"}},
-	{WhereFieldNegateValueSqlToken, {"null", "empty"}},
-	{OpSqlToken, {"and", "or"}},
-	{WhereOpSqlToken, {"and", "or", "order", "equal_position"}},
-	{SortDirectionSqlToken, {"asc", "desc"}},
-	{JoinTypesSqlToken, {"join", "left", "inner"}},
-	{LeftSqlToken, {"join"}},
-	{InnerSqlToken, {"join"}},
-	{SelectSqlToken, {"select"}},
-	{OnSqlToken, {"on"}},
-	{BySqlToken, {"by"}},
-	{NotSqlToken, {"not"}},
-	{FieldSqlToken, {"field"}},
-	{FromSqlToken, {"from"}},
-	{SetSqlToken, {"set"}},
-	{WhereSqlToken, {"where"}},
-	{AllFieldsToken, {"*"}},
-	{ModifyConditionsStart, {"where", "limit", "offset", "order"}},
-	{UpdateOptionsSqlToken, {"set", "drop"}},
-	{EqualPositionSqlToken, {"equal_position"}},
-	{ST_DWithinSqlToken, {"ST_DWithin"}},
-	{ST_GeomFromTextSqlToken, {"ST_GeomFromText"}},
-};
-
-static void getMatchingTokens(int tokenType, const std::string& token, std::unordered_set<std::string>& variants) {
-	const std::unordered_set<std::string>& suggestions = sqlTokenMatchings[tokenType];
-	for (auto it = suggestions.begin(); it != suggestions.end(); ++it) {
-		if (isBlank(token) || checkIfStartsWith(token, *it)) {
-			variants.insert(*it);
-		}
-	}
+	return result;
 }
 
 void SQLSuggester::getMatchingNamespacesNames(const std::string& token, std::unordered_set<std::string>& variants) {
@@ -106,15 +68,15 @@ void SQLSuggester::getMatchingFieldsNames(const std::string& token, std::unorder
 			continue;
 		}
 		for (auto& idx : ns.indexes) {
-			if (idx.name_ == "#pk" || idx.name_ == "-tuple") {
+			if (idx.Name() == ns_indexes::kPKIndexName || idx.Name() == ns_indexes::kTupleName) {
 				continue;
 			}
-			if (isBlank(token) || (dotPos != std::string::npos ? checkIfStartsWith<CaseSensitive::Yes>(token, idx.name_)
-															   : checkIfStartsWith<CaseSensitive::No>(token, idx.name_))) {
+			if (isBlank(token) || (dotPos != std::string::npos ? checkIfStartsWith<CaseSensitive::Yes>(token, idx.Name())
+															   : checkIfStartsWith<CaseSensitive::No>(token, idx.Name()))) {
 				if (dotPos == std::string::npos) {
-					variants.insert(idx.name_);
+					variants.insert(idx.Name());
 				} else {
-					variants.insert(idx.name_.substr(dotPos));
+					variants.insert(idx.Name().substr(dotPos));
 				}
 			}
 		}
@@ -160,48 +122,50 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData& ctx) {
 		case SetSqlToken:
 		case WhereSqlToken:
 		case UpdateOptionsSqlToken:
-			getMatchingTokens(ctx.tokenType, ctx.token, ctx.variants);
+		case WhereFunction:
+		case KnnParamsToken:
+			getMatchingSqlTokens(ctx.tokenType, ctx.token, ctx.variants);
 			break;
 		case SingleSelectFieldSqlToken:
-			getMatchingTokens(AllFieldsToken, ctx.token, ctx.variants);
-			getMatchingTokens(AggregationSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(AllFieldsToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(AggregationSqlToken, ctx.token, ctx.variants);
 			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case NamespaceSqlToken:
 			getMatchingNamespacesNames(ctx.token, ctx.variants);
 			break;
 		case WhereFieldOrSubquerySqlToken:
-			getMatchingTokens(SelectSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(SelectSqlToken, ctx.token, ctx.variants);
 			[[fallthrough]];
 		case AndSqlToken:
 		case WhereFieldSqlToken:
-			getMatchingTokens(JoinTypesSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(JoinTypesSqlToken, ctx.token, ctx.variants);
 			[[fallthrough]];
 		case NestedAndSqlToken:
 		case NestedWhereFieldSqlToken:
-			getMatchingTokens(NotSqlToken, ctx.token, ctx.variants);
-			getMatchingTokens(ST_DWithinSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(NotSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(WhereFunction, ctx.token, ctx.variants);
 			getMatchingFieldsNames(ctx.token, ctx.variants);
-			getMatchingTokens(EqualPositionSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(EqualPositionSqlToken, ctx.token, ctx.variants);
 			break;
 		case GeomFieldSqlToken:
-			getMatchingTokens(ST_GeomFromTextSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(ST_GeomFromTextSqlToken, ctx.token, ctx.variants);
 			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case FieldNameSqlToken:
 			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case SortDirectionSqlToken:
-			getMatchingTokens(SortDirectionSqlToken, ctx.token, ctx.variants);
-			getMatchingTokens(FieldSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(SortDirectionSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(FieldSqlToken, ctx.token, ctx.variants);
 			break;
 		case JoinedFieldNameSqlToken:
 			getMatchingNamespacesNames(ctx.token, ctx.variants);
 			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case WhereFieldValueOrSubquerySqlToken:
-			getMatchingTokens(SelectSqlToken, ctx.token, ctx.variants);
-			getMatchingTokens(WhereFieldValueSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(SelectSqlToken, ctx.token, ctx.variants);
+			getMatchingSqlTokens(WhereFieldValueSqlToken, ctx.token, ctx.variants);
 			break;
 		case DeleteSqlToken:
 		case AggregationSqlToken:
@@ -215,16 +179,15 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData& ctx) {
 		case MergeSqlToken:
 		case EqualPositionSqlToken:
 		case JoinTypesSqlToken:
-		case ST_DWithinSqlToken:
 		case ST_GeomFromTextSqlToken:
 		default:
 			break;
 	}
 }
 
-bool SQLSuggester::findInPossibleTokens(int type, const std::string& v) {
-	const std::unordered_set<std::string>& values = sqlTokenMatchings[type];
-	return (values.find(v) != values.end());
+bool SQLSuggester::findInPossibleTokens(SqlTokenType type, const std::string& v) {
+	const auto it = sqlTokenMatchings().find(type);
+	return it == sqlTokenMatchings().end() || (it->second.find(v) != it->second.end());
 }
 
 bool SQLSuggester::findInPossibleFields(const std::string& tok) {
@@ -233,7 +196,7 @@ bool SQLSuggester::findInPossibleFields(const std::string& tok) {
 	if (namespaces.empty()) {
 		return false;
 	}
-	if (std::find_if(namespaces[0].indexes.begin(), namespaces[0].indexes.end(), [&](const IndexDef& lhs) { return lhs.name_ == tok; }) !=
+	if (std::find_if(namespaces[0].indexes.begin(), namespaces[0].indexes.end(), [&](const IndexDef& lhs) { return lhs.Name() == tok; }) !=
 		namespaces[0].indexes.end()) {
 		return true;
 	}
@@ -382,11 +345,12 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData& data)
 					case UpdateOptionsSqlToken:
 					case EqualPositionSqlToken:
 					case JoinTypesSqlToken:
-					case ST_DWithinSqlToken:
+					case WhereFunction:
 					case ST_GeomFromTextSqlToken:
 					case GeomFieldSqlToken:
 					case WhereFieldOrSubquerySqlToken:
 					case WhereFieldValueOrSubquerySqlToken:
+					case KnnParamsToken:
 						break;
 				}
 				getSuggestionsForToken(data);
@@ -473,10 +437,11 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData& data)
 		case MergeSqlToken:
 		case EqualPositionSqlToken:
 		case JoinTypesSqlToken:
-		case ST_DWithinSqlToken:
+		case WhereFunction:
 		case ST_GeomFromTextSqlToken:
 		case WhereFieldOrSubquerySqlToken:
 		case WhereFieldValueOrSubquerySqlToken:
+		case KnnParamsToken:
 		default:
 			getSuggestionsForToken(data);
 			break;

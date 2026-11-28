@@ -13,11 +13,12 @@
 
 namespace reindexer_server {
 
-class PidFile {
+class [[nodiscard]] PidFile {
 public:
 	PidFile(const std::string& name = std::string(), pid_t pid = -1) : file_(-1) {
 		if (!name.empty()) {
-			Open(name, pid);
+			[[maybe_unused]] bool success = Open(name, pid);
+			assertrx_dbg(success);
 		}
 	}
 	~PidFile() {
@@ -35,23 +36,23 @@ public:
 		// open file
 		int fd = ::open(name.c_str(), O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP);
 		if (fd == -1) {
-			error_ = reindexer::Error(errLogic, "Could not create PID file `%s`. Reason: %s", name.c_str(), strerror(errno));
+			error_ = reindexer::Error(errLogic, "Could not create PID file `{}`. Reason: {}", name.c_str(), strerror(errno));
 			return false;
 		}
 		// TODO: is it so very necessary?
 		if (lockf(fd, F_TLOCK, 0) < 0) {
-			error_ = reindexer::Error(errLogic, "Could not create PID file `%s`. Reason: %s", name.c_str(), strerror(errno));
+			error_ = reindexer::Error(errLogic, "Could not create PID file `{}`. Reason: {}", name.c_str(), strerror(errno));
 			return false;
 		}
 		// get PID value and convert it to string
 		if (pid == -1) {
 			pid = ::getpid();
 		}
-		std::string buf = fmt::sprintf("%d\n", pid);
+		std::string buf = fmt::format("{}\n", pid);
 		// write PID to file
 		size_t rc = static_cast<size_t>(::write(fd, buf.c_str(), buf.size()));
 		if (rc != buf.size()) {
-			error_ = reindexer::Error(errLogic, "Could not create PID file `%s`. Reason: %s", name.c_str(), strerror(errno));
+			error_ = reindexer::Error(errLogic, "Could not create PID file `{}`. Reason: {}", name.c_str(), strerror(errno));
 			::close(fd);
 			return false;
 		}

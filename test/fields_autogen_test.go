@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,13 +20,14 @@ type TestItemAutogen struct {
 	UpdatedTimeMilli int64 `reindex:"updated_time_milli,-"`
 }
 
-var ns = "test_items_autogen"
+const testItemsAutogenNs = "test_items_autogen"
 
 func init() {
-	tnamespaces["test_items_autogen"] = TestItemAutogen{}
+	tnamespaces[testItemsAutogenNs] = TestItemAutogen{}
 }
 
 func TestAutogen(t *testing.T) {
+	const ns = testItemsAutogenNs
 
 	currentSerial := 0
 
@@ -59,7 +60,7 @@ func TestAutogen(t *testing.T) {
 		assert.Equal(t, item.UpdatedTimeNano, it[0].(*TestItemAutogen).UpdatedTimeNano)
 	})
 
-	t.Run("serial field shoud be increased by one", func(t *testing.T) {
+	t.Run("serial field should be increased by one", func(t *testing.T) {
 		precepts := []string{"genre=SERIAL()", "age=serial()"}
 		item := TestItemAutogen{}
 		err := DB.Upsert(ns, &item, precepts...)

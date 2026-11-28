@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 project(reindexer_grpc_library)
 set (TARGET reindexer_grpc_library)
@@ -11,11 +11,13 @@ if (ENABLE_GRPC)
     find_package(Threads REQUIRED)
 
     set(protobuf_MODULE_COMPATIBLE TRUE)
-    find_package(Protobuf REQUIRED)
-    set(_PROTOBUF_LIBPROTOBUF protobuf::libprotobuf)
-    SET(PROTOBUF_PROTOC_EXECUTABLE protoc)
-    INCLUDE_DIRECTORIES(SYSTEM ${PROTOBUF_INCLUDE_DIR})
-    list(APPEND GRPC_LIBRARIES ${PROTOBUF_LIBRARIES} ${_PROTOBUF_LIBPROTOBUF})
+    find_package(Protobuf CONFIG)
+    if(NOT PROTOBUF_FOUND)
+        find_package(Protobuf REQUIRED)
+    endif()
+    set(PROTOBUF_PROTOC_EXECUTABLE protoc)
+    include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
+    list(APPEND GRPC_LIBRARIES ${PROTOBUF_LIBRARIES} protobuf::libprotobuf)
     message(STATUS "Using protobuf ${Protobuf_VERSION}")
 
     find_package(gRPC ${GRPC_PACKAGE_PROVIDER} REQUIRED)
@@ -26,6 +28,8 @@ if (ENABLE_GRPC)
     message(STATUS "Using gRPC ${gRPC_VERSION}")
 
     file(GLOB PROTOBUF_SOURCE_FILES ${REINDEXER_SOURCE_PATH}/server/proto/*.proto)
+    # Protobuf sources are generated at configure time; rerun it when the schema changes.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PROTOBUF_SOURCE_FILES})
     file(MAKE_DIRECTORY ${GENERATED_PROTO_DIR})
     file(MAKE_DIRECTORY ${GENERATED_TESTS_DIR})
 

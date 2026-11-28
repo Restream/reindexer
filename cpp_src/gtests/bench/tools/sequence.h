@@ -2,20 +2,21 @@
 
 #include <atomic>
 #include <string>
-#include <tuple>
 #include <type_traits>
 
 #include "helpers.h"
 
+namespace reindexer_benchmarks {
+
 namespace internal {
 
 template <typename fromT, typename toT>
-struct cast_helper {
+struct [[nodiscard]] cast_helper {
 	static toT cast(const fromT& value) { return static_cast<toT>(value); }
 };
 
 template <typename fromT>
-struct cast_helper<fromT, std::string> {
+struct [[nodiscard]] cast_helper<fromT, std::string> {
 	static std::string cast(const fromT& value);
 };
 }  // namespace internal
@@ -26,7 +27,7 @@ std::string internal::cast_helper<fromT, std::string>::cast(const fromT& value) 
 }
 
 template <typename counterT = int>
-class SequenceBase {
+class [[nodiscard]] SequenceBase {
 public:
 	typedef counterT value_type;
 	static_assert(std::is_integral<counterT>::value, "'counterT' must be an integral type");
@@ -51,7 +52,7 @@ public:
 
 	std::pair<value_type, value_type> GetRandomIdRange(size_t cnt) {
 		auto count = cnt >= static_cast<size_t>(Count()) ? Count() : cnt;
-		auto start = random<value_type>(start_, end_ - count);
+		auto start = random<value_type>(start_, end_ - count - 1);
 		return {start, start + count - 1};
 	}
 
@@ -75,3 +76,5 @@ private:
 };
 
 using Sequence = SequenceBase<int>;
+
+}  // namespace reindexer_benchmarks

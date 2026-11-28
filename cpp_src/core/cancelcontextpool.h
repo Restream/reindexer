@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <thread>
+#include <vector>
 
 namespace reindexer {
 
@@ -13,12 +14,12 @@ constexpr uint64_t kInitFlag = uint64_t(0x4) << (sizeof(uint64_t) * 8 - 3);
 constexpr uint64_t kCanceledFlag = uint64_t(0x2) << (sizeof(uint64_t) * 8 - 3);
 constexpr uint64_t kCancelingFlag = uint64_t(0x1) << (sizeof(uint64_t) * 8 - 3);
 
-class CancelContextImpl : public IRdxCancelContext {
+class [[nodiscard]] CancelContextImpl : public IRdxCancelContext {
 public:
 	CancelContextImpl() : cancelType_(CancelType::None) {}
 	CancelContextImpl(const CancelContextImpl& ctx) : cancelType_(ctx.GetCancelType()) {}
 	CancelContextImpl& operator=(const CancelContextImpl& ctx) {
-		cancelType_ = ctx.GetCancelType();
+		cancelType_.store(ctx.GetCancelType());
 		return *this;
 	}
 
@@ -35,9 +36,9 @@ private:
 };
 
 template <typename ContextT>
-class ContextsPoolImpl {
+class [[nodiscard]] ContextsPoolImpl {
 public:
-	struct Node {
+	struct [[nodiscard]] Node {
 		Node() = default;
 
 		ContextT ctx;

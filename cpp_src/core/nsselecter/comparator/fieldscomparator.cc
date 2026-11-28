@@ -1,16 +1,20 @@
 #include "fieldscomparator.h"
 
 #include <sstream>
+#include "core/keyvalue/condition_comparison.h"
 #include "core/keyvalue/p_string.h"
+#include "core/payload/payload_access.h"
 #include "core/payload/payloadfieldvalue.h"
 #include "core/payload/payloadiface.h"
 #include "core/type_consts_helpers.h"
+#include "helpers.h"
 #include "tools/string_regexp_functions.h"
+#include "tools/unaligned.h"
 
 namespace {
 
-class ArrayAdapter {
-	class ConstIterator {
+class [[nodiscard]] ArrayAdapter {
+	class [[nodiscard]] ConstIterator {
 	public:
 		ConstIterator(const ArrayAdapter& aa, size_t i) noexcept : aa_{aa}, index_{i} {}
 		ConstIterator& operator++() noexcept {
@@ -33,26 +37,19 @@ public:
 		: ptr_{ptr}, len_{l}, sizeof_{size_of}, type_{t} {}
 	size_t size() const noexcept { return len_; }
 	reindexer::Variant operator[](size_t i) const {
+		using namespace reindexer;
 		assertrx_dbg(i < len_);
-		return type_.EvaluateOneOf(
-			[&](reindexer::KeyValueType::Int64) noexcept {
-				return reindexer::Variant{*reinterpret_cast<const int64_t*>(ptr_ + sizeof_ * i)};
-			},
-			[&](reindexer::KeyValueType::Double) noexcept {
-				return reindexer::Variant{*reinterpret_cast<const double*>(ptr_ + sizeof_ * i)};
-			},
-			[&](reindexer::KeyValueType::String) noexcept {
-				return reindexer::Variant{*reinterpret_cast<const reindexer::p_string*>(ptr_ + sizeof_ * i)};
-			},
-			[&](reindexer::KeyValueType::Bool) noexcept { return reindexer::Variant{*reinterpret_cast<const bool*>(ptr_ + sizeof_ * i)}; },
-			[&](reindexer::KeyValueType::Int) noexcept { return reindexer::Variant{*reinterpret_cast<const int*>(ptr_ + sizeof_ * i)}; },
-			[&](reindexer::KeyValueType::Uuid) noexcept {
-				return reindexer::Variant{*reinterpret_cast<const reindexer::Uuid*>(ptr_ + sizeof_ * i)};
-			},
-			[&](reindexer::OneOf<reindexer::KeyValueType::Null, reindexer::KeyValueType::Tuple, reindexer::KeyValueType::Composite,
-								 reindexer::KeyValueType::Undefined>) -> reindexer::Variant {
-				throw reindexer::Error{errQueryExec, "Field type %s is not supported for two field comparing", type_.Name()};
-			});
+		return type_.EvaluateOneOf([&](KeyValueType::Int64) noexcept { return Variant{unaligned::read<int64_t>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::Double) noexcept { return Variant{unaligned::read<double>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::Float) noexcept { return Variant{unaligned::read<float>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::String) noexcept { return Variant{unaligned::read<p_string>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::Bool) noexcept { return Variant{unaligned::read<bool>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::Int) noexcept { return Variant{unaligned::read<int>(ptr_ + sizeof_ * i)}; },
+								   [&](KeyValueType::Uuid) noexcept { return Variant{unaligned::read<Uuid>(ptr_ + sizeof_ * i)}; },
+								   [&](concepts::OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite,
+													   KeyValueType::Undefined, KeyValueType::FloatVector> auto) -> Variant {
+									   throw Error{errQueryExec, "Field type {} is not supported for two field comparing", type_.Name()};
+								   });
 	}
 	ConstIterator begin() const noexcept { return {*this, 0}; }
 	ConstIterator end() const noexcept { return {*this, len_}; }
@@ -84,12 +81,76 @@ FieldsComparator::FieldsComparator(std::string_view lField, CondType cond, std::
 		case CondAny:
 		case CondEmpty:
 		case CondDWithin:
-			throw Error{errQueryExec, "Condition %s is not supported for two field comparing", CondTypeToStr(condition_)};
+		case CondKnn:
+			throw Error{errQueryExec, "Condition {} is not supported for two field comparing", CondTypeToStr(condition_)};
 	}
 	ctx_.resize(1);
 	std::stringstream nameStream;
 	nameStream << lField << ' ' << condition_ << ' ' << rField;
 	name_ = nameStream.str();
+}
+
+void FieldsComparator::SetLeftField(const FieldsSet& fields) {
+	assertrx_throw(!leftFieldSet_);
+	setField(fields, ctx_[0].lCtx_);
+	leftFieldSet_ = true;
+}
+
+void FieldsComparator::SetRightField(const FieldsSet& fields) {
+	assertrx_throw(leftFieldSet_);
+	validateFieldsSizes(fields);
+	setField(fields, ctx_[0].rCtx_);
+}
+
+void FieldsComparator::SetLeftField(const FieldsSet& fset, KeyValueType type, IsArray isArray, const CollateOpts& cOpts) {
+	assertrx_throw(!leftFieldSet_);
+	collateOpts_ = &cOpts;
+	if (type.Is<KeyValueType::Composite>()) {
+		ctx_.clear();
+		ctx_.resize(fset.size());
+		setCompositeField<true>(fset);
+	} else {
+		setField(ctx_[0].lCtx_, fset, type, isArray);
+	}
+	leftFieldSet_ = true;
+}
+
+void FieldsComparator::SetRightField(const FieldsSet& fset, KeyValueType type, IsArray isArray) {
+	assertrx_throw(leftFieldSet_);
+	validateFieldsSizes(fset);
+	if (type.Is<KeyValueType::Composite>()) {
+		if (ctx_.size() != fset.size()) [[unlikely]] {
+			throw Error{errQueryExec, "Attempt to compare composite indexes with different size: {}", name_};
+		}
+		setCompositeField<false>(fset);
+	} else {
+		validateTypes(ctx_[0].lCtx_.type_, type);
+		setField(ctx_[0].rCtx_, fset, type, isArray);
+	}
+}
+
+void FieldsComparator::validateFieldsSizes(const FieldsSet& newFields) {
+	assertrx_dbg(leftFieldSet_);
+	if (ctx_.size() != newFields.size() && (ctx_.size() == 1 || newFields.size() == 1)) [[unlikely]] {
+		throw Error{errQueryExec, "Multifield composite index cannot be compared with single field: {}", name_};
+	}
+}
+
+void FieldsComparator::setField(const FieldsSet& fields, FieldContext& fctx) {
+	assertrx_dbg(fields.size() == 1);
+	assertrx_dbg(fields[0] == IndexValueType::SetByJsonPath);
+	setField(fields.getTagsPath(0), fctx);
+}
+
+void FieldsComparator::setField(FieldContext& fctx, FieldsSet fset, KeyValueType type, IsArray isArray) {
+	fctx.fields_ = std::move(fset);
+	fctx.type_ = type;
+	fctx.isArray_ = isArray;
+	if (fctx.fields_.getTagsPathsLength() == 0) {
+		const auto ft{payloadType_->Field(fctx.fields_[0])};
+		fctx.offset_ = ft.Offset();
+		fctx.sizeof_ = ft.ElemSizeof();
+	}
 }
 
 template <typename LArr, typename RArr>
@@ -104,22 +165,35 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 			}
 			for (const Variant& v : lhs) {
 				if constexpr (needCompareTypes) {
-					if (!compareTypes(v.Type(), rhs[0].Type()) || !compareTypes(v.Type(), rhs[1].Type())) {
+					if (!comparators::CompareFieldTypes(v.Type(), rhs[0].Type()) ||
+						!comparators::CompareFieldTypes(v.Type(), rhs[1].Type())) {
 						continue;
 					}
 				}
-				if ((v.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs[0], collateOpts) & ComparationResult::Ge) &&
-					(v.RelaxCompare<WithString::Yes, NotComparable::Throw>(rhs[1], collateOpts) & ComparationResult::Le)) {
+				if ((CompareForCondition<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(v, rhs[0], collateOpts) &
+					 ComparationResult::Ge) &&
+					(CompareForCondition<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(v, rhs[1], collateOpts) &
+					 ComparationResult::Le)) {
 					return true;
 				}
 			}
 			return false;
 		case CondLike:
+			if (lhs.size() == 0 || rhs.size() == 0) {
+				return false;
+			}
+			for (const Variant& value : lhs) {
+				if (!value.Type().Is<KeyValueType::String>()) {
+					throw Error{errQueryExec, "For condition LIKE fields should be of string type"};
+				}
+			}
+			for (const Variant& value : rhs) {
+				if (!value.Type().Is<KeyValueType::String>()) {
+					throw Error{errQueryExec, "For condition LIKE fields should be of string type"};
+				}
+			}
 			for (const Variant& lv : lhs) {
 				for (const Variant& rv : rhs) {
-					if (!lv.Type().Is<KeyValueType::String>() || !rv.Type().Is<KeyValueType::String>()) {
-						throw Error{errQueryExec, "For condition LIKE fields should be of string type"};
-					}
 					if (matchLikePattern(std::string_view(lv), std::string_view(rv))) {
 						return true;
 					}
@@ -127,6 +201,9 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 			}
 			return false;
 		case CondAllSet:
+			if (rhs.size() == 0) {
+				return false;
+			}
 			for (const Variant& rv : rhs) {
 				if (rv.Type().Is<KeyValueType::Null>()) {
 					continue;
@@ -137,11 +214,12 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 						continue;
 					}
 					if constexpr (needCompareTypes) {
-						if (!compareTypes(lv.Type(), rv.Type())) {
+						if (!comparators::CompareFieldTypes(lv.Type(), rv.Type())) {
 							continue;
 						}
 					}
-					if (lv.RelaxCompare<WithString::Yes, NotComparable::Throw>(rv, collateOpts) == ComparationResult::Eq) {
+					if (CompareForCondition<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(lv, rv, collateOpts) ==
+						ComparationResult::Eq) {
 						found = true;
 						break;
 					}
@@ -160,7 +238,6 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 		case CondSet:
 		case CondEmpty:
 		case CondDWithin:
-		default:
 			for (const Variant& lv : lhs) {
 				if (lv.Type().Is<KeyValueType::Null>()) {
 					continue;
@@ -170,11 +247,12 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 						continue;
 					}
 					if constexpr (needCompareTypes) {
-						if (!compareTypes(lv.Type(), rv.Type())) {
+						if (!comparators::CompareFieldTypes(lv.Type(), rv.Type())) {
 							continue;
 						}
 					}
-					const auto compRes = lv.RelaxCompare<WithString::Yes, NotComparable::Throw>(rv, collateOpts);
+					const auto compRes =
+						CompareForCondition<WithString::Yes, NotComparable::Throw, kWhereCompareNullHandling>(lv, rv, collateOpts);
 					switch (condition_) {
 						case CondEq:
 						case CondSet:
@@ -205,15 +283,19 @@ bool FieldsComparator::compare(const LArr& lhs, const RArr& rhs) const {
 						case CondAny:
 						case CondEmpty:
 						case CondDWithin:
-							throw Error{errQueryExec, "Condition %s is not supported for two field comparing", CondTypeToStr(condition_)};
+							throw Error{errQueryExec, "Condition {} is not supported for two field comparing", CondTypeToStr(condition_)};
 						case CondRange:
 						case CondAllSet:
 						case CondLike:
+						case CondKnn:
 							abort();
 					}
 				}
 			}
 			return false;
+		case CondKnn:
+		default:
+			throw_as_assert;
 	}
 }
 
@@ -227,8 +309,8 @@ bool FieldsComparator::compare(const PayloadValue& item, const Context& ctx) con
 			ConstPayload(payloadType_, item).GetByJsonPath(ctx.rCtx_.fields_.getTagsPath(0), rhs, ctx.rCtx_.type_);
 			result = compare(lhs, rhs);
 		} else if (ctx.rCtx_.isArray_) {
-			const PayloadFieldValue::Array* rArr = reinterpret_cast<PayloadFieldValue::Array*>(item.Ptr() + ctx.rCtx_.offset_);
-			result = compare(lhs, ArrayAdapter(item.Ptr() + rArr->offset, rArr->len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
+			const auto rArr = payload_access::readArrayMeta(item.Ptr(), ctx.rCtx_.offset_);
+			result = compare(lhs, ArrayAdapter(item.Ptr() + rArr.offset, rArr.len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 		} else {
 			result = compare(lhs, ArrayAdapter(item.Ptr() + ctx.rCtx_.offset_, 1, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 		}
@@ -236,25 +318,25 @@ bool FieldsComparator::compare(const PayloadValue& item, const Context& ctx) con
 		VariantArray rhs;
 		ConstPayload(payloadType_, item).GetByJsonPath(ctx.rCtx_.fields_.getTagsPath(0), rhs, ctx.rCtx_.type_);
 		if (ctx.lCtx_.isArray_) {
-			const PayloadFieldValue::Array* lArr = reinterpret_cast<PayloadFieldValue::Array*>(item.Ptr() + ctx.lCtx_.offset_);
-			result = compare(ArrayAdapter(item.Ptr() + lArr->offset, lArr->len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_), rhs);
+			const auto lArr = payload_access::readArrayMeta(item.Ptr(), ctx.lCtx_.offset_);
+			result = compare(ArrayAdapter(item.Ptr() + lArr.offset, lArr.len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_), rhs);
 		} else {
 			result = compare(ArrayAdapter(item.Ptr() + ctx.lCtx_.offset_, 1, ctx.lCtx_.sizeof_, ctx.lCtx_.type_), rhs);
 		}
 	} else if (ctx.lCtx_.isArray_) {
-		const PayloadFieldValue::Array* lArr = reinterpret_cast<PayloadFieldValue::Array*>(item.Ptr() + ctx.lCtx_.offset_);
+		const auto lArr = payload_access::readArrayMeta(item.Ptr(), ctx.lCtx_.offset_);
 		if (ctx.rCtx_.isArray_) {
-			const PayloadFieldValue::Array* rArr = reinterpret_cast<PayloadFieldValue::Array*>(item.Ptr() + ctx.rCtx_.offset_);
-			result = compare(ArrayAdapter(item.Ptr() + lArr->offset, lArr->len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
-							 ArrayAdapter(item.Ptr() + rArr->offset, rArr->len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
+			const auto rArr = payload_access::readArrayMeta(item.Ptr(), ctx.rCtx_.offset_);
+			result = compare(ArrayAdapter(item.Ptr() + lArr.offset, lArr.len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
+							 ArrayAdapter(item.Ptr() + rArr.offset, rArr.len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 		} else {
-			result = compare(ArrayAdapter(item.Ptr() + lArr->offset, lArr->len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
+			result = compare(ArrayAdapter(item.Ptr() + lArr.offset, lArr.len, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
 							 ArrayAdapter(item.Ptr() + ctx.rCtx_.offset_, 1, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 		}
 	} else if (ctx.rCtx_.isArray_) {
-		const PayloadFieldValue::Array* rArr = reinterpret_cast<PayloadFieldValue::Array*>(item.Ptr() + ctx.rCtx_.offset_);
+		const auto rArr = payload_access::readArrayMeta(item.Ptr(), ctx.rCtx_.offset_);
 		result = compare(ArrayAdapter(item.Ptr() + ctx.lCtx_.offset_, 1, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
-						 ArrayAdapter(item.Ptr() + rArr->offset, rArr->len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
+						 ArrayAdapter(item.Ptr() + rArr.offset, rArr.len, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
 	} else {
 		result = compare(ArrayAdapter(item.Ptr() + ctx.lCtx_.offset_, 1, ctx.lCtx_.sizeof_, ctx.lCtx_.type_),
 						 ArrayAdapter(item.Ptr() + ctx.rCtx_.offset_, 1, ctx.rCtx_.sizeof_, ctx.rCtx_.type_));
@@ -267,16 +349,38 @@ void FieldsComparator::validateTypes(KeyValueType lType, KeyValueType rType) con
 		return;
 	}
 	lType.EvaluateOneOf(
-		[&](KeyValueType::String) { throw Error{errQueryExec, "Cannot compare a string field with a non-string one: %s", name_}; },
-		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
-			if (!rType.Is<KeyValueType::Int>() && !rType.Is<KeyValueType::Int64>() && !rType.Is<KeyValueType::Double>()) {
-				throw Error{errQueryExec, "Cannot compare a numeric field with a non-numeric one: %s", name_};
+		[&](KeyValueType::String) { throw Error{errQueryExec, "Cannot compare a string field with a non-string one: {}", name_}; },
+		[&](concepts::OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Float> auto) {
+			if (!rType.Is<KeyValueType::Int>() && !rType.Is<KeyValueType::Int64>() && !rType.Is<KeyValueType::Double>() &&
+				!rType.Is<KeyValueType::Float>()) {
+				throw Error{errQueryExec, "Cannot compare a numeric field with a non-numeric one: {}", name_};
 			}
 		},
-		[&](KeyValueType::Bool) { throw Error{errQueryExec, "Cannot compare a boolean field with a non-boolean one: %s", name_}; },
-		[&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Uuid>) {
-			throw Error{errQueryExec, "Field of type %s cannot be compared with another field: %s", lType.Name(), name_};
+		[&](KeyValueType::Bool) { throw Error{errQueryExec, "Cannot compare a boolean field with a non-boolean one: {}", name_}; },
+		[&](concepts::OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Uuid,
+							KeyValueType::FloatVector> auto) {
+			throw Error{errQueryExec, "Field of type {} cannot be compared with another field: {}", lType.Name(), name_};
 		});
+}
+
+template <bool left>
+void FieldsComparator::setCompositeField(const FieldsSet& fields) {
+	size_t tagsPathIdx = 0;
+	for (size_t i = 0; i < fields.size(); ++i) {
+		const bool isRegularIndex = fields[i] != IndexValueType::SetByJsonPath && fields[i] < payloadType_.NumFields();
+		if (isRegularIndex) {
+			FieldsSet f;
+			f.push_back(fields[i]);
+			const auto ft{payloadType_.Field(fields[i])};
+			setField(left ? ctx_[i].lCtx_ : ctx_[i].rCtx_, std::move(f), ft.Type(), ft.IsArray());
+			if constexpr (!left) {
+				validateTypes(ctx_[i].lCtx_.type_, ctx_[i].rCtx_.type_);
+			}
+		} else {
+			assertrx_dbg(tagsPathIdx < fields.getTagsPathsLength());
+			setField(fields.getTagsPath(tagsPathIdx++), left ? ctx_[i].lCtx_ : ctx_[i].rCtx_);
+		}
+	}
 }
 
 }  // namespace reindexer

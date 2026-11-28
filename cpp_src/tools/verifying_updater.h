@@ -4,8 +4,8 @@
 
 namespace reindexer {
 
-template <typename BT, typename FT, FT BT::*field, void (BT::*Verify)() const>
-class VerifyingUpdater {
+template <typename BT, typename FT, FT BT::* field>
+class [[nodiscard]] VerifyingUpdater {
 	using BaseType = BT;
 	using FieldType = FT;
 
@@ -16,9 +16,10 @@ public:
 		touched_ = true;
 		return base_.*field;
 	}
+	// NOLINTNEXTLINE(bugprone-unsafe-to-allow-exceptions) Verification errors propagate only outside stack unwinding.
 	~VerifyingUpdater() noexcept(false) {
 		if (touched_ && std::uncaught_exceptions() == 0) {
-			(base_.*Verify)();
+			base_.Verify();
 		}
 	}
 

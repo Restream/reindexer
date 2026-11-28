@@ -1,0 +1,101 @@
+#include <benchmark/benchmark.h>
+
+#include "helpers.h"
+#include "knn_fixture.h"
+
+namespace reindexer_benchmarks {
+
+int BenchMain(int argc, char** argv) {
+	using namespace std::string_view_literals;
+	namespace knn_bench = reindexer_benchmarks::knn_bench;
+
+#ifdef HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
+	benchmark::MaybeReenterWithoutASLR(argc, argv);
+#endif	// HAVE_BENCH_MAYBE_REENTER_WITHOUT_ASLR
+
+	auto DB = InitBenchDB("knn_bench_test"sv);
+
+	knn_bench::KnnBench<knn_bench::IndexType::Hnsw, reindexer::VectorMetric::L2> hnswL2(DB.get(), "hnsw_l2_bench"sv);
+	auto err = hnswL2.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	knn_bench::KnnBench<knn_bench::IndexType::Hnsw, reindexer::VectorMetric::Cosine> hnswCosine(DB.get(), "hnsw_cosine_bench"sv);
+	err = hnswCosine.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	knn_bench::KnnBench<knn_bench::IndexType::Hnsw, reindexer::VectorMetric::InnerProduct> hnswInnerProduct(DB.get(),
+																											"hnsw_inner_product_bench"sv);
+	err = hnswInnerProduct.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	knn_bench::KnnBench<knn_bench::IndexType::Hnsw, reindexer::VectorMetric::L2> hnswL2Q(DB.get(), "quantized_hnsw_l2_bench"sv,
+																						 knn_bench::WithQuantization::Yes);
+	err = hnswL2Q.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	knn_bench::KnnBench<knn_bench::IndexType::Hnsw, reindexer::VectorMetric::Cosine> hnswCosineQ(DB.get(), "quantized_hnsw_cosine_bench"sv,
+																								 knn_bench::WithQuantization::Yes);
+	err = hnswCosineQ.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	knn_bench::KnnBench<knn_bench::IndexType::Hnsw, reindexer::VectorMetric::InnerProduct> hnswInnerProductQ(
+		DB.get(), "quantized_hnsw_inner_product_bench"sv, knn_bench::WithQuantization::Yes);
+	err = hnswInnerProductQ.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	knn_bench::KnnBench<knn_bench::IndexType::Ivf, reindexer::VectorMetric::L2> ivfL2(DB.get(), "ivf_l2_bench"sv);
+	err = ivfL2.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	knn_bench::KnnBench<knn_bench::IndexType::Ivf, reindexer::VectorMetric::Cosine> ivfCosine(DB.get(), "ivf_cosine_bench"sv);
+	err = ivfCosine.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	knn_bench::KnnBench<knn_bench::IndexType::Ivf, reindexer::VectorMetric::InnerProduct> ivfInnerProduct(DB.get(),
+																										  "ivf_inner_product_bench"sv);
+	err = ivfInnerProduct.Initialize();
+	if (!err.ok()) {
+		return err.code();
+	}
+
+	::benchmark::Initialize(&argc, argv);
+	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) {
+		return 1;
+	}
+
+	hnswL2.RegisterAllCases();
+	hnswCosine.RegisterAllCases();
+	hnswInnerProduct.RegisterAllCases();
+	hnswL2Q.RegisterAllCases();
+	hnswCosineQ.RegisterAllCases();
+	hnswInnerProductQ.RegisterAllCases();
+	ivfL2.RegisterAllCases();
+	ivfCosine.RegisterAllCases();
+	ivfInnerProduct.RegisterAllCases();
+
+	::benchmark::RunSpecifiedBenchmarks();
+	::benchmark::Shutdown();
+
+	return 0;
+}
+
+}  // namespace reindexer_benchmarks
+
+// NOLINTNEXTLINE (bugprone-exception-escape) `main` is required to be in global namespace
+int main(int argc, char** argv) { return reindexer_benchmarks::BenchMain(argc, argv); }

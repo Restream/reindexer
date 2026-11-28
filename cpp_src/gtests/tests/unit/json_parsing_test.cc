@@ -1,12 +1,23 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "core/reindexer.h"
-
+#include <tuple>
+#include "core/cjson/cjsonbuilder.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/cjson/jsondecoder.h"
+#include "core/keyvalue/float_vectors_holder.h"
+#include "core/reindexer.h"
+#include "estl/gift_str.h"
+#include "tools/errors.h"
+#include "vendor/gason/gason.h"
+
+namespace reindexer_tests {
 
 TEST(JSONParsingTest, EmptyDocument) {
 	reindexer::Reindexer rx;
 	constexpr std::string_view kNsName("json_empty_doc_test");
-	auto err = rx.OpenNamespace(kNsName);
+	auto err = rx.Connect("builtin://");
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rx.OpenNamespace(kNsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::Item item(rx.NewItem(kNsName));
@@ -53,7 +64,7 @@ TEST(JSONParsingTest, Strings) {
 		std::fill(strs[1].begin(), strs[1].end(), 'b');
 
 		std::string d("{\"id\":1,\"str0\":\"" + strs[0] + "\",\"str1\":\"" + strs[1] + "\",\"val\":999}");
-		reindexer::span<char> data(d);
+		std::span<char> data(d);
 		try {
 			gason::JsonParser parser;
 			auto root = parser.Parse(data, nullptr);
@@ -77,7 +88,7 @@ TEST(JSONParsingTest, LargeAllocations) {
 	jb.Put("mode", "mode");
 	auto arr = jb.Array("array");
 	for (int64_t i = 0; i < kArrElemsCnt; ++i) {
-		arr.Put(nullptr, reindexer::Variant{i});
+		arr.Put(reindexer::TagName::Empty(), reindexer::Variant{i});
 	}
 	arr.End();
 	jb.End();
@@ -88,6 +99,161 @@ TEST(JSONParsingTest, LargeAllocations) {
 	ASSERT_EQ(std::string_view(root["mode"].key), "mode");
 	for (auto el : root["array"]) {
 		ASSERT_EQ(std::string_view(el.key), std::string_view());
-		ASSERT_EQ(el.value.getTag(), gason::JSON_NUMBER);
+		ASSERT_EQ(el.value.getTag(), gason::JsonTag::NUMBER);
 	}
 }
+
+TEST(JSONParsingTest, TrailingData) {
+	using namespace std::string_view_literals;
+	for (auto json : {R"({"a":1})"sv, "{ \"a\" : 1 }\n\t "sv, "{\"a\":1}\0 \0"sv, "[1, 2] "sv, "true\n"sv, "42 "sv}) {
+		gason::JsonParser parser;
+		EXPECT_NO_THROW(parser.Parse(json)) << json;
+	}
+
+	struct {
+		std::string_view json;
+		size_t valueLength;
+		size_t tailPos;
+	} withTail[] = {
+		{R"({"a":1} asd)"sv, 7, 8},
+		{R"({"a":1} {"b":2})"sv, 7, 8},
+		{R"({"a":1}{"b":2}{"c":3})"sv, 7, 7},
+		{R"({"a":1},)"sv, 7, 7},
+		{"{\"a\":1}\0x"sv, 7, 8},
+		{"[1] [2]"sv, 3, 4},
+		{"true more but under baby"sv, 4, 5},
+		{"null more"sv, 4, 5},
+		{"42 more"sv, 2, 3},
+		{"1.5 more"sv, 3, 4},
+	};
+	for (const auto& [json, valueLength, tailPos] : withTail) {
+		gason::JsonParser parser;
+		try {
+			parser.Parse(json);
+			ADD_FAILURE() << json;
+		} catch (const gason::Exception& e) {
+			EXPECT_EQ(std::string_view(e.what()), "Error parsing json: unexpected character, pos " + std::to_string(tailPos)) << json;
+		}
+
+		size_t length = 0;
+		EXPECT_NO_THROW(parser.Parse(json, &length)) << json;
+		EXPECT_EQ(length, valueLength) << json;
+	}
+}
+
+TEST(JSONParsingTest, ParseExceptionStatus) {
+	// The parsing error keeps the parser's status and remains gason::Exception with the same message
+	struct {
+		std::string json;
+		gason::JsonErrno code;
+	} cases[] = {
+		{R"({"a":-x})", gason::JSON_BAD_NUMBER},
+		{R"({"a":"\q"})", gason::JSON_BAD_STRING},
+		{R"({"a":tru})", gason::JSON_BAD_IDENTIFIER},
+		{std::string(40, '['), gason::JSON_STACK_OVERFLOW},
+		{"]", gason::JSON_STACK_UNDERFLOW},
+		{R"({"a":1])", gason::JSON_MISMATCH_BRACKET},
+		{R"({"a":1} asd)", gason::JSON_UNEXPECTED_CHARACTER},
+		{"{1:2}", gason::JSON_UNQUOTED_KEY},
+		{R"({"a":1)", gason::JSON_BREAKING_BAD},
+	};
+	for (const auto& [json, code] : cases) {
+		for (bool inplace : {false, true}) {
+			std::string data(json);
+			gason::JsonParser parser;
+			try {
+				std::ignore = inplace ? parser.Parse(std::span<char>(data)) : parser.Parse(std::string_view(json));
+				ADD_FAILURE() << json << "; inplace: " << inplace;
+			} catch (const gason::ParseException& e) {
+				EXPECT_EQ(e.Code(), code) << json << "; inplace: " << inplace;
+				EXPECT_THAT(e.what(), ::testing::StartsWith(std::string("Error parsing json: ") + gason::jsonStrError(code) + ", pos "))
+					<< json << "; inplace: " << inplace;
+			}
+		}
+	}
+
+	gason::JsonParser parser;
+	EXPECT_THROW(parser.Parse(std::string_view("]")), gason::Exception);
+	EXPECT_THROW(parser.Parse(std::string_view("]")), std::runtime_error);
+
+	// The errors of the parsed nodes' access do not have the parser's status
+	const auto root = parser.Parse(std::string_view(R"({"a":1})"));
+	try {
+		std::ignore = root["a"].As<std::string>();
+		ADD_FAILURE();
+	} catch (const gason::Exception& e) {
+		EXPECT_EQ(dynamic_cast<const gason::ParseException*>(&e), nullptr) << e.what();
+	}
+}
+
+namespace {
+
+void decodeTopLevelJson(std::string_view json) {
+	reindexer::TagsMatcher tagsMatcher;
+	reindexer::FloatVectorsHolderVector floatVectors;
+	reindexer::ScalarIndexesSetT objectScalarIndexes;
+	reindexer::JsonDecoder decoder(tagsMatcher, floatVectors, objectScalarIndexes);
+	reindexer::WrSerializer ser;
+	reindexer::CJsonBuilder builder(ser, reindexer::ObjType::TypeObject, &tagsMatcher);
+	decoder.Decode(json, builder, reindexer::TagsPath{});
+}
+
+void expectDecodeError(std::string_view json, std::string_view message) {
+	try {
+		decodeTopLevelJson(json);
+		ADD_FAILURE() << json;
+	} catch (const reindexer::Error& err) {
+		EXPECT_EQ(err.code(), errParseJson) << json << ": " << err.what();
+		EXPECT_THAT(err.whatStr(), ::testing::HasSubstr(message)) << json;
+	}
+}
+
+}  // namespace
+
+TEST(JSONParsingTest, DecoderRejectsTrailingData) {
+	EXPECT_NO_THROW(decodeTopLevelJson(R"({"a":1})"));
+	EXPECT_NO_THROW(decodeTopLevelJson("{ \"a\" : 1 }\n\t "));
+	EXPECT_NO_THROW(decodeTopLevelJson(R"({"nested":{"x":true}})"));
+
+	constexpr std::string_view kTailError = "JSONDecoder: Error parsing json: unexpected character";
+	expectDecodeError(R"({"a":1} asd)", kTailError);
+	expectDecodeError(R"({"a":1} {"b":2})", kTailError);
+	expectDecodeError(R"({"a":1}{"b":2}{"c":3})", kTailError);
+	expectDecodeError("true more but under baby", kTailError);
+	expectDecodeError("42 more", kTailError);
+
+	constexpr std::string_view kNotAnObjectError = "Json node must be an object or array";
+	expectDecodeError("true\n", kNotAnObjectError);
+	expectDecodeError("null\t", kNotAnObjectError);
+	expectDecodeError("1.5\n", kNotAnObjectError);
+}
+
+TEST(JSONParsingTest, ItemTrailingData) {
+	reindexer::Reindexer rx;
+	constexpr std::string_view kNsName("json_item_tail_test");
+	auto err = rx.Connect("builtin://");
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rx.OpenNamespace(kNsName);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	for (bool unsafe : {false, true}) {
+		for (std::string_view json : {R"({"id":1} asd)", R"({"id":1} {"id":2})", R"({"id":1}{"id":2})"}) {
+			std::string data(json);
+			reindexer::Item item(rx.NewItem(kNsName));
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			err = item.Unsafe(unsafe).FromJSON(data);
+			EXPECT_EQ(err.code(), errParseJson) << json << "; unsafe: " << unsafe;
+
+			std::string batchData(json);
+			reindexer::Item batchItem(rx.NewItem(kNsName));
+			ASSERT_TRUE(batchItem.Status().ok()) << batchItem.Status().what();
+			char* endp = nullptr;
+			err = batchItem.Unsafe(unsafe).FromJSON(batchData, &endp);
+			ASSERT_TRUE(err.ok()) << json << "; unsafe: " << unsafe << "; " << err.what();
+			EXPECT_EQ(endp, batchData.data() + std::string_view(R"({"id":1})").size()) << json << "; unsafe: " << unsafe;
+			EXPECT_EQ(batchItem["id"].As<int>(), 1) << json << "; unsafe: " << unsafe;
+		}
+	}
+}
+
+}  // namespace reindexer_tests

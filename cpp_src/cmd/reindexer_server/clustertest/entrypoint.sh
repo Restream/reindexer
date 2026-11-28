@@ -48,6 +48,26 @@ if [ -n "$RX_PROMETHEUS" ]; then
     RX_ARGS="$RX_ARGS --prometheus"
 fi
 
+if [ -n "$RX_CORE_LOGLEVEL" ]; then
+    RX_ARGS="$RX_ARGS --core-loglevel $RX_CORE_LOGLEVEL"
+fi
+
+if [ -n "$RX_SERVER_LOGLEVEL" ]; then
+    RX_ARGS="$RX_ARGS --server-loglevel $RX_SERVER_LOGLEVEL"
+fi
+
+if [ -n "$RX_HTTP_LOGLEVEL" ]; then
+    RX_ARGS="$RX_ARGS --http-loglevel $RX_HTTP_LOGLEVEL"
+fi
+
+if [ -n "$RX_RPC_LOGLEVEL" ]; then
+    RX_ARGS="$RX_ARGS --rpc-loglevel $RX_RPC_LOGLEVEL"
+fi
+
+if [ -n "$RX_GRPC_LOGLEVEL" ]; then
+    RX_ARGS="$RX_ARGS --grpc-loglevel $RX_GRPC_LOGLEVEL"
+fi
+
 if [ -z "$@" ]; then
    reindexer_server --db "$RX_DATABASE" $RX_ARGS
 else 

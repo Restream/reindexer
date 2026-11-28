@@ -1,5 +1,7 @@
 #include "replicationstats.h"
+#include "cluster/consts.h"
 #include "core/cjson/jsonbuilder.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer {
 namespace cluster {
@@ -74,6 +76,8 @@ static std::string_view NodeSyncStateToStr(NodeStats::SyncState state) {
 			return "online_replication"sv;
 		case NodeStats::SyncState::InitialLeaderSync:
 			return "initial_leader_sync"sv;
+		case NodeStats::SyncState::Suspended:
+			return "suspended"sv;
 		default:;
 	}
 	return "none"sv;
@@ -89,6 +93,8 @@ static NodeStats::SyncState NodeSyncStateFromStr(std::string_view state) {
 		return NodeStats::SyncState::Syncing;
 	} else if (state == "initial_leader_sync"sv) {
 		return NodeStats::SyncState::InitialLeaderSync;
+	} else if (state == "suspended"sv) {
+		return NodeStats::SyncState::Suspended;
 	} else {
 		return NodeStats::SyncState::None;
 	}
@@ -100,6 +106,26 @@ static Error NodeErrorFromJson(const gason::JsonNode& lastErrorRoot) {
 	return Error(ErrorCode(code), what);
 }
 
+static void NodeErrorToJson(std::string_view name, const Error& err, JsonBuilder& builder) {
+	auto errorBuilder = builder.Object(name);
+	errorBuilder.Put("code"sv, int(err.code()));
+	errorBuilder.Put("message"sv, err.what());
+}
+
+void AsyncReplConfigStats::FromJSON(const gason::JsonNode& root) {
+	if (const auto& sourceIdNode = root["source_id"sv]; !sourceIdNode.isEmpty()) {
+		sourceId = sourceIdNode.As<int64_t>();
+	}
+	applyError = NodeErrorFromJson(root["apply_error"sv]);
+}
+
+void AsyncReplConfigStats::GetJSON(JsonBuilder& builder) const {
+	if (sourceId.has_value()) {
+		builder.Put("source_id"sv, *sourceId);
+	}
+	NodeErrorToJson("apply_error"sv, applyError, builder);
+}
+
 void NodeStats::FromJSON(const gason::JsonNode& root) {
 	dsn = DSN(root["dsn"sv].As<std::string>());
 	serverId = root["server_id"sv].As<int>(-1);
@@ -107,8 +133,15 @@ void NodeStats::FromJSON(const gason::JsonNode& root) {
 	status = NodeStatusFromStr(root["status"sv].As<std::string_view>("none"sv));
 	role = RaftInfo::RoleFromStr(root["role"sv].As<std::string_view>("follower"sv));
 	isSynchronized = root["is_synchronized"sv].As<bool>(false);
+	nssSyncQueue = root["queued_namespace_syncs"sv].As<size_t>(0);
 	syncState = NodeSyncStateFromStr(root["sync_state"sv].As<std::string_view>("none"sv));
 	lastError = NodeErrorFromJson(root["last_error"sv]);
+	if (const auto& asyncReplConfigNode = root["async_replication_config"sv]; !asyncReplConfigNode.isEmpty()) {
+		asyncReplConfig.emplace().FromJSON(asyncReplConfigNode);
+	}
+	for (auto& dsnNode : root["dsns"sv]) {
+		dsns.emplace_back(dsnNode.As<std::string>());
+	}
 	for (auto& ns : root["namespaces"sv]) {
 		namespaces.emplace_back(ns.As<std::string>());
 	}
@@ -116,31 +149,38 @@ void NodeStats::FromJSON(const gason::JsonNode& root) {
 
 void NodeStats::GetJSON(JsonBuilder& builder) const {
 	builder.Put("dsn"sv, dsn);
+	if (!dsns.empty()) {
+		auto dsnsArray = builder.Array("dsns"sv);
+		for (const auto& clusterDsn : dsns) {
+			dsnsArray.Put(TagName::Empty(), clusterDsn);
+		}
+	}
 	builder.Put("server_id"sv, serverId);
 	builder.Put("pending_updates_count"sv, updatesCount);
 	builder.Put("status"sv, NodeStatusToStr(status));
 	builder.Put("role"sv, RaftInfo::RoleToStr(role));
 	builder.Put("sync_state"sv, NodeSyncStateToStr(syncState));
 	builder.Put("is_synchronized"sv, isSynchronized);
-	{
-		auto lastErrorJsonBuilder = builder.Object("last_error"sv);
-		lastErrorJsonBuilder.Put("code"sv, int(lastError.code()));
-		lastErrorJsonBuilder.Put("message"sv, lastError.what());
-	}
+	builder.Put("queued_namespace_syncs"sv, nssSyncQueue);
+	NodeErrorToJson("last_error"sv, lastError, builder);
 	{
 		auto nsArray = builder.Array("namespaces"sv);
 		for (auto& ns : namespaces) {
-			nsArray.Put(nullptr, ns);
+			nsArray.Put(TagName::Empty(), ns);
 		}
+	}
+	if (asyncReplConfig.has_value()) {
+		auto asyncReplConfigBuilder = builder.Object("async_replication_config"sv);
+		asyncReplConfig->GetJSON(asyncReplConfigBuilder);
 	}
 }
 
-Error ReplicationStats::FromJSON(span<char> json) {
+Error ReplicationStats::FromJSON(std::span<char> json) {
 	try {
 		gason::JsonParser parser;
 		return FromJSON(parser.Parse(json));
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "RaftInfo: %s", ex.what());
+		return Error(errParseJson, "RaftInfo: {}", ex.what());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -168,7 +208,7 @@ Error ReplicationStats::FromJSON(const gason::JsonNode& root) {
 	} catch (const Error& err) {
 		return err;
 	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "RaftInfo: %s", ex.what());
+		return Error(errParseJson, "RaftInfo: {}", ex.what());
 	}
 	return errOK;
 }
@@ -206,10 +246,26 @@ void ReplicationStats::GetJSON(WrSerializer& ser) const {
 	GetJSON(jb);
 }
 
+void SyncStatsCounter::Hit(std::chrono::microseconds time) noexcept {
+	lock_guard lck(mtx_);
+	totalTimeUs += time.count();
+	++count;
+	if (maxTimeUs < time.count()) {
+		maxTimeUs = time.count();
+	}
+}
+
+void SyncStatsCounter::Reset() noexcept {
+	lock_guard lck(mtx_);
+	count = 0;
+	maxTimeUs = 0;
+	totalTimeUs = 0;
+}
+
 SyncStats SyncStatsCounter::Get() const {
 	SyncStats stats;
 	{
-		std::lock_guard lck(mtx_);
+		lock_guard lck(mtx_);
 		stats.count = count;
 		stats.maxTimeUs = maxTimeUs;
 		stats.avgTimeUs = totalTimeUs / (count ? count : 1);
@@ -217,19 +273,133 @@ SyncStats SyncStatsCounter::Get() const {
 	return stats;
 }
 
+void NodeStatsCounter::SaveLastError(const Error& err) noexcept {
+	lock_guard lck(mtx_);
+	lastError = err;
+}
+
+void NodeStatsCounter::SaveAsyncReplConfig(const AsyncReplConfigStats& stats) noexcept {
+	lock_guard lck(mtx_);
+	asyncReplConfig = stats;
+}
+
 NodeStats NodeStatsCounter::Get() const {
-	NodeStats stats;
-	stats.dsn = dsn;
+	NodeStats stats{};
+	const size_t activeIdx = activeDsnIdx.load(std::memory_order_relaxed);
+	stats.dsn = (activeIdx == kNoActiveDsn) ? dsn : clusterDsns[activeIdx];
+	stats.dsns = clusterDsns;
 	stats.namespaces = namespaces;
-	stats.updatesCount = 0;
 	stats.serverId = serverId.load(std::memory_order_relaxed);
 	stats.status = status.load(std::memory_order_relaxed);
 	stats.syncState = syncState.load(std::memory_order_relaxed);
-	stats.lastError = GetLastError();
+	stats.role = RaftInfo::Role::None;
+	stats.isSynchronized = false;
+	stats.nssSyncQueue = nssSyncQueueSize.load(std::memory_order_relaxed);
+	lock_guard lck(mtx_);
+	stats.lastError = lastError;
+	stats.asyncReplConfig = asyncReplConfig;
 	return stats;
 }
 
-ReplicationStats ReplicationStatCounter::Get() const {
+void ReplicationStatCounter::OnStatusChanged(size_t nodeId, NodeStats::Status status) const noexcept {
+	shared_lock rlck(mtx_);
+	auto found = nodeCounters_.find(nodeId);
+	assertf_dbg(found != nodeCounters_.end(), "nodeId={}", nodeId);
+	if (found != nodeCounters_.end()) {
+		found->second->OnStatusChanged(status);
+	}
+}
+
+void ReplicationStatCounter::OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) noexcept {
+	shared_lock rlck(mtx_);
+	if (nodeId == kLeaderUID && thisNode_.has_value()) {
+		thisNode_->OnSyncStateChanged(state);
+		assertrx_dbg(state != NodeStats::SyncState::OnlineReplication || thisNode_->nssSyncQueueSize.load(std::memory_order_relaxed) == 0);
+	} else if (auto found = nodeCounters_.find(nodeId); found != nodeCounters_.end()) {
+		auto& node = *found->second;
+		node.OnSyncStateChanged(state);
+		assertrx_dbg(state != NodeStats::SyncState::OnlineReplication || node.nssSyncQueueSize.load(std::memory_order_relaxed) == 0);
+	} else {
+		assertf_dbg(false, "nodeId={}", nodeId);
+	}
+}
+
+void ReplicationStatCounter::OnNamespaceSynchronized(size_t nodeId) noexcept {
+	shared_lock rlck(mtx_);
+	if (nodeId == kLeaderUID && thisNode_.has_value()) {
+		thisNode_->OnNamespaceSynchronized();
+	} else if (auto found = nodeCounters_.find(nodeId); found != nodeCounters_.end()) {
+		found->second->OnNamespaceSynchronized();
+	} else {
+		assertf_dbg(false, "nodeId={}", nodeId);
+	}
+}
+
+void ReplicationStatCounter::OnEnqueueNamespacesSync(size_t nodeId, size_t count) noexcept {
+	shared_lock rlck(mtx_);
+	if (nodeId == kLeaderUID && thisNode_.has_value()) {
+		thisNode_->OnEnqueueNamespacesSync(count);
+	} else if (auto found = nodeCounters_.find(nodeId); found != nodeCounters_.end()) {
+		found->second->OnEnqueueNamespacesSync(count);
+	} else {
+		assertf_dbg(false, "nodeId={}", nodeId);
+	}
+}
+
+void ReplicationStatCounter::OnServerIdChanged(size_t nodeId, int serverId) const noexcept {
+	shared_lock rlck(mtx_);
+	auto found = nodeCounters_.find(nodeId);
+	assertf_dbg(found != nodeCounters_.end(), "nodeId={}", nodeId);
+	if (found != nodeCounters_.end()) {
+		found->second->OnServerIdChanged(serverId);
+	}
+}
+
+void ReplicationStatCounter::OnActiveDsnChanged(size_t nodeId, std::optional<size_t> dsnIdx) const noexcept {
+	shared_lock rlck(mtx_);
+	auto found = nodeCounters_.find(nodeId);
+	assertf_dbg(found != nodeCounters_.end(), "nodeId={}", nodeId);
+	if (found != nodeCounters_.end()) {
+		found->second->OnActiveDsnChanged(dsnIdx);
+	}
+}
+
+void ReplicationStatCounter::SaveNodeError(size_t nodeId, const Error& lastError) noexcept {
+	shared_lock rlck(mtx_);
+	auto found = nodeCounters_.find(nodeId);
+	assertf_dbg(found != nodeCounters_.end(), "nodeId={}", nodeId);
+	if (found != nodeCounters_.end()) {
+		found->second->SaveLastError(lastError);
+	}
+}
+
+void ReplicationStatCounter::SaveNodeAsyncReplConfig(size_t nodeId, const AsyncReplConfigStats& stats) noexcept {
+	shared_lock rlck(mtx_);
+	auto found = nodeCounters_.find(nodeId);
+	assertf_dbg(found != nodeCounters_.end(), "nodeId={}", nodeId);
+	if (found != nodeCounters_.end()) {
+		found->second->SaveAsyncReplConfig(stats);
+	}
+}
+
+void ReplicationStatCounter::Clear() noexcept {
+	walSyncs_.Reset();
+	forceSyncs_.Reset();
+	initialForceSyncs_.Reset();
+	initialWalSyncs_.Reset();
+
+	lock_guard lck(mtx_);
+	nodeCounters_.clear();
+	updatesDrops_.store(0, std::memory_order_relaxed);
+	lastPushedUpdateId_.store(-1, std::memory_order_relaxed);
+	lastErasedUpdateId_.store(-1, std::memory_order_relaxed);
+	lastReplicatedUpdateId_.store(-1, std::memory_order_relaxed);
+	allocatedUpdatesSizeBytes_.store(0, std::memory_order_relaxed);
+	initialSyncTotalTimeUs_.store(0, std::memory_order_relaxed);
+	thisNode_.reset();
+}
+
+ReplicationStats ReplicationStatCounter::Get(const ThisNodeOverrides& thisNodeOverrides) const {
 	ReplicationStats stats;
 	stats.type = type_;
 
@@ -245,16 +415,18 @@ ReplicationStats ReplicationStatCounter::Get() const {
 	stats.initialSync.walSyncs = initialWalSyncs_.Get();
 	stats.initialSync.forceSyncs = initialForceSyncs_.Get();
 	stats.initialSync.totalTimeUs = initialSyncTotalTimeUs_.load(std::memory_order_relaxed);
-	stats.nodeStats.reserve(thisNode_.has_value() ? nodeCounters_.size() + 1 : nodeCounters_.size());
 	for (auto& nodeCounter : nodeCounters_) {
 		stats.nodeStats.emplace_back(nodeCounter.second->Get());
-		const auto lastAppliedId = nodeCounter.second->lastAppliedUpdateId_.load(std::memory_order_relaxed);
+		const auto lastAppliedId = nodeCounter.second->lastAppliedUpdateId.load(std::memory_order_relaxed);
 		auto& lastNode = stats.nodeStats.back();
 		lastNode.updatesCount = getUpdatesCountById(lastPushedUpdateId_.load(std::memory_order_relaxed), lastAppliedId);
 		lastNode.isSynchronized = false;
 	}
 	if (thisNode_.has_value()) {
-		stats.nodeStats.emplace_back(thisNode_->Get());
+		auto& node = stats.nodeStats.emplace_back(thisNode_->Get());
+		node.isSynchronized = false;
+		node.lastError = thisNodeOverrides.lastError;
+		node.asyncReplConfig = thisNodeOverrides.asyncReplConfig;
 	}
 	return stats;
 }

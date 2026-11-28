@@ -1,11 +1,12 @@
 #pragma once
 
 #include "replicationstats.h"
+#include "tools/clock.h"
 
 namespace reindexer {
 namespace cluster {
 
-class ReplicationStatsCollector {
+class [[nodiscard]] ReplicationStatsCollector {
 public:
 	ReplicationStatsCollector() = default;
 	ReplicationStatsCollector(std::string type) : counter_(new ReplicationStatCounter(std::move(type))), owner_(true) {}
@@ -104,19 +105,39 @@ public:
 			counter_->OnServerIdChanged(nodeId, serverId);
 		}
 	}
+	void OnActiveDsnChanged(size_t nodeId, std::optional<size_t> dsnIdx) noexcept {
+		if (counter_) {
+			counter_->OnActiveDsnChanged(nodeId, dsnIdx);
+		}
+	}
+	void OnNamespaceSynchronized(size_t nodeId) noexcept {
+		if (counter_) {
+			counter_->OnNamespaceSynchronized(nodeId);
+		}
+	}
+	void OnEnqueueNamespacesSync(size_t nodeId, size_t count) noexcept {
+		if (counter_) {
+			counter_->OnEnqueueNamespacesSync(nodeId, count);
+		}
+	}
 	void SaveNodeError(size_t nodeId, const Error& err) {
 		if (counter_) {
 			counter_->SaveNodeError(nodeId, err);
 		}
 	}
-	void Reset() {
+	void SaveNodeAsyncReplConfig(size_t nodeId, const AsyncReplConfigStats& stats) noexcept {
 		if (counter_) {
-			counter_->Reset();
+			counter_->SaveNodeAsyncReplConfig(nodeId, stats);
 		}
 	}
-	ReplicationStats Get() const {
+	void Clear() {
 		if (counter_) {
-			return counter_->Get();
+			counter_->Clear();
+		}
+	}
+	ReplicationStats Get(const ReplicationStatCounter::ThisNodeOverrides& thisNodeOverrides = {}) const {
+		if (counter_) {
+			return counter_->Get(thisNodeOverrides);
 		} else {
 			return ReplicationStats();
 		}
@@ -127,9 +148,9 @@ private:
 	bool owner_ = false;
 };
 
-class SyncTimeCounter {
+class [[nodiscard]] SyncTimeCounter {
 public:
-	enum class Type { ForceSync, WalSync, InitialForceSync, InitialWalSync };
+	enum class [[nodiscard]] Type { ForceSync, WalSync, InitialForceSync, InitialWalSync };
 
 	SyncTimeCounter(Type type, ReplicationStatsCollector& statsCollector) noexcept
 		: tmStart_(steady_clock_w::now()), statsCollector_(statsCollector), type_(type) {}

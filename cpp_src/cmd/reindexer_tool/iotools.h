@@ -9,7 +9,7 @@ namespace reindexer_tool {
 
 using reindexer::Error;
 
-class Output {
+class [[nodiscard]] Output {
 public:
 	Output() : isCout_(true), errState_(0) {}
 	Output(const std::string& filePath) : f_(filePath, std::ios::out | std::ios::trunc), isCout_(filePath.empty()) {
@@ -18,12 +18,12 @@ public:
 
 	std::ostream& operator()() {
 		if (!isCout_ && !f_.is_open()) {
-			throw Error(errLogic, "%s", strerror(errState_));
+			throw Error(errLogic, "{}", strerror(errState_));
 		}
 		return isCout_ ? std::cout : f_;
 	}
 
-	Error Status() const { return errState_ ? Error(errLogic, "%s", strerror(errState_)) : Error{}; }
+	Error Status() const { return errState_ ? Error(errLogic, "{}", strerror(errState_)) : Error{}; }
 	bool IsCout() const { return isCout_; }
 
 private:
@@ -32,9 +32,9 @@ private:
 	int errState_;
 };
 
-class LineParser {
+class [[nodiscard]] LineParser {
 public:
-	LineParser(const std::string& line) : line_(line), cur_(line.data()) {}
+	LineParser(std::string_view line) : line_(line), cur_(line.data()) {}
 	std::string_view NextToken() {
 		while (*cur_ == ' ' || *cur_ == '\t') {
 			cur_++;
@@ -55,7 +55,7 @@ public:
 	std::string_view CurPtr() { return std::string_view(cur_, line_.size() - (cur_ - line_.data())); }
 
 protected:
-	const std::string& line_;
+	const std::string_view line_;
 	const char* cur_;
 };
 

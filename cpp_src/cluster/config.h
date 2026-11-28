@@ -1,10 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
-#include <optional>
+#include <span>
 #include "core/keyvalue/variant.h"
 #include "core/namespace/namespacenamesets.h"
-#include "estl/span.h"
 #include "sharding/ranges.h"
 #include "tools/dsn.h"
 #include "tools/errors.h"
@@ -19,8 +19,15 @@ class Node;
 
 namespace reindexer {
 
-class JsonBuilder;
 class WrSerializer;
+
+constexpr char kAsyncReplicationCfgName[] = "async_replication";
+constexpr char kAsyncReplicationNodesCfgName[] = "nodes";
+constexpr char kAsyncReplicationDSNCfgName[] = "dsn";
+constexpr char kAsyncReplicationDSNsCfgName[] = "dsns";
+constexpr char kShardingCfgName[] = "sharding";
+constexpr char kShardingShardsCfgName[] = "shards";
+constexpr char kShardingDSNsCfgName[] = "dsns";
 
 namespace cluster {
 
@@ -29,26 +36,35 @@ constexpr auto kStatusCmdTimeout = std::chrono::seconds(3);
 constexpr size_t kMaxRetriesOnRoleSwitchAwait = 50;
 constexpr auto kRoleSwitchStepTime = std::chrono::milliseconds(150);
 
-struct NodeData {
+enum class [[nodiscard]] LeaderCommitState : uint8_t {
+	Unspecified,  // JSON key absent: SuggestLeader / legacy peer
+	Election,	  // phase-2 LeadersPing (leader_committed=false)
+	Committed	  // committed leader heartbeat (leader_committed=true)
+};
+
+[[nodiscard]] constexpr bool GrantsCommittedAvailability(LeaderCommitState state) noexcept { return state != LeaderCommitState::Election; }
+
+struct [[nodiscard]] NodeData {
 	int serverId = -1;
 	int electionsTerm = 0;
 	DSN dsn;
+	LeaderCommitState leaderCommitState = LeaderCommitState::Unspecified;
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode& v);
 	void GetJSON(JsonBuilder& jb) const;
 	void GetJSON(WrSerializer& ser) const;
 };
 
-struct RaftInfo {
-	enum class Role : uint8_t { None, Leader, Follower, Candidate };
+struct [[nodiscard]] RaftInfo {
+	enum class [[nodiscard]] Role : uint8_t { None, Leader, Follower, Candidate };
 	int32_t leaderId = -1;
 	Role role = Role::None;
 
 	bool operator==(const RaftInfo& rhs) const noexcept { return role == rhs.role && leaderId == rhs.leaderId; }
 	bool operator!=(const RaftInfo& rhs) const noexcept { return !(*this == rhs); }
 
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& jb) const;
 	void GetJSON(WrSerializer& ser) const;
@@ -56,25 +72,26 @@ struct RaftInfo {
 	static Role RoleFromStr(std::string_view);
 };
 
-struct ClusterNodeConfig {
+struct [[nodiscard]] ClusterNodeConfig {
 	int GetServerID() const noexcept { return serverId; }
 	const DSN& GetRPCDsn() const noexcept { return dsn; }
 	const DSN& GetManagementDsn() const noexcept { return dsn; }
 	void FromYAML(const YAML::Node& yaml);
 
-	bool operator==(const ClusterNodeConfig& rdata) const noexcept { return (serverId == rdata.serverId) && (dsn == rdata.dsn); }
+	bool operator==(const ClusterNodeConfig& rdata) const noexcept(noexcept(dsn == rdata.dsn)) {
+		return (serverId == rdata.serverId) && (dsn == rdata.dsn);
+	}
 
 	int serverId = -1;
 	DSN dsn;
 };
 
 struct AsyncReplConfigData;
-enum class AsyncReplicationMode { Default, FromClusterLeader };
-enum class MaskingDSN : bool { Disabled = false, Enabled = true };
+enum class [[nodiscard]] MaskingDSN : bool { Disabled = false, Enabled = true };
 
-class AsyncReplNodeConfig {
+class [[nodiscard]] AsyncReplNodeConfig {
 public:
-	class NamespaceListImpl {
+	class [[nodiscard]] NamespaceListImpl {
 	public:
 		NamespaceListImpl() {}
 		NamespaceListImpl(NsNamesHashSetT&& n) : data(std::move(n)) {}
@@ -88,10 +105,11 @@ public:
 	using NamespaceList = intrusive_atomic_rc_wrapper<NamespaceListImpl>;
 
 	AsyncReplNodeConfig() = default;
-	AsyncReplNodeConfig(DSN _dsn) : dsn(std::move(_dsn)) {}
+	AsyncReplNodeConfig(DSN dsn) : dsns_{std::move(dsn)} {}
 
-	int GetServerID() const noexcept { return -1; }
-	const DSN& GetRPCDsn() const { return dsn; }
+	const std::vector<DSN>& GetDSNs() const& noexcept { return dsns_; }
+	auto GetDSNs() const&& = delete;
+	bool IsClusterTarget() const noexcept { return dsns_.size() > 1; }
 	void FromYAML(const YAML::Node& yaml);
 	void FromJSON(const gason::JsonNode& root);
 	void GetJSON(JsonBuilder& jb, MaskingDSN) const;
@@ -117,56 +135,43 @@ public:
 		}
 		return nss;
 	}
-	void SetReplicationMode(AsyncReplicationMode mode) noexcept { replicationMode_ = mode; }
-	const std::optional<AsyncReplicationMode>& GetReplicationMode() const noexcept { return replicationMode_; }
-
-	bool operator==(const AsyncReplNodeConfig& rdata) const noexcept {
-		return (dsn == rdata.dsn) && nsListsAreEqual(rdata) && replicationModesAreEqual(rdata);
+	bool operator==(const AsyncReplNodeConfig& rdata) const noexcept(noexcept(dsns_ == rdata.dsns_)) {
+		return (dsns_ == rdata.dsns_) && nsListsAreEqual(rdata);
 	}
-
-	DSN dsn;
+	// The node without its own namespaces list replicates the config's one
+	bool HasSameReplication(const AsyncReplNodeConfig& rdata) const noexcept(noexcept(dsns_ == rdata.dsns_)) {
+		return (dsns_ == rdata.dsns_) &&
+			   (namespaces_ == rdata.namespaces_ || (namespaces_ && rdata.namespaces_ && *namespaces_ == *rdata.namespaces_));
+	}
 
 private:
 	bool nsListsAreEqual(const AsyncReplNodeConfig& rdata) const noexcept {
 		return (!hasOwnNsList_ && !rdata.hasOwnNsList_) || (!rdata.namespaces_ && !namespaces_) ||
 			   (hasOwnNsList_ && rdata.hasOwnNsList_ && rdata.namespaces_ && namespaces_ && *rdata.namespaces_ == *namespaces_);
 	}
-	bool replicationModesAreEqual(const AsyncReplNodeConfig& rdata) const noexcept {
-		return (!replicationMode_.has_value() && !rdata.replicationMode_.has_value()) || replicationMode_ == rdata.replicationMode_;
-	}
 
+	// DSN of the target node or DSNs of all the nodes of the target RAFT cluster (at least kMinClusterSize)
+	std::vector<DSN> dsns_;
 	intrusive_ptr<NamespaceList> namespaces_;
 	bool hasOwnNsList_ = false;
-	std::optional<AsyncReplicationMode> replicationMode_;
 };
 
 constexpr size_t kDefaultClusterProxyConnCount = 8;
 constexpr size_t kDefaultClusterProxyCoroPerConn = 4;
 constexpr size_t kDefaultClusterProxyConnThreads = 2;
 
-struct ClusterConfigData {
+struct [[nodiscard]] ClusterConfigData {
 	Error FromYAML(const std::string& yaml);
 
-	bool operator==(const ClusterConfigData& rdata) const noexcept {
-		return (nodes == rdata.nodes) && (retrySyncIntervalMSec == rdata.retrySyncIntervalMSec) &&
-			   (onlineUpdatesTimeoutSec == rdata.onlineUpdatesTimeoutSec) && (enableCompression == rdata.enableCompression) &&
-			   (appName == rdata.appName) && (replThreadsCount == rdata.replThreadsCount) &&
-			   (parallelSyncsPerThreadCount == rdata.parallelSyncsPerThreadCount) &&
-			   (batchingRoutinesCount == rdata.batchingRoutinesCount) && (leaderSyncThreads == rdata.leaderSyncThreads) &&
-			   (leaderSyncConcurrentSnapshotsPerNode == rdata.leaderSyncConcurrentSnapshotsPerNode) &&
-			   (syncTimeoutSec == rdata.syncTimeoutSec) && (proxyConnCount == rdata.proxyConnCount) &&
-			   (proxyConnConcurrency == rdata.proxyConnConcurrency) && (proxyConnThreads == rdata.proxyConnThreads) &&
-			   (logLevel == rdata.logLevel);
-	}
-	bool operator!=(const ClusterConfigData& rdata) const noexcept { return !operator==(rdata); }
+	bool operator==(const ClusterConfigData& rdata) const noexcept = default;
 
-	unsigned int GetNodeIndexForServerId(int serverId) const {
+	bool NodeIndexExistsForServerId(int serverId) const noexcept {
 		for (unsigned int i = 0; i < nodes.size(); ++i) {
 			if (nodes[i].serverId == serverId) {
-				return i;
+				return true;
 			}
 		}
-		throw Error(errLogic, "Cluster config. Cannot find node index for ServerId(%d)", serverId);
+		return false;
 	}
 
 	std::vector<ClusterNodeConfig> nodes;
@@ -186,18 +191,19 @@ struct ClusterConfigData {
 	int proxyConnConcurrency = kDefaultClusterProxyCoroPerConn;
 	int proxyConnThreads = kDefaultClusterProxyConnThreads;
 	LogLevel logLevel = LogInfo;
+	std::string selfReplToken;
 };
 
 constexpr uint32_t kDefaultShardingProxyConnCount = 8;
 constexpr uint32_t kDefaultShardingProxyCoroPerConn = 8;
 constexpr uint32_t kDefaultShardingProxyConnThreads = 4;
 
-struct ShardingConfig {
+struct [[nodiscard]] ShardingConfig {
 	static constexpr unsigned serverIdPos = 53;
 	static constexpr int64_t serverIdMask = (((1ll << 10) - 1) << serverIdPos);	 // 01111111111000...000
 	static constexpr auto kDefaultRollbackTimeout = std::chrono::seconds(30);
 
-	struct Key {
+	struct [[nodiscard]] Key {
 		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<DSN>>& shards, KeyValueType& valuesType,
 					   std::vector<sharding::Segment<Variant>>& checkVal);
 		Error FromJSON(const gason::JsonNode&, KeyValueType& valuesType, std::vector<sharding::Segment<Variant>>& checkVal);
@@ -207,8 +213,8 @@ struct ShardingConfig {
 		int shardId = ShardingKeyType::ProxyOff;
 		ShardingAlgorithmType algorithmType = ByValue;
 
-		sharding::Segment<Variant> SegmentFromYAML(const YAML::Node& yaml);
-		sharding::Segment<Variant> SegmentFromJSON(const gason::JsonNode& json);
+		sharding::Segment<Variant> SegmentFromYAML(const YAML::Node& yaml, int shardId);
+		sharding::Segment<Variant> SegmentFromJSON(const gason::JsonNode& json, int shardId);
 		ComparationResult RelaxCompare(const std::vector<sharding::Segment<Variant>>&,
 									   const CollateOpts& collateOpts = CollateOpts()) const;
 		std::vector<sharding::Segment<Variant>> values{};
@@ -217,7 +223,7 @@ struct ShardingConfig {
 		Error checkValue(const sharding::Segment<Variant>& val, KeyValueType& valuesType,
 						 const std::vector<sharding::Segment<Variant>>& checkVal);
 	};
-	struct Namespace {
+	struct [[nodiscard]] Namespace {
 		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<DSN>>& shards);
 		Error FromJSON(const gason::JsonNode&);
 		void GetYAML(YAML::Node&) const;
@@ -229,7 +235,8 @@ struct ShardingConfig {
 	};
 
 	Error FromYAML(const std::string& yaml);
-	Error FromJSON(span<char> json);
+	Error FromJSON(std::string_view json);
+	Error FromJSON(std::span<char> json);
 	Error FromJSON(const gason::JsonNode&);
 	std::string GetYAML() const;
 	YAML::Node GetYAMLObj() const;
@@ -254,23 +261,34 @@ inline bool operator!=(const ShardingConfig& l, const ShardingConfig& r) { retur
 bool operator==(const ShardingConfig::Key&, const ShardingConfig::Key&);
 bool operator==(const ShardingConfig::Namespace&, const ShardingConfig::Namespace&);
 
-struct AsyncReplConfigData {
-	using NamespaceList = AsyncReplNodeConfig::NamespaceList;
-	enum class Role { None, Leader, Follower };
+// Source ID of the distributed configs (sharding, async replication): timestamp (microseconds) with the generating node's server ID in
+// the high bits
+class [[nodiscard]] ConfigSourceId {
+public:
+	static int64_t Generate(int serverId, int64_t lastId);
+	static bool IsNewer(int64_t id, int64_t than) noexcept { return timestamp(id) > timestamp(than); }
 
+private:
+	static int64_t timestamp(int64_t id) noexcept { return id & ~ShardingConfig::serverIdMask; }
+};
+
+struct [[nodiscard]] AsyncReplConfigData {
+	using NamespaceList = AsyncReplNodeConfig::NamespaceList;
+	enum class [[nodiscard]] Role { None, Leader, Follower };
+
+	Error FromDefault() noexcept;
 	Error FromYAML(const std::string& yml);
 	Error FromJSON(std::string_view json);
 	Error FromJSON(const gason::JsonNode& v);
 	void GetJSON(JsonBuilder& jb, MaskingDSN) const;
+	// The config without the node's own role
+	std::string GetClusterPartJSON() const;
 	void GetYAML(WrSerializer& ser) const;
 	static Role Str2role(std::string_view role) noexcept;
 	static std::string Role2str(Role) noexcept;
-	static AsyncReplicationMode Str2mode(std::string_view mode);
-	static std::string Mode2str(AsyncReplicationMode) noexcept;
 
 	std::string appName = "rx_repl_leader";
 	Role role = Role::None;
-	AsyncReplicationMode mode = AsyncReplicationMode::Default;
 	int replThreadsCount = 4;
 	int parallelSyncsPerThreadCount = 2;
 	int onlineUpdatesTimeoutSec = 20;
@@ -285,19 +303,28 @@ struct AsyncReplConfigData {
 	std::vector<AsyncReplNodeConfig> nodes;
 	int onlineUpdatesDelayMSec = 100;
 	LogLevel logLevel = LogNone;
+	std::string selfReplToken;
 
-	bool operator==(const AsyncReplConfigData& rdata) const noexcept {
-		return (role == rdata.role) && (mode == rdata.mode) && (replThreadsCount == rdata.replThreadsCount) &&
-			   (parallelSyncsPerThreadCount == rdata.parallelSyncsPerThreadCount) &&
+	bool operator==(const AsyncReplConfigData& rdata) const noexcept(noexcept(nodes == rdata.nodes)) {
+		return (role == rdata.role) && commonParamsAreEqual(rdata) && (nodes == rdata.nodes);
+	}
+	bool operator!=(const AsyncReplConfigData& rdata) const noexcept(noexcept(*this == rdata)) { return !operator==(rdata); }
+	bool HasSameClusterPart(const AsyncReplConfigData& rdata) const { return commonParamsAreEqual(rdata) && HasSameClusterNodes(rdata); }
+	bool HasSameClusterNodes(const AsyncReplConfigData& rdata) const {
+		return std::ranges::equal(nodes, rdata.nodes, [](const auto& l, const auto& r) { return l.HasSameReplication(r); });
+	}
+
+private:
+	bool commonParamsAreEqual(const AsyncReplConfigData& rdata) const {
+		return (replThreadsCount == rdata.replThreadsCount) && (parallelSyncsPerThreadCount == rdata.parallelSyncsPerThreadCount) &&
 			   (forceSyncOnLogicError == rdata.forceSyncOnLogicError) && (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) &&
 			   (retrySyncIntervalMSec == rdata.retrySyncIntervalMSec) && (onlineUpdatesTimeoutSec == rdata.onlineUpdatesTimeoutSec) &&
 			   (namespaces == rdata.namespaces || (namespaces && rdata.namespaces && *namespaces == *rdata.namespaces)) &&
 			   (enableCompression == rdata.enableCompression) && (appName == rdata.appName) &&
 			   (batchingRoutinesCount == rdata.batchingRoutinesCount) && (maxWALDepthOnForceSync == rdata.maxWALDepthOnForceSync) &&
 			   (syncTimeoutSec == rdata.syncTimeoutSec) && (onlineUpdatesDelayMSec == rdata.onlineUpdatesDelayMSec) &&
-			   (logLevel == rdata.logLevel) && (nodes == rdata.nodes);
+			   (logLevel == rdata.logLevel) && (selfReplToken == rdata.selfReplToken);
 	}
-	bool operator!=(const AsyncReplConfigData& rdata) const noexcept { return !operator==(rdata); }
 };
 
 }  // namespace cluster

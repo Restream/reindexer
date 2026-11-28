@@ -8,7 +8,7 @@ namespace cluster {
 constexpr size_t kAsyncUpdatesRoutineStackSize = 64 * 1024;
 
 template <typename UpdateT, typename ContextT, typename ApplyUpdateFnT, typename OnUpdateResultFnT, typename ConvertResultFnT>
-class UpdatesBatcher {
+class [[nodiscard]] UpdatesBatcher {
 public:
 	UpdatesBatcher(net::ev::dynamic_loop& loop, size_t coroCount, ApplyUpdateFnT&& applyUpdateF, OnUpdateResultFnT&& onUpdateResult,
 				   ConvertResultFnT&& convert)
@@ -18,7 +18,7 @@ public:
 			channels_.emplace_back(std::make_unique<ResultChT>());
 			loop.spawn(
 				workersWg_,
-				[this]() noexcept {
+				[this]() noexcept {	 // NOLINT(bugprone-exception-escape)
 					while (true) {
 						auto itp = updatesCh_.pop();
 						if (!itp.second) {
@@ -26,7 +26,7 @@ public:
 						}
 						auto update = itp.first;
 						auto err = applyUpdateF_(*update.upd, update.ctx).err;
-						getResultCh(update.id).push(std::make_pair(std::move(update), std::move(err)));
+						getResultCh(update.id).push(BatchResult{std::move(update), std::move(err)});
 					}
 				},
 				kAsyncUpdatesRoutineStackSize);
@@ -73,19 +73,27 @@ private:
 	UpdateApplyStatus awaitNextResult() {
 		auto& results = *(channels_[nextResultsCh_]);
 		nextResultsCh_ = (nextResultsCh_ + 1) % channels_.size();
-		auto res = results.pop().first;
-		auto& update = res.first;
-		auto err = convert_(std::move(res.second), *update.upd);
+		auto [res, ok] = results.pop();
+		if (!ok) {
+			assertrx_dbg(false);
+			return Error(errLogic, "UpdatesBatcher: result channel is closed/empty while awaiting a batched update result");
+		}
+		auto& update = res.update;
+		auto err = convert_(std::move(res.err), *update.upd);
 		onUpdateResult_(*update.upd, err, std::move(update.ctx));
 		return err;
 	}
 
-	struct ContextedUpdate {
+	struct [[nodiscard]] ContextedUpdate {
 		const UpdateT* upd;
 		ContextT ctx;
 		uint64_t id;
 	};
-	using ResultChT = coroutine::channel<std::pair<ContextedUpdate, Error>>;
+	struct [[nodiscard]] BatchResult {
+		ContextedUpdate update;
+		Error err;
+	};
+	using ResultChT = coroutine::channel<BatchResult>;
 
 	ResultChT& getResultCh(uint64_t id) noexcept { return *(channels_[id % channels_.size()]); }
 

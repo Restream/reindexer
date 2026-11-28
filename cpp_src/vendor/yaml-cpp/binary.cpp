@@ -1,16 +1,17 @@
 #include "yaml-cpp/binary.h"
 
 #include <cctype>
+#include <cstdlib>
 
 namespace YAML {
 static const char encoding[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-std::string EncodeBase64(const unsigned char *data, std::size_t size) {
+std::string EncodeBase64(const unsigned char* data, std::size_t size) {
 	const char PAD = '=';
 
 	std::string ret;
 	ret.resize(4 * size / 3 + 3);
-	char *out = &ret[0];
+	char* out = &ret[0];
 
 	std::size_t chunks = size / 3;
 	std::size_t remainder = size % 3;
@@ -58,12 +59,14 @@ static const unsigned char decoding[] = {
 	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
 };
 
-std::vector<unsigned char> DecodeBase64(const std::string &input) {
+std::vector<unsigned char> DecodeBase64(const std::string& input) {
 	using ret_type = std::vector<unsigned char>;
-	if (input.empty()) return ret_type();
+	if (input.empty()) {
+		return ret_type();
+	}
 
 	ret_type ret(3 * input.size() / 4 + 1);
-	unsigned char *out = &ret[0];
+	unsigned char* out = &ret[0];
 
 	unsigned value = 0;
 	for (std::size_t i = 0, cnt = 0; i < input.size(); i++) {
@@ -72,13 +75,19 @@ std::vector<unsigned char> DecodeBase64(const std::string &input) {
 			continue;
 		}
 		unsigned char d = decoding[static_cast<unsigned char>(input[i])];
-		if (d == 255) return ret_type();
+		if (d == 255) {
+			return ret_type();
+		}
 
 		value = (value << 6) | d;
 		if (cnt % 4 == 3) {
 			*out++ = value >> 16;
-			if (i > 0 && input[i - 1] != '=') *out++ = value >> 8;
-			if (input[i] != '=') *out++ = value;
+			if (i > 0 && input[i - 1] != '=') {
+				*out++ = value >> 8;
+			}
+			if (input[i] != '=') {
+				*out++ = value;
+			}
 		}
 		++cnt;
 	}

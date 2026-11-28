@@ -6,25 +6,26 @@
 
 namespace reindexer {
 
-struct SelectCtx;
-class ExplainCalc;
-class StringsHolder;
-class Query;
+class ConstQueryImpl;
 
-class ActiveQueryScope {
+struct SelectCtx;
+class SingleQueryExplainCalc;
+class StringsHolder;
+
+class [[nodiscard]] ActiveQueryScope {
 public:
 	// Core query scope
-	ActiveQueryScope(SelectCtx& ctx, const std::atomic<int>& nsOptimizationState, ExplainCalc& explainCalc,
+	ActiveQueryScope(SelectCtx& ctx, const std::atomic<OptimizationState>& nsOptimizationState, SingleQueryExplainCalc& explainCalc,
 					 const std::atomic<int>& nsLockerState, StringsHolder* strHolder) noexcept;
-	ActiveQueryScope(const Query& q, QueryType realQueryType, const std::atomic<int>& nsOptimizationState,
+	ActiveQueryScope(ConstQueryImpl q, QueryType realQueryType, const std::atomic<OptimizationState>& nsOptimizationState,
 					 StringsHolder* strHolder) noexcept;
 	// External query scope
-	ActiveQueryScope(const Query& q, QueryType realQueryType) noexcept;
+	ActiveQueryScope(ConstQueryImpl q, QueryType realQueryType) noexcept;
 	explicit ActiveQueryScope(std::string_view sql) noexcept;
 	~ActiveQueryScope();
 
 public:
-	enum class Type { NoTracking, CoreQueryTracker, ExternalQueryTracker, ExternalSQLQueryTracker };
+	enum class [[nodiscard]] Type { NoTracking, CoreQueryTracker, ExternalQueryTracker, ExternalSQLQueryTracker };
 
 	Type type_ = Type::NoTracking;
 };

@@ -3,11 +3,10 @@
 #include <atomic>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include "config.h"
+#include "loggerregistry.h"
 #include "loggerwrapper.h"
 #include "net/ev/ev.h"
-#include "spdlog/sinks/reopen_file_sink.h"
 
 #ifndef _WIN32
 #include "pidfile.h"
@@ -23,9 +22,7 @@ class DBManager;
 struct IDBManagerStatsCollector;
 struct IRPCServerStatsCollector;
 
-class ServerImpl {
-	using SinkMap = std::unordered_map<std::string, std::shared_ptr<spdlog::sinks::reopen_file_sink_st>>;
-
+class [[nodiscard]] ServerImpl {
 public:
 	ServerImpl(ServerMode mode);
 	~ServerImpl();
@@ -34,7 +31,7 @@ public:
 	Error InitFromYAML(const std::string& yaml);
 	Error InitFromFile(const char* filepath);
 	int Start();
-	void Stop();
+	void Stop() noexcept;
 	void EnableHandleSignals(bool enable = true) noexcept { enableHandleSignals_ = enable; }
 	DBManager& GetDBManager() noexcept { return *dbMgr_; }
 	bool IsReady() const noexcept { return storageLoaded_.load(); }
@@ -48,19 +45,16 @@ protected:
 
 private:
 	Error daemonize();
-	Error loggerConfigure();
-	void initCoreLogger();
 
 private:
 	ServerConfig config_;
+	LoggerRegistry loggerRegistry_;
 	LoggerWrapper logger_;
-	int coreLogLevel_;
 
 #ifndef _WIN32
 	PidFile pid_;
 #endif
 	std::unique_ptr<DBManager> dbMgr_;
-	SinkMap sinks_;
 
 private:
 	std::atomic_bool storageLoaded_;

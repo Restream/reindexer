@@ -1,9 +1,13 @@
-﻿#include "replication_api.h"
+#include "replication_api.h"
+#include "estl/lock.h"
+#include "tools/fsops.h"
 
-const std::string ReplicationApi::kConfigNs = "#config";
+namespace reindexer_tests {
+
+ReplicationApi::ReplicationApi() : kStoragePath(reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test/")) {}
 
 bool ReplicationApi::StopServer(size_t id) {
-	std::lock_guard<std::mutex> lock(m_);
+	reindexer::lock_guard lock(m_);
 
 	assertrx(id < svc_.size());
 	if (!svc_[id].Get()) {
@@ -23,7 +27,7 @@ bool ReplicationApi::StopServer(size_t id) {
 }
 
 bool ReplicationApi::StartServer(size_t id) {
-	std::lock_guard<std::mutex> lock(m_);
+	reindexer::lock_guard lock(m_);
 
 	assertrx(id < svc_.size());
 	if (svc_[id].IsRunning()) {
@@ -34,11 +38,12 @@ bool ReplicationApi::StartServer(size_t id) {
 	return true;
 }
 void ReplicationApi::RestartServer(size_t id) {
-	std::lock_guard<std::mutex> lock(m_);
-
 	assertrx(id < svc_.size());
+
+	reindexer::lock_guard lock(m_);
+	reindexer::unique_lock restartLock{restartMutex_, std::defer_lock};
 	if (id == 0) {
-		restartMutex_.lock();
+		restartLock.lock();
 	}
 	if (svc_[id].Get()) {
 		svc_[id].Drop();
@@ -53,9 +58,6 @@ void ReplicationApi::RestartServer(size_t id) {
 	}
 	svc_[id].InitServer(ServerControlConfig(id, kDefaultRpcPort + id, kDefaultHttpPort + id, kStoragePath + "node/" + std::to_string(id),
 											"node" + std::to_string(id)));
-	if (id == 0) {
-		restartMutex_.unlock();
-	}
 }
 
 void ReplicationApi::WaitSync(std::string_view ns, reindexer::lsn_t expectedLsn) {
@@ -79,7 +81,7 @@ void ReplicationApi::WaitSync(std::string_view ns, reindexer::lsn_t expectedLsn)
 							<< "name: " << ns << ", actual lsn: " << int64_t(state.lsn) << " expected lsn: " << int64_t(expectedLsn)
 							<< " i = " << i << " masterId_ = " << masterId_;
 					}
-					ASSERT_EQ(state.dataHash, xstate.dataHash) << "name: " << ns << ", lsns: " << int64_t(state.lsn) << " "
+					ASSERT_EQ(state.checksum, xstate.checksum) << "name: " << ns << ", lsns: " << int64_t(state.lsn) << " "
 															   << int64_t(xstate.lsn) << " i = " << i << " masterId_ = " << masterId_;
 					ASSERT_EQ(state.dataCount, xstate.dataCount);
 				}
@@ -105,7 +107,7 @@ void ReplicationApi::ForceSync() {
 	awaitForceSync.join();
 }
 
-void ReplicationApi::SwitchMaster(size_t id, const AsyncReplicationConfigTest::NsSet& namespaces, std::string replMode) {
+void ReplicationApi::SwitchMaster(size_t id, const AsyncReplicationConfigTest::NsSet& namespaces) {
 	if (id == masterId_) {
 		return;
 	}
@@ -124,15 +126,14 @@ void ReplicationApi::SwitchMaster(size_t id, const AsyncReplicationConfigTest::N
 			followers.emplace_back(ReplNode{MakeDsn(UserRole::kRoleReplication, srv)});
 		}
 	}
-	AsyncReplicationConfigTest config("leader", std::move(followers), false, true, id, "node" + std::to_string(masterId_), namespaces,
-									  std::move(replMode));
+	AsyncReplicationConfigTest config("leader", std::move(followers), false, true, id, "node" + std::to_string(masterId_), namespaces);
 	GetSrv(masterId_)->SetReplicationConfig(config);
 }
 
 void ReplicationApi::SetWALSize(size_t id, int64_t size, std::string_view nsName) { GetSrv(id)->SetWALSize(size, nsName); }
 
 size_t ReplicationApi::GetServersCount() const {
-	std::lock_guard<std::mutex> lock(m_);
+	reindexer::lock_guard lock(m_);
 	return svc_.size();
 }
 
@@ -141,7 +142,7 @@ void ReplicationApi::SetOptmizationSortWorkers(size_t id, size_t cnt, std::strin
 }
 
 ServerControl::Interface::Ptr ReplicationApi::GetSrv(size_t id) {
-	std::lock_guard<std::mutex> lock(m_);
+	reindexer::lock_guard lock(m_);
 	assertrx(id < svc_.size());
 	auto srv = svc_[id].Get();
 	assertrx(srv);
@@ -149,8 +150,8 @@ ServerControl::Interface::Ptr ReplicationApi::GetSrv(size_t id) {
 }
 
 void ReplicationApi::SetUp() {
-	std::lock_guard<std::mutex> lock(m_);
-	reindexer::fs::RmDirAll(kStoragePath + "node");
+	reindexer::lock_guard lock(m_);
+	std::ignore = reindexer::fs::RmDirAll(kStoragePath + "node");
 
 	svc_.push_back(ServerControl());
 	std::vector<AsyncReplicationConfigTest::Node> followers;
@@ -168,7 +169,7 @@ void ReplicationApi::SetUp() {
 }
 
 void ReplicationApi::TearDown() {
-	std::lock_guard<std::mutex> lock(m_);
+	reindexer::lock_guard lock(m_);
 	for (auto& server : svc_) {
 		if (server.Get(false)) {
 			server.Get(false)->Stop();
@@ -188,5 +189,7 @@ void ReplicationApi::TearDown() {
 		}
 	}
 	svc_.clear();
-	reindexer::fs::RmDirAll(kStoragePath + "node");
+	std::ignore = reindexer::fs::RmDirAll(kStoragePath + "node");
 }
+
+}  // namespace reindexer_tests

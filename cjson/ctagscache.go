@@ -64,13 +64,7 @@ func (tc *ctagsWCache) Reset() {
 	(*tc) = (*tc)[:0]
 }
 
-func (tc *ctagsWCache) Lookup(idx []int) *ctagsWCacheEntry {
-	if len(idx) == 0 {
-		return &ctagsWCacheEntry{}
-	}
-
-	field := idx[0]
-
+func (tc *ctagsWCache) LookupField(field int) *ctagsWCacheEntry {
 	if len(*tc) <= field {
 		if cap(*tc) <= field {
 			nc := make([]ctagsWCacheEntry, len(*tc), field+1)
@@ -81,9 +75,19 @@ func (tc *ctagsWCache) Lookup(idx []int) *ctagsWCacheEntry {
 			(*tc) = append((*tc), ctagsWCacheEntry{})
 		}
 	}
-	if len(idx) == 1 {
-		return &(*tc)[field]
+	return &(*tc)[field]
+}
+
+func (tc *ctagsWCache) Lookup(idx []int) *ctagsWCacheEntry {
+	if len(idx) == 0 {
+		return &ctagsWCacheEntry{}
 	}
 
-	return (*tc)[field].subCache.Lookup(idx[1:])
+	field := idx[0]
+	entry := tc.LookupField(field)
+	if len(idx) == 1 {
+		return entry
+	}
+
+	return entry.subCache.Lookup(idx[1:])
 }

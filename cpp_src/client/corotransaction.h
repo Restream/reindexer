@@ -1,11 +1,14 @@
 #pragma once
 
-#include "client/item.h"
-#include "core/query/query.h"
+#include <memory>
 #include "tools/clock.h"
 #include "tools/lsn.h"
 
 namespace reindexer {
+
+class Query;
+class TagsMatcher;
+class PayloadType;
 
 namespace net::cproto {
 class CoroClientConnection;
@@ -13,10 +16,12 @@ class CoroClientConnection;
 
 namespace client {
 
+class InternalRdxContext;
 class Namespace;
 class RPCClient;
+class Item;
 
-class CoroTransaction {
+class [[nodiscard]] CoroTransaction {
 public:
 	CoroTransaction() noexcept : CoroTransaction(Error()) {}
 	~CoroTransaction();
@@ -57,9 +62,9 @@ private:
 	friend class ReindexerImpl;
 	friend class Transaction;
 	explicit CoroTransaction(Error status) noexcept : i_(std::move(status)) {}
-	CoroTransaction(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
-					std::shared_ptr<Namespace>&& ns, int emmiterServerId) noexcept
-		: i_(rpcClient, txId, requestTimeout, execTimeout, std::move(ns), emmiterServerId) {}
+	CoroTransaction(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::shared_ptr<Namespace>&& ns,
+					const InternalRdxContext& ctx) noexcept
+		: i_(rpcClient, txId, requestTimeout, std::move(ns), ctx) {}
 
 	Error addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn);
 	Error addTxItemRaw(std::string_view cjson, ItemModifyMode mode, lsn_t lsn);
@@ -72,9 +77,9 @@ private:
 	net::cproto::CoroClientConnection* getConn() const noexcept;
 	void setStatus(Error&& status) noexcept { i_.status_ = std::move(status); }
 
-	struct Impl {
-		Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
-			 std::shared_ptr<Namespace>&& ns, int emmiterServerId) noexcept;
+	struct [[nodiscard]] Impl {
+		Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::shared_ptr<Namespace>&& ns,
+			 const InternalRdxContext& ctx) noexcept;
 		Impl(Error&& status) noexcept;
 		Impl(Impl&&) noexcept;
 		Impl& operator=(Impl&&) noexcept;
@@ -88,7 +93,8 @@ private:
 		std::unique_ptr<TagsMatcher> localTm_;
 		std::shared_ptr<Namespace> ns_;
 		steady_clock_w::time_point sessionTs_;
-		int emmiterServerId_ = -1;
+		int emitterServerId_ = -1;
+		int shardId_ = ShardingKeyType::NotSetShard;
 	};
 
 	Impl i_;

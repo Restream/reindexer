@@ -2,17 +2,21 @@
 
 #include <functional>
 #include <iostream>
-#include <limits>
-#include <list>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "estl/span.h"
+#include "estl/elist.h"
 #include "tools/terminalutils.h"
 
-namespace reindexer {
+namespace reindexer::table_view {
 
-struct ColumnData {
+enum [[nodiscard]] ColumnsOpts {
+	kNoOpts = 0,
+	kRemoveRareColumns = 0x1 << 0,
+	kRemoveEmptyColumns = 0x1 << 1,
+};
+
+struct [[nodiscard]] ColumnData {
 	int type = 0;
 	int entries = 0;
 	int widthCh = 0;
@@ -24,14 +28,14 @@ struct ColumnData {
 	bool PossibleToBreakTheLine() const noexcept;
 };
 
-class TableCalculator {
+class [[nodiscard]] TableCalculator {
 public:
-	using Header = std::list<std::string>;
+	using Header = elist<std::string>;
 	using Row = std::unordered_map<std::string, std::string>;
 	using Rows = std::vector<Row>;
 	using ColumnsData = std::unordered_map<std::string, ColumnData>;
 
-	TableCalculator(std::vector<std::string>&& jsonData, int outputWidth);
+	TableCalculator(std::vector<std::string>&& jsonData, int outputWidth, int columnsOpts);
 
 	Header& GetHeader() noexcept { return header_; }
 	Rows& GetRows() noexcept { return rows_; }
@@ -46,9 +50,10 @@ private:
 	TerminalSize terminalSize_;
 	ColumnsData columnsData_;
 	const int outputWidth_;
+	const int opts_;
 };
 
-class TableViewBuilder {
+class [[nodiscard]] TableViewBuilder {
 public:
 	TableViewBuilder() = default;
 	TableViewBuilder(const TableViewBuilder&) = delete;
@@ -56,7 +61,7 @@ public:
 	TableViewBuilder operator=(const TableViewBuilder&) = delete;
 	TableViewBuilder operator=(TableViewBuilder&&) = delete;
 
-	void Build(std::ostream& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled);
+	void Build(std::ostream& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled, int columnsOpts);
 
 	void BuildHeader(std::ostream& o, TableCalculator& tableCalculator, const std::function<bool(void)>& isCanceled);
 	void BuildTable(std::ostream& o, TableCalculator& tableCalculator, const std::function<bool(void)>& isCanceled);
@@ -69,4 +74,4 @@ private:
 	static void startLine(std::ostream& o, const int& currLineWidth);
 };
 
-}  // namespace reindexer
+}  // namespace reindexer::table_view

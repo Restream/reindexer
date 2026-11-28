@@ -1,18 +1,26 @@
 #include <fstream>
+#include <memory>
+#include <thread>
 
+#include "cluster/clustercontrolrequest.h"
+#include "cluster/config.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
-#include "core/item.h"
-#include "core/keyvalue/variant.h"
 #include "core/namespace/namespacestat.h"
+#include "core/query/query.h"
 #include "core/reindexer.h"
-#include "core/type_consts.h"
-
+#include "core/storage/storage_prefixes.h"
+#include "core/storage/storagefactory.h"
+#include "core/system_ns_names.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
-#include "tools/serializer.h"
+#include "tools/serilize/wrserializer.h"
+#include "vendor/gason/gason.h"
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+
+namespace reindexer_tests {
 
 #define __FILENAME__ (strrchr("/" __FILE__, '/') + 1)
 #define GTEST_TRACE_SCOPE(SCOPE_DESCRIPTION) testing::ScopedTrace trace(__FILE__, __LINE__, SCOPE_DESCRIPTION)
@@ -20,30 +28,29 @@
 
 using namespace reindexer;
 
-class ReplicationConfigTests : public ::testing::Test {
+class [[nodiscard]] ReplicationConfigTests : public ::testing::Test {
 public:
-	using ItemType = typename reindexer::Reindexer::ItemT;
-	using QueryResultsType = typename reindexer::Reindexer::QueryResultsT;
-	enum class ConfigType { File, Namespace };
+	using ItemType = typename Reindexer::ItemT;
+	using QueryResultsType = typename Reindexer::QueryResultsT;
+	enum class [[nodiscard]] ConfigType { File, Namespace };
 
 	const std::chrono::milliseconds kReplicationConfLoadDelay = std::chrono::milliseconds(1200);
 	const std::string kSimpleReplConfigStoragePath = fs::JoinPath(fs::GetTempDir(), "reindex/simple_replicationConf_tests/");
 	const std::string kStoragePath = kSimpleReplConfigStoragePath;
 	const std::string kBuiltin = "builtin://" + kStoragePath;
-	const std::string kConfigNs = "#config";
 	const std::string kReplicationConfigFilename = "replication.conf";
-	const std::string kReplFilePath = reindexer::fs::JoinPath(kStoragePath, kReplicationConfigFilename);
+	const std::string kReplFilePath = fs::JoinPath(kStoragePath, kReplicationConfigFilename);
 
 	// defining test data
-	const reindexer::ReplicationConfigData initialReplConf{0, 2};
-	const reindexer::ReplicationConfigData correctReplConf{10, 2};
-	const reindexer::ReplicationConfigData updatedReplConf{100, 3};
+	const ReplicationConfigData initialReplConf{0, 2, {}};
+	const ReplicationConfigData correctReplConf{10, 2, {}};
+	const ReplicationConfigData updatedReplConf{100, 3, {}};
 
-	const reindexer::ReplicationConfigData invalidReplConf{-10, 2};
-	const reindexer::ReplicationConfigData invalidReplConf1000{1000, 2};
-	const reindexer::ReplicationConfigData fallbackReplConf{0, 2};
+	const ReplicationConfigData invalidReplConf{-10, 2, {}};
+	const ReplicationConfigData invalidReplConf1000{1000, 2, {}};
+	const ReplicationConfigData fallbackReplConf{0, 2, {}};
 
-	void SetUp() override { fs::RmDirAll(kStoragePath); }
+	void SetUp() override { std::ignore = fs::RmDirAll(kStoragePath); }
 	void TearDown() override {}
 
 	void WriteConfigFile(const std::string& path, const std::string& configYaml) {
@@ -90,10 +97,10 @@ public:
 		}
 	}
 
-	bool CheckReplicationConfigNS(reindexer::Reindexer& rx, const ReplicationConfigData& expectedConf, bool expectErrorParseJSON = false) {
+	bool CheckReplicationConfigNS(Reindexer& rx, const ReplicationConfigData& expectedConf, bool expectErrorParseJSON = false) {
 		GTEST_TRACE_FUNCTION();
 		QueryResultsType results;
-		auto err = rx.Select(Query(kConfigNs).Where("type", CondEq, "replication"), results);
+		auto err = rx.Select(Query(kConfigNamespace).Where("type", CondEq, "replication"), results);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		ReplicationConfigData replConf;
@@ -125,13 +132,13 @@ public:
 		}
 	}
 
-	bool CheckNamespacesReplicationConfig(reindexer::Reindexer& rx, const ReplicationConfigData& expected) {
+	bool CheckNamespacesReplicationConfig(Reindexer& rx, const ReplicationConfigData& expected) {
 		GTEST_TRACE_FUNCTION();
 		{
 			GTEST_TRACE_SCOPE("Checking #memstats.server_id for non-system namespaces.");
 			QueryResultsType results;
 			auto query = "select name, replication.server_id from #memstats";
-			auto err = rx.Select(query, results);
+			auto err = rx.ExecSQL(query, results);
 			EXPECT_TRUE(err.ok()) << err.what();
 			for (auto it : results) {
 				WrSerializer ser;
@@ -152,15 +159,15 @@ public:
 
 		{
 			GTEST_TRACE_SCOPE("Checking ReplState.nsVersion.server_id for system namespaces");
-			std::vector<reindexer::NamespaceDef> nsDefs;
-			auto err = rx.EnumNamespaces(nsDefs, reindexer::EnumNamespacesOpts().OnlyNames());
+			std::vector<NamespaceDef> nsDefs;
+			auto err = rx.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames());
 			EXPECT_TRUE(err.ok()) << err.what();
 			for (auto& nsDef : nsDefs) {
 				if (nsDef.name.empty() || (nsDef.name[0] != '#')) {
-					// we will perform checks only for well defined system namespaces
+					// we will perform checks only for well-defined system namespaces
 					continue;
 				}
-				reindexer::ReplicationStateV2 replState;
+				ReplicationStateV2 replState;
 				auto error = rx.GetReplState(nsDef.name, replState);
 				EXPECT_TRUE(error.ok()) << error.what();
 				EXPECT_EQ(replState.nsVersion.Server(), expected.serverID) << "Check failed for NS \"" << nsDef.name << "\"";
@@ -170,20 +177,20 @@ public:
 	}
 
 	template <bool ExpectErrorOnUpsert = false>
-	void SetReplicationConfigNS(reindexer::Reindexer& rx, const ReplicationConfigData& config) {
+	void SetReplicationConfigNS(Reindexer& rx, const ReplicationConfigData& config) {
 		GTEST_TRACE_FUNCTION();
 		upsertConfigItemFromObject<decltype(config), ExpectErrorOnUpsert>(rx, "replication", config);
 	}
 
 	template <bool ExpectErrorOnUpsert = false>
-	void SetJSONtoConfigNS(reindexer::Reindexer& rx, std::string_view stringJSON) {
+	void SetJSONtoConfigNS(Reindexer& rx, std::string_view stringJSON) {
 		GTEST_TRACE_FUNCTION();
 		upsertConfigItemFromJSON<ExpectErrorOnUpsert>(rx, stringJSON);
 	}
 
 protected:
 	template <typename ValueT, bool ExpectErrorOnUpsert = false>
-	void upsertConfigItemFromObject(reindexer::Reindexer& rx, std::string_view type, const ValueT& object) {
+	void upsertConfigItemFromObject(Reindexer& rx, std::string_view type, const ValueT& object) {
 		GTEST_TRACE_FUNCTION();
 
 		WrSerializer ser;
@@ -200,14 +207,14 @@ protected:
 	}
 
 	template <bool ExpectErrorOnUpsert = false>
-	void upsertConfigItemFromJSON(reindexer::Reindexer& rx, const std::string_view stringJSON) {
+	void upsertConfigItemFromJSON(Reindexer& rx, const std::string_view stringJSON) {
 		GTEST_TRACE_FUNCTION();
 
-		auto item = rx.NewItem(kConfigNs);
+		auto item = rx.NewItem(kConfigNamespace);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 		auto err = item.FromJSON(stringJSON);
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.Upsert(kConfigNs, item);
+		err = rx.Upsert(kConfigNamespace, item);
 		if constexpr (ExpectErrorOnUpsert) {
 			ASSERT_FALSE(err.ok()) << err.what();
 		} else {
@@ -245,8 +252,6 @@ TEST(DBConfigTests, ReadValidJsonConfiguration) {
 			{
 				"namespace":"*",
 				"log_level":"none",
-				"lazyload":false,
-				"unload_idle_threshold":0,
 				"join_cache_mode":"off",
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,
@@ -290,6 +295,124 @@ TEST(DBConfigTests, ReadValidJsonConfiguration) {
 	EXPECT_TRUE(err.ok()) << err.what();
 }
 
+TEST(DBConfigTests, ConfigItemSelectsSectionByType) {
+	for (std::string_view type : {"profiling", "embedders", "unknown", "ASYNC_REPLICATION", "caches"}) {
+		SCOPED_TRACE(type);
+		DBConfigProvider db;
+		const auto threshold = db.QueriesThresholdUS();
+		const auto apply = [&db](std::string_view json) {
+			gason::JsonParser parser;
+			const auto err = db.FromJSONItem(parser.Parse(json));
+			ASSERT_TRUE(err.ok()) << err.what();
+		};
+		apply(R"json({"type":"async_replication","async_replication":{"app_name":"baseline","future":{"enabled":true}}})json");
+		apply(fmt::format(R"json({{"type":"{}","profiling":{{"queries_threshold_us":17}},
+			"async_replication":{{"app_name":"foreign"}},"replication":{{"server_id":-10}},
+			"caches":[{{"cache_tag":"selected","max_cache_items":23}}]}})json",
+						  type));
+		EXPECT_EQ(db.GetAsyncReplicationConfig().appName, "baseline");
+		EXPECT_TRUE(db.GetConfigParseErrors().ok());
+		EXPECT_EQ(db.QueriesThresholdUS(), type == "profiling" ? 17 : threshold);
+		if (type == "embedders" || type == "caches") {
+			ASSERT_EQ(db.GetEmbeddersConfig().size(), 1);
+			EXPECT_EQ(db.GetEmbeddersConfig().at(std::string_view("selected")).maxCacheItems, 23);
+		} else {
+			EXPECT_TRUE(db.GetEmbeddersConfig().empty());
+		}
+	}
+}
+
+TEST(DBConfigTests, InvalidAsyncReplicationNodeDSNs) {
+	// Async replication target has exactly one of 'dsn' and 'dsns', and 'dsns' is an array of unique valid DSNs of all the RAFT cluster's
+	// nodes: at least 3
+	constexpr std::string_view kKeysError = "must contain exactly one of 'dsn' or 'dsns'";
+	constexpr std::string_view kListError = "'dsns' must be an array of DSNs of all the RAFT cluster's nodes: at least 3";
+	const std::vector<std::pair<std::string_view, std::string_view>> kInvalidNodes = {
+		{R"({"dsn":"cproto://127.0.0.1:6534/db","dsns":["cproto://127.0.0.1:6535/db"]})", kKeysError},
+		{R"({"namespaces":["ns"]})", kKeysError},
+		{R"({"dsns":[]})", kListError},
+		{R"({"dsns":["cproto://127.0.0.1:6535/db"]})", kListError},
+		{R"({"dsns":["cproto://127.0.0.1:6535/db","cproto://127.0.0.1:6536/db"]})", kListError},
+		{R"({"dsns":"cproto://127.0.0.1:6535/db"})", kListError},
+		{R"({"dsns":["cproto://127.0.0.1:6535/db","cproto://127.0.0.1:6536/db","http://127.0.0.1:6537/db"]})",
+		 "DSN must start with cproto:// or cprotos://"},
+		{R"({"dsns":["cproto://127.0.0.1:6535/db","cproto://127.0.0.1:6536/db","cproto://127.0.0.1:6535/db"]})",
+		 "DSNs in 'dsns' should be unique. Duplicated dsn: cproto://127.0.0.1:6535/db"},
+	};
+	for (const auto& [node, expectedError] : kInvalidNodes) {
+		cluster::AsyncReplConfigData config;
+		const auto err = config.FromJSON(fmt::format(R"({{"role":"leader","nodes":[{}]}})", node));
+		EXPECT_THAT(err.what(), testing::HasSubstr(expectedError)) << node;
+	}
+}
+
+TEST(DBConfigTests, AsyncReplicationConfigYAMLRoundTrip) {
+	// The file is loaded into #config on startup, so it keeps all the config's fields
+	for (std::string_view token : {"", "token"}) {
+		cluster::AsyncReplConfigData config;
+		auto err = config.FromJSON(fmt::format(
+			R"json({{"role":"leader","app_name":"node_1","sync_threads":3,"syncs_per_thread":4,
+				"sync_timeout_sec":70,"online_updates_timeout_sec":25,"enable_compression":false,"force_sync_on_logic_error":true,
+				"force_sync_on_wrong_data_hash":false,"retry_sync_interval_msec":3000,"batching_routines_count":50,
+				"max_wal_depth_on_force_sync":1500,"online_updates_delay_msec":15,"self_replication_token":"{}","log_level":"trace",
+				"namespaces":["ns1","ns2"],"nodes":[{{"dsn":"cproto://127.0.0.1:6534/db"}},
+				{{"dsns":["cproto://127.0.0.1:6535/db","cproto://127.0.0.1:6536/db","cproto://127.0.0.1:6537/db"],"namespaces":["ns3"]}}]}})json",
+			token));
+		ASSERT_TRUE(err.ok()) << err.what();
+		WrSerializer ser;
+		config.GetYAML(ser);
+		cluster::AsyncReplConfigData fromYAML;
+		err = fromYAML.FromYAML(std::string(ser.Slice()));
+		ASSERT_TRUE(err.ok()) << err.what();
+		EXPECT_TRUE(fromYAML == config) << "token='" << token << "'\n" << ser.Slice();
+	}
+}
+
+TEST(DBConfigTests, AsyncReplicationConfigClusterPart) {
+	// The cluster's part of the config does not contain the node's own role. The node without its own namespaces list replicates the common
+	// one
+	const auto parse = [](std::string_view json) {
+		cluster::AsyncReplConfigData config;
+		const auto err = config.FromJSON(json);
+		EXPECT_TRUE(err.ok()) << err.what();
+		return config;
+	};
+	const auto config =
+		parse(R"json({"role":"leader","log_level":"info","namespaces":["ns1"],"nodes":[{"dsn":"cproto://127.0.0.1:6534/db"}]})json");
+
+	const auto clusterPart = parse(config.GetClusterPartJSON());
+	EXPECT_EQ(clusterPart.role, cluster::AsyncReplConfigData::Role::None);
+	EXPECT_TRUE(clusterPart.HasSameClusterPart(config));
+
+	const auto changedParams =
+		parse(R"json({"log_level":"trace","namespaces":["ns1"],"nodes":[{"dsn":"cproto://127.0.0.1:6534/db"}]})json");
+	EXPECT_FALSE(changedParams.HasSameClusterPart(config));
+	EXPECT_TRUE(changedParams.HasSameClusterNodes(config));
+
+	const auto ownNsList =
+		parse(R"json({"log_level":"info","namespaces":["ns2"],"nodes":[{"dsn":"cproto://127.0.0.1:6534/db","namespaces":["ns1"]}]})json");
+	EXPECT_TRUE(ownNsList.HasSameClusterNodes(config));
+	EXPECT_FALSE(ownNsList.HasSameClusterPart(config));
+	const auto inheritedNsList = parse(R"json({"namespaces":["ns2"],"nodes":[{"dsn":"cproto://127.0.0.1:6534/db"}]})json");
+	EXPECT_FALSE(inheritedNsList.HasSameClusterNodes(config));
+
+	// Empty list means all the namespaces
+	const auto allNamespaces = parse(R"json({"nodes":[{"dsn":"cproto://127.0.0.1:6534/db"}]})json");
+	EXPECT_TRUE(allNamespaces.HasSameClusterNodes(
+		parse(R"json({"namespaces":["ns3"],"nodes":[{"dsn":"cproto://127.0.0.1:6534/db","namespaces":[]}]})json")));
+}
+
+TEST(DBConfigTests, AsyncReplicationModeIsIgnored) {
+	// 'replication_mode' field was removed, so it has to be ignored.
+	// Replication mode of the older versions is accepted with any value, including the nodes' one
+	cluster::AsyncReplConfigData config;
+	auto err = config.FromJSON(R"json({"role":"leader","replication_mode":"default","nodes":[
+		{"dsn":"cproto://127.0.0.1:6534/db","replication_mode":"default"},
+		{"dsn":"cproto://127.0.0.1:6535/db","replication_mode":"unknown_mode"}]})json");
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(config.nodes.size(), 2);
+}
+
 TEST(DBConfigTests, ReadInvalidJsonConfiguration) {
 	DBConfigProvider db;
 
@@ -319,8 +442,6 @@ TEST(DBConfigTests, ReadInvalidJsonConfiguration) {
 			{
 				"namespace":"*",
 				"log_level":"none",
-				"lazyload":false,
-				"unload_idle_threshold":0,
 				"join_cache_mode":"off",
 				"start_copy_policy_tx_size":10000,
 				"copy_policy_multiplier":5,
@@ -376,7 +497,7 @@ TEST(DBConfigTests, ReadInvalidJsonConfiguration) {
 TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 	// 0. Warm up:
 	{
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
@@ -388,7 +509,7 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 		WriteConfigToFile(correctReplConf, kReplFilePath);
 		CheckReplicationConfigFile(kStoragePath, correctReplConf);
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 		CheckReplicationConfigNS(rt, correctReplConf);
@@ -402,7 +523,7 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 		WriteConfigToFile(invalidReplConf, kReplFilePath);
 		CheckReplicationConfigFile(kStoragePath, invalidReplConf);
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_EQ(err.code(), errParams) << err.what();
 	}
@@ -412,7 +533,7 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 		GTEST_TRACE_SCOPE("Starting with invalid replication.conf server_id = " + std::to_string(invalidReplConf1000.serverID));
 		WriteConfigToFile(invalidReplConf1000, kReplFilePath);
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_EQ(err.code(), errParams) << err.what();
 	}
@@ -424,7 +545,7 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 						"server_id: invalid\n"
 						"cluster_id: invalid\n");
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_EQ(err.code(), errParseYAML) << err.what();
 	}
@@ -435,7 +556,7 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
 		WriteConfigToFile(updatedReplConf, kReplFilePath);
 		CheckReplicationConfigFile(kStoragePath, updatedReplConf);
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 		CheckReplicationConfigNS(rt, updatedReplConf);
@@ -452,19 +573,20 @@ TEST_F(ReplicationConfigTests, ReadReplicationConfAtStartup) {
  *	All cases from 2 shall be done on existing db connection without restarts
  *	2. Write correct replication.conf from correctReplConf, CHECK readings - internal state and replication.conf shall be changed
  *	3. Write invalid replication.conf from invalidReplConf, CHECK readings - internal state and replication.conf shall NOT be changed
- *	4. Write invalid replication.conf from invalidReplConf1000, CHECK readings - internal state and replication.conf shall NOT be changed
+ *	4. Write invalid replication.conf from invalidReplConf1000, CHECK readings - internal state and replication.conf shall NOT be
+ * changed
  *	5. Write invalid replication.conf with non-numeric values, CHECK readings - internal state and replication.conf shall NOT be changed
  */
 TEST_F(ReplicationConfigTests, ReplicationConfChangedAtRuntime) {
 	// 0. Warm up: create and initialize new DB in kStoragePath
 	{
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	// 1. Write correct replication.conf from initialReplConf, CONNECT, verify - shall success
-	reindexer::Reindexer rt;
+	Reindexer rt;
 	{
 		GTEST_TRACE_SCOPE("Starting with replication.conf server_id = " + std::to_string(initialReplConf.serverID));
 		WriteConfigToFile(initialReplConf, kReplFilePath);
@@ -507,7 +629,8 @@ TEST_F(ReplicationConfigTests, ReplicationConfChangedAtRuntime) {
 		CheckNamespacesReplicationConfig(rt, correctReplConf);
 	}
 
-	// 5. Write invalid replication.conf with non-numeric values, CHECK readings - internal state and replication.conf shall NOT be changed
+	// 5. Write invalid replication.conf with non-numeric values, CHECK readings - internal state and replication.conf shall NOT be
+	// changed
 	{
 		GTEST_TRACE_SCOPE("Writing invalid replication.conf server_id = \"invalid\"");
 		const bool kExpectErrorParseYAML = true;
@@ -539,7 +662,7 @@ TEST_F(ReplicationConfigTests, ReplicationConfChangedAtRuntime) {
  */
 TEST_F(ReplicationConfigTests, SetServerIdToConfigWithReplicationConf) {
 	const bool kExpectErrorOnUpsert = true;
-	reindexer::Reindexer rt;
+	Reindexer rt;
 	Error err = rt.Connect(kBuiltin);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -613,16 +736,19 @@ TEST_F(ReplicationConfigTests, SetServerIdToConfigWithReplicationConf) {
  *	Continuous tests set
  *	1. Start with default db, set correct server_id, set invalid server_id, shutdown
  *	All cases from 2 shall be done on existing db
- *	2. Start with invalid server_id, check fallback server_id present, set another invalid server_id, shutdown
- *	3. Start with invalid server_id, check fallback server_id present, restore correct server_id, shutdown
+ *	2. Start with invalid server_id, check fallback server_id present, check that writes of the other config types return the
+ *	   parse error of the replication config, set another invalid server_id, shutdown
+ *	3. Start with invalid server_id, check fallback server_id present, restore correct server_id, check that writes of the other
+ *	   config types succeed, shutdown
  *	4. Start with correct sever_id, verify
  */
 TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf) {
 	const bool kExpectErrorOnUpsert = true;
+	constexpr std::string_view kProfilingJSON = R"json({"type":"profiling","profiling":{"queries_threshold_us":10}})json";
 
 	// 1. Start with default db, set correct server_id, set invalid server_id, shutdown
 	{
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		{
 			GTEST_TRACE_SCOPE("Setting correct replication.server_id = " + std::to_string(correctReplConf.serverID) + " to #config");
 			Error err = rt.Connect(kBuiltin);
@@ -631,7 +757,7 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 			SetReplicationConfigNS(rt, correctReplConf);
 			CheckReplicationConfigNS(rt, correctReplConf);
 			std::this_thread::sleep_for(kReplicationConfLoadDelay);
-			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 			CheckNamespacesReplicationConfig(rt, correctReplConf);
 		}
 		{
@@ -640,17 +766,17 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 			SetReplicationConfigNS<kExpectErrorOnUpsert>(rt, invalidReplConf);
 			CheckReplicationConfigNS(rt, invalidReplConf);
 			std::this_thread::sleep_for(kReplicationConfLoadDelay);
-			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 			CheckNamespacesReplicationConfig(rt, correctReplConf);
 		}
 	}
 
 	// 2. Start with invalid server_id, check fallback server_id present, set another invalid server_id, shutdown
 	{
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		{
 			GTEST_TRACE_SCOPE("Reloading with invalid replication.server_id = " + std::to_string(invalidReplConf.serverID) + " to #config");
-			ASSERT_TRUE(fs::Stat(kReplFilePath) == fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_TRUE(fs::Stat(kReplFilePath) == fs::StatNotFound) << "replication.conf shall not exist when present.";
 
 			Error err = rt.Connect(kBuiltin);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -659,27 +785,39 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 		}
 
 		{
+			GTEST_TRACE_SCOPE("Writing profiling to #config with the fallback replication.server_id");
+			auto item = rt.NewItem(kConfigNamespace);
+			auto err = item.FromJSON(kProfilingJSON);
+			ASSERT_TRUE(err.ok()) << err.what();
+			err = rt.Upsert(kConfigNamespace, item);
+			EXPECT_EQ(err.code(), errParseJson) << err.what();
+			QueryResultsType qr;
+			err = rt.Update(Query(kConfigNamespace).Where("type", CondEq, "profiling").Set("profiling.queries_threshold_us", 100), qr);
+			EXPECT_EQ(err.code(), errParseJson) << err.what();
+		}
+
+		{
 			GTEST_TRACE_SCOPE("Setting invalid replication.server_id = " + std::to_string(invalidReplConf1000.serverID) + " to #config");
 			SetReplicationConfigNS<kExpectErrorOnUpsert>(rt, invalidReplConf1000);
 			std::this_thread::sleep_for(kReplicationConfLoadDelay);
 			CheckReplicationConfigNS(rt, invalidReplConf1000);
-			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 			CheckNamespacesReplicationConfig(rt, fallbackReplConf);
 		}
 	}
 
 	// 3. Start with invalid server_id, check fallback server_id present, restore correct server_id, shutdown
 	{
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		{
 			GTEST_TRACE_SCOPE("Reloading with invalid replication.server_id = " + std::to_string(invalidReplConf1000.serverID) +
 							  " in #config");
-			ASSERT_TRUE(fs::Stat(kReplFilePath) == fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_TRUE(fs::Stat(kReplFilePath) == fs::StatNotFound) << "replication.conf shall not exist when present.";
 
 			Error err = rt.Connect(kBuiltin);
 			ASSERT_TRUE(err.ok()) << err.what();
 			CheckReplicationConfigNS(rt, invalidReplConf1000);
-			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 			CheckNamespacesReplicationConfig(rt, fallbackReplConf);
 		}
 
@@ -687,21 +825,113 @@ TEST_F(ReplicationConfigTests, SetServerIDToConfigRestartWithoutReplicationConf)
 			GTEST_TRACE_SCOPE("Setting correct replication.server_id = " + std::to_string(correctReplConf.serverID) + " to #config");
 			SetReplicationConfigNS(rt, correctReplConf);
 			CheckReplicationConfigNS(rt, correctReplConf);
-			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+			ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 			CheckNamespacesReplicationConfig(rt, correctReplConf);
+		}
+
+		{
+			GTEST_TRACE_SCOPE("Writing profiling to #config with the correct replication.server_id");
+			SetJSONtoConfigNS(rt, kProfilingJSON);
 		}
 	}
 
 	// 4. Start with correct sever_id, verify
 	{
 		GTEST_TRACE_SCOPE("Reloading with correct replication.server_id = " + std::to_string(correctReplConf.serverID) + " in #config");
-		ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+		ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 
-		reindexer::Reindexer rt;
+		Reindexer rt;
 		Error err = rt.Connect(kBuiltin);
 		ASSERT_TRUE(err.ok()) << err.what();
 		CheckReplicationConfigNS(rt, correctReplConf);
-		ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatError) << "replication.conf shall not exist when present.";
+		ASSERT_EQ(fs::Stat(kReplFilePath), fs::StatNotFound) << "replication.conf shall not exist when present.";
 		CheckNamespacesReplicationConfig(rt, correctReplConf);
 	}
 }
+
+TEST_F(ReplicationConfigTests, InvalidAsyncReplConfigSource) {
+	// The invalid saved source of the async replication config is ignored on the start: the config is published without the source, and the
+	// next applying of the source restores it
+
+	constexpr int64_t kSourceId = 1000;
+	constexpr int64_t kStoredSourceId = 2000;
+	const std::string kConfig = R"json({"app_name":"labeled"})json";
+	const std::string kSourceKey = kStorageMetaPrefix + std::string(kConfigSourceMetaPrefix) + "async_replication";
+
+	const auto applySource = [&kConfig](Reindexer& rx, int64_t sourceId) {
+		ClusterControlResponseData response;
+		const auto err = rx.ClusterControlRequest(
+			ClusterControlRequestData{ApplyLeaderAsyncReplConfigCommand{{.config = kConfig, .sourceId = sourceId}}}, response);
+		ASSERT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(std::get<ApplyLeaderAsyncReplConfigCommand>(response.data).sourceId, sourceId);
+	};
+	const auto getSource = [](Reindexer& rx) {
+		ClusterControlResponseData response;
+		const auto err = rx.ClusterControlRequest(ClusterControlRequestData{GetAsyncReplConfigSourceCommand{}}, response);
+		EXPECT_TRUE(err.ok()) << err.what();
+		return err.ok() ? AsyncReplConfigSource(std::get<GetAsyncReplConfigSourceCommand>(response.data)) : AsyncReplConfigSource();
+	};
+	const auto sourceJSON = [](const std::string& config, int64_t sourceId) {
+		WrSerializer ser;
+		{
+			JsonBuilder jb(ser);
+			AsyncReplConfigSource{.config = config, .sourceId = sourceId}.GetJSON(jb);
+		}
+		return std::string(ser.Slice());
+	};
+	// The node has to be stopped, so its storage is not locked
+	const auto writeSourceMeta = [&](std::string_view meta) {
+		std::unique_ptr<datastorage::IDataStorage> storage(datastorage::StorageFactory::create(datastorage::StorageType::LevelDB));
+		auto err = storage->Open(fs::JoinPath(kStoragePath, kConfigNamespace), StorageOpts());
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = storage->Write(StorageOpts(), kSourceKey, meta);
+		ASSERT_TRUE(err.ok()) << err.what();
+	};
+
+	{
+		Reindexer rx;
+		const auto err = rx.Connect(kBuiltin);
+		ASSERT_TRUE(err.ok()) << err.what();
+		applySource(rx, kSourceId);
+	}
+	writeSourceMeta(sourceJSON(kConfig, kStoredSourceId));
+	{
+		Reindexer rx;
+		const auto err = rx.Connect(kBuiltin);
+		ASSERT_TRUE(err.ok()) << err.what();
+		const auto source = getSource(rx);
+		EXPECT_EQ(source.sourceId, kStoredSourceId);
+		EXPECT_EQ(source.config, kConfig);
+	}
+
+	const struct {
+		std::string_view description;
+		std::string meta;
+	} invalidSources[] = {
+		{"broken JSON", R"json({"source_id":)json"},
+		{"source ID of wrong type", R"json({"config":"{}","source_id":"1000"})json"},
+		{"config of wrong type", R"json({"config":1,"source_id":1000})json"},
+		{"broken JSON of config", sourceJSON(R"json({"app_name":)json", kSourceId)},
+		{"too deep JSON of config", sourceJSON(std::string(40, '['), kSourceId)},
+		{"invalid config", sourceJSON(R"json({"app_name":1})json", kSourceId)},
+		{"revoked source", sourceJSON("", kSourceId)},
+	};
+	for (const auto& [description, meta] : invalidSources) {
+		SCOPED_TRACE(description);
+		writeSourceMeta(meta);
+		Reindexer rx;
+		auto err = rx.Connect(kBuiltin);
+		ASSERT_TRUE(err.ok()) << err.what();
+		const auto source = getSource(rx);
+		EXPECT_EQ(source.sourceId, int64_t(ShardingSourceId::NotSet));
+		cluster::AsyncReplConfigData config;
+		err = config.FromJSON(source.config);
+		ASSERT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(config.appName, "labeled");
+
+		applySource(rx, kSourceId);
+		EXPECT_EQ(getSource(rx).sourceId, kSourceId);
+	}
+}
+
+}  // namespace reindexer_tests

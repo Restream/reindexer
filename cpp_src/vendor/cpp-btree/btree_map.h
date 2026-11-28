@@ -22,10 +22,8 @@
 #ifndef UTIL_BTREE_BTREE_MAP_H__
 #define UTIL_BTREE_BTREE_MAP_H__
 
-#include <algorithm>
 #include <functional>
 #include <memory>
-#include <string>
 #include <utility>
 
 #include "btree.h"
@@ -52,6 +50,9 @@ public:
 
 	// Copy constructor.
 	btree_map(const self_type &x) : super_type(x) {}
+
+	// Move constructor.
+	btree_map(self_type &&x) noexcept : super_type(std::move(x)) {}
 
 	// Range constructor.
 	template <class InputIterator>
@@ -85,6 +86,9 @@ public:
 
 	// Copy constructor.
 	btree_multimap(const self_type &x) : super_type(x) {}
+
+	// Move constructor.
+	btree_multimap(self_type &&x) noexcept : super_type(std::move(x)) {}
 
 	// Range constructor.
 	template <class InputIterator>

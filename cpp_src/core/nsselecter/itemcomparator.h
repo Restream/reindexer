@@ -1,24 +1,31 @@
 #pragma once
 
+#include <span>
+#include "core/namespace/namespace_metadata_view.h"
 #include "core/payload/fieldsset.h"
 #include "sortingcontext.h"
 
 namespace reindexer {
 
-class NamespaceImpl;
 struct SelectCtx;
 class ItemRef;
 
-class ItemComparator {
+class [[nodiscard]] ItemComparator {
 public:
-	ItemComparator(const NamespaceImpl& ns, const SelectCtx& ctx, const joins::NamespaceResults* jr) noexcept
-		: ns_(ns), ctx_(ctx), joinResults_(jr) {}
+	// Borrows data from the same namespace; its lock must be held throughout sorting.
+	struct [[nodiscard]] Context {
+		NamespaceMetadataView metadata;
+		std::span<const PayloadValue> items;
+	};
+
+	ItemComparator(Context data, const SelectCtx& ctx, const joins::NamespaceResults* jr) noexcept
+		: data_{data}, payloadType_{data.metadata.GetPayloadType()}, ctx_(ctx), joinResults_(jr) {}
 	ItemComparator(const ItemComparator&) = delete;
 	ItemComparator(ItemComparator&&) = delete;
 	ItemComparator& operator=(const ItemComparator&) = delete;
 	ItemComparator& operator=(ItemComparator&&) = delete;
 
-	[[nodiscard]] bool operator()(const ItemRef& lhs, const ItemRef& rhs) const;
+	bool operator()(const ItemRef& lhs, const ItemRef& rhs) const;
 
 	void BindForForcedSort();
 	void BindForGeneralSort();
@@ -27,26 +34,29 @@ private:
 	template <typename Inserter>
 	void bindOne(const SortingContext::Entry& sortingCtx, Inserter insert);
 	ComparationResult compareFields(IdType lId, IdType rId, size_t& firstDifferentFieldIdx) const;
+	const void* columnData(int fieldIdx) const noexcept { return data_.metadata.GetIndexColumnData(fieldIdx); }
 
 	class BackInserter;
 	class FrontInserter;
-	struct CompareByField {
-		bool desc;
+	struct [[nodiscard]] CompareByField {
+		Desc desc;
 	};
-	struct CompareByJoinedField {
+	struct [[nodiscard]] CompareByJoinedField {
 		size_t joinedNs;
-		bool desc;
+		Desc desc;
 	};
-	struct CompareByExpression {
-		bool desc;
+	struct [[nodiscard]] CompareByExpression {
+		Desc desc;
 	};
-	struct Joined {
-		const JoinedSelector* joinedSelector{nullptr};
+	struct [[nodiscard]] Joined {
+		const joins::ItemsProcessor* joinItemsProcessor{nullptr};
+		const PayloadType* payloadType{nullptr};
 		FieldsSet fields;
 		h_vector<const CollateOpts*, 1> collateOpts;
 	};
 
-	const NamespaceImpl& ns_;
+	Context data_;
+	const PayloadType& payloadType_;
 	const SelectCtx& ctx_;
 	const joins::NamespaceResults* joinResults_;
 	FieldsSet fields_;

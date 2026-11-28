@@ -8,8 +8,8 @@ UpdateRecord::UpdateRecord(URType _type, uint32_t _nodeUid, bool online)
 	assertrx(_type == URType::NodeNetworkCheck);
 }
 
-UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, int _emmiterServerId)
-	: type_(_type), emmiterServerId_(_emmiterServerId), nsName_(std::move(_nsName)) {
+UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, int _emitterServerId)
+	: type_(_type), emitterServerId_(_emitterServerId), nsName_(std::move(_nsName)) {
 	switch (type_) {
 		case URType::EmptyUpdate:
 			break;
@@ -51,12 +51,13 @@ UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, int _emmiterServ
 		case URType::ResetOldShardingConfig:
 		case URType::ResetCandidateConfig:
 		case URType::RollbackCandidateConfig:
+		case URType::ApplyAsyncReplicationConfig:
 			assertrx(false);
 	}
 }
 
-UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId)
-	: type_(_type), emmiterServerId_(_emmiterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, _lsn) {
+UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId)
+	: type_(_type), emitterServerId_(_emitterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, _lsn) {
 	switch (type_) {
 		case URType::Truncate:
 		case URType::BeginTx:
@@ -98,12 +99,13 @@ UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_
 		case URType::ResetOldShardingConfig:
 		case URType::ResetCandidateConfig:
 		case URType::RollbackCandidateConfig:
+		case URType::ApplyAsyncReplicationConfig:
 			assertrx(false);
 	}
 }
 
-UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, std::string _data)
-	: type_(_type), emmiterServerId_(_emmiterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, _lsn) {
+UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId, std::string _data)
+	: type_(_type), emitterServerId_(_emitterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, _lsn) {
 	switch (type_) {
 		case URType::RenameNamespace:
 			data_ = make_intrusive<ImplT>(std::in_place_type<RenameNamespaceReplicationRecord>, std::move(_data));
@@ -150,12 +152,13 @@ UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_
 		case URType::ResetOldShardingConfig:
 		case URType::ResetCandidateConfig:
 		case URType::RollbackCandidateConfig:
+		case URType::ApplyAsyncReplicationConfig:
 			assertrx(false);
 	}
 }
 
-UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, WrSerializer&& _data)
-	: type_(_type), emmiterServerId_(_emmiterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, _lsn) {
+UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId, WrSerializer&& _data)
+	: type_(_type), emitterServerId_(_emitterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, _lsn) {
 	switch (type_) {
 		case URType::ItemUpdate:
 		case URType::ItemUpsert:
@@ -201,12 +204,13 @@ UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_
 		case URType::ResetOldShardingConfig:
 		case URType::ResetCandidateConfig:
 		case URType::RollbackCandidateConfig:
+		case URType::ApplyAsyncReplicationConfig:
 			assertrx(false);
 	}
 }
 
-UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, const TagsMatcher& _tm)
-	: type_(_type), emmiterServerId_(_emmiterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, _lsn) {
+UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId, const TagsMatcher& _tm)
+	: type_(_type), emitterServerId_(_emitterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, _lsn) {
 	switch (type_) {
 		case URType::SetTagsMatcher:
 		case URType::SetTagsMatcherTx: {
@@ -255,13 +259,14 @@ UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_
 		case URType::ResetOldShardingConfig:
 		case URType::ResetCandidateConfig:
 		case URType::RollbackCandidateConfig:
+		case URType::ApplyAsyncReplicationConfig:
 			assertrx(false);
 	}
 }
 
-UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, IndexDef _idef)
+UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId, IndexDef _idef)
 	: type_(_type),
-	  emmiterServerId_(_emmiterServerId),
+	  emitterServerId_(_emitterServerId),
 	  nsName_(std::move(_nsName)),
 	  extLsn_(_nsVersion, _lsn),
 	  data_(make_intrusive<ImplT>(std::in_place_type<IndexReplicationRecord>, std::move(_idef))) {
@@ -306,13 +311,14 @@ UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_
 		case URType::ResetOldShardingConfig:
 		case URType::ResetCandidateConfig:
 		case URType::RollbackCandidateConfig:
+		case URType::ApplyAsyncReplicationConfig:
 			assertrx(false);
 	}
 }
 
-UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _nsVersion, int _emmiterServerId, NamespaceDef _def,
+UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _nsVersion, int _emitterServerId, NamespaceDef _def,
 						   int64_t _stateToken)
-	: type_(_type), emmiterServerId_(_emmiterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, lsn_t(0, 0)) {
+	: type_(_type), emitterServerId_(_emitterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, lsn_t(0, 0)) {
 	switch (type_) {
 		case URType::AddNamespace:
 			data_ = make_intrusive<ImplT>(std::in_place_type<AddNamespaceReplicationRecord>, std::move(_def), _stateToken);
@@ -355,13 +361,14 @@ UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _nsVersion
 		case URType::ResetOldShardingConfig:
 		case URType::ResetCandidateConfig:
 		case URType::RollbackCandidateConfig:
+		case URType::ApplyAsyncReplicationConfig:
 			assertrx(false);
 	}
 }
 
-UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, std::string _k,
+UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emitterServerId, std::string _k,
 						   std::string _v)
-	: type_(_type), emmiterServerId_(_emmiterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, _lsn) {
+	: type_(_type), emitterServerId_(_emitterServerId), nsName_(std::move(_nsName)), extLsn_(_nsVersion, _lsn) {
 	switch (type_) {
 		case URType::PutMeta:
 		case URType::PutMetaTx:
@@ -404,15 +411,19 @@ UpdateRecord::UpdateRecord(URType _type, NamespaceName _nsName, lsn_t _lsn, lsn_
 		case URType::ResetOldShardingConfig:
 		case URType::ResetCandidateConfig:
 		case URType::RollbackCandidateConfig:
+		case URType::ApplyAsyncReplicationConfig:
 			assertrx(false);
 	}
 }
 
-UpdateRecord::UpdateRecord(URType _type, int _emmiterServerId, std::string _data, int64_t sourceId)
-	: type_(_type), emmiterServerId_(_emmiterServerId) {
+UpdateRecord::UpdateRecord(URType _type, int _emitterServerId, std::string _data, int64_t sourceId)
+	: type_(_type), emitterServerId_(_emitterServerId) {
 	switch (type_) {
 		case URType::SaveShardingConfig:
 			data_ = make_intrusive<ImplT>(std::in_place_type<SaveNewShardingCfgRecord>, std::move(_data), sourceId);
+			break;
+		case URType::ApplyAsyncReplicationConfig:
+			data_ = make_intrusive<ImplT>(std::in_place_type<AsyncReplicationCfgRecord>, std::move(_data), sourceId);
 			break;
 		case URType::PutMeta:
 		case URType::PutMetaTx:
@@ -456,7 +467,7 @@ UpdateRecord::UpdateRecord(URType _type, int _emmiterServerId, std::string _data
 	}
 }
 
-UpdateRecord::UpdateRecord(URType _type, int _emmiterServerId, int64_t sourceId) : type_(_type), emmiterServerId_(_emmiterServerId) {
+UpdateRecord::UpdateRecord(URType _type, int _emitterServerId, int64_t sourceId) : type_(_type), emitterServerId_(_emitterServerId) {
 	switch (type_) {
 		case URType::ApplyShardingConfig:
 			data_ = make_intrusive<ImplT>(std::in_place_type<ApplyNewShardingCfgRecord>, sourceId);
@@ -501,6 +512,7 @@ UpdateRecord::UpdateRecord(URType _type, int _emmiterServerId, int64_t sourceId)
 		case URType::SetTagsMatcherTx:
 		case URType::EmptyUpdate:
 		case URType::SaveShardingConfig:
+		case URType::ApplyAsyncReplicationConfig:
 			assertrx(false);
 	}
 }
@@ -558,6 +570,8 @@ size_t UpdateRecord::DataSize() const noexcept {
 		case URType::ResetCandidateConfig:
 		case URType::RollbackCandidateConfig:
 			return sizeof(ImplT) + std::get_if<ResetShardingCfgRecord>(data_.get())->Size();
+		case URType::ApplyAsyncReplicationConfig:
+			return sizeof(ImplT) + std::get_if<AsyncReplicationCfgRecord>(data_.get())->Size();
 		case URType::None:
 		default:
 			std::abort();
